@@ -3,8 +3,11 @@
  * Tests connectivity, latency, and structured JSON output for UnlazyNotes auto-tagging
  */
 
-const BASE_URL = 'https://api.cosmoshub.tech/v1';
-const API_KEY = 'sk-cos-EAtuQDnXrbi4e6zN27g_zjTuzDPedeUVdFedZf3nBA8';
+import * as dotenv from 'dotenv';
+dotenv.config();
+
+const BASE_URL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
+const API_KEY = process.env.AI_PROVIDER_API_KEY || '';
 
 const MODELS = ['deepseek-v4.1-flash', 'gpt-6-luna'];
 

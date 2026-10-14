@@ -1,8 +1,22 @@
 import { Bot } from 'grammy';
 import crypto from 'node:crypto';
 import * as dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: envPath, override: true });
+dotenv.config({ override: true });
+
+// Hindari bentrok proxy lokal untuk request langsung ke api.telegram.org
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+delete process.env.all_proxy;
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.ALL_PROXY;
 
 const token = process.env.TELEGRAM_BOT_TOKEN || 'mock-token';
 

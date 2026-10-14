@@ -16,7 +16,8 @@
     "db:studio": "drizzle-kit studio",
     "test:webhook": "tsx scripts/test-webhook.ts",
     "test:phase2": "tsx scripts/test-phase2.ts",
-    "test:phase3": "tsx scripts/test-phase3.ts"
+    "test:phase3": "tsx scripts/test-phase3.ts",
+    "bot:poll": "tsx scripts/bot-polling.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^0.0.12",

@@ -1,6 +1,6 @@
 import { db } from '../src/db';
 import { users, subscriptions, apiKeys, notes, paymentLogs } from '../src/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { generateDokuSignature } from '../src/lib/doku';
 import { hashApiKey } from '../src/lib/telegram';
 import { answerNoteQuestion } from '../src/lib/ask';
@@ -450,6 +450,7 @@ async function runPhase3Tests() {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 runPhase3Tests();

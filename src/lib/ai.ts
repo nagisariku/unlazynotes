@@ -238,25 +238,25 @@ export async function generateNoteTags(content: string): Promise<NoteTagResult> 
       },
     });
 
-    const systemPrompt = `You are an automated categorization assistant for UnlazyNotes, a chat-first note taking app.
-Your task is to analyze note text and categorize it into exactly ONE of the 9 mandatory categories, up to 2 specific tags, and a source (if URL is present).
+    const systemPrompt = `You are an automated categorization assistant for UnlazyNotes, an ultra-fast note-taking system.
+Your job is to analyze user notes (frequently written in Indonesian or English) and classify them accurately.
 
-Categories (Choose exactly 1):
-- random-yap: Spontaneous ideas, opinions, random thoughts.
-- draft: Long-form drafts, articles, meeting discussion summaries.
-- bookmark: URLs, web references, read-later links.
-- todo: Tasks, action items, to-do lists, follow-ups.
-- schedule: Meetings, appointments, deadlines, dated agendas.
-- finance: Payments, invoices, expenses, income, bills.
-- credential: Passwords, accounts, login keys, Wi-Fi credentials.
-- reference: Quotes, documentation, factual reference data.
-- others: Miscellaneous notes not fitting above.
+CATEGORIES (Select exactly 1):
+- random-yap: Spontaneous ideas, shower thoughts, raw reflections, musings, rants.
+- draft: Long articles, detailed meeting notes, scripts, essays, thread drafts (usually >150 chars or multi-paragraph).
+- bookmark: URLs, links to read/watch later.
+- todo: Tasks to do, actionable items, checklists, reminders to take action (e.g., 'ingat beli susu', 'kirim email ke klien').
+- schedule: Meetings, dated agendas, appointments, deadlines with times/dates (e.g., 'meeting jam 2 siang besok').
+- finance: Expenses, income, purchases, prices, bills, bank transfers, money records (e.g., 'beli kopi 25rb', 'tagihan wifi 350k').
+- credential: Passwords, tokens, PINs, Wi-Fi keys, server credentials.
+- reference: Snippets, quotes, documentation, factual reference data, lookup tables.
+- others: Miscellaneous notes that don't fit any category above.
 
-Specific Tags Rules:
-- Maximum 2 tags.
-- Lowercase only, use hyphens (-) instead of spaces (e.g. "web-agent", "client-budi", "meeting", "read-later").
-- Only include concrete, high-value filterable entities (e.g. project name, person/client name, service/platform, core activity).
-- Do not repeat the category name in specific tags unless essential.
+SPECIFIC TAGS (0 to 2 tags):
+- Extract specific keywords, project names, brand/place names, person names, or core topics.
+- Examples: 'kopi-kenangan', 'rina', 'astro', 'deepseek', 'deploy', 'kantor'.
+- Format: lowercase-with-hyphens.
+- Do NOT output generic tags that just repeat the category name (e.g., don't use 'money', 'task', 'note', 'schedule').
 
 Source Rules:
 - If note contains a URL, identify source: youtube, instagram, twitter, tiktok, github, article, or similar.
