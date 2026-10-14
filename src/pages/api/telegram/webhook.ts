@@ -16,6 +16,7 @@ import {
   formatSavedMessage,
 } from '@/lib/telegram';
 import { generateNoteTags, normalizeTag } from '@/lib/ai';
+import { answerNoteQuestion } from '@/lib/ask';
 
 export const prerender = false;
 
@@ -361,6 +362,55 @@ export const POST: APIRoute = async ({ request }) => {
     sendTelegramMessage(chatId, searchReply, { parse_mode: 'Markdown' });
 
     return new Response(JSON.stringify({ ok: true, action: 'search_success' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 9b. Penanganan Command AI Pro: /ask <pertanyaan>
+  if (text.startsWith('/ask')) {
+    const question = text.replace(/^\/ask\s*/, '').trim();
+
+    if (!question) {
+      sendTelegramMessage(
+        chatId,
+        'Gunakan format: `/ask <pertanyaan Anda>`\n\nContoh:\n`/ask Kapan meeting sprint selanjutnya?`',
+        { parse_mode: 'Markdown' }
+      );
+      return new Response(JSON.stringify({ ok: true, action: 'ask_missing_question' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Verifikasi Hak Akses Paket Pro
+    if (sub.plan !== 'pro') {
+      sendTelegramMessage(
+        chatId,
+        '⭐️ *Fitur Eksklusif Paket Pro*\n\nFitur tanya jawab cerdas AI (`/ask`) hanya tersedia untuk pengguna paket Pro.\n\nSilakan upgrade paket Anda untuk menikmati akses AI tanpa batas:\nhttps://unlazynotes.com/dashboard/settings',
+        { parse_mode: 'Markdown' }
+      );
+      return new Response(JSON.stringify({ ok: true, action: 'ask_requires_pro' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Non-blocking: Kembalikan 200 OK instan, proses AI di background
+    sendTelegramMessage(chatId, '🤖 Sedang menganalisis catatan Anda...');
+
+    (async () => {
+      try {
+        const answer = await answerNoteQuestion(activeKey.userId, question);
+        await sendTelegramMessage(chatId, `💡 *Jawaban AI:*\n\n${answer}`, {
+          parse_mode: 'Markdown',
+        });
+      } catch (err) {
+        console.error('[Telegram /ask Background] Error answering question:', err);
+      }
+    })();
+
+    return new Response(JSON.stringify({ ok: true, action: 'ask_processing' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

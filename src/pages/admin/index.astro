@@ -1,0 +1,101 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import AdminDashboard from '../../components/admin/AdminDashboard';
+import { getSessionUser } from '../../lib/session';
+import { db } from '../../db';
+import { users, subscriptions, notes, paymentLogs } from '../../db/schema';
+import { desc } from 'drizzle-orm';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const isAdmin =
+  user.role === 'admin' ||
+  (process.env.ADMIN_EMAIL && user.email === process.env.ADMIN_EMAIL);
+
+if (!isAdmin) {
+  return new Response('403 Forbidden: Administrator access required', {
+    status: 403,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+}
+
+// 1. Ambil data seluruh pengguna
+const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
+
+// 2. Ambil data seluruh subscriptions
+const allSubs = await db.select().from(subscriptions);
+const subMap = new Map<string, (typeof allSubs)[0]>();
+for (const s of allSubs) {
+  subMap.set(s.userId, s);
+}
+
+// 3. Ambil data catatan untuk hitung count per user
+const allNotes = await db
+  .select({ id: notes.id, userId: notes.userId })
+  .from(notes);
+
+const notesCountMap = new Map<string, number>();
+for (const n of allNotes) {
+  notesCountMap.set(n.userId, (notesCountMap.get(n.userId) || 0) + 1);
+}
+
+// 4. Ambil log pembayaran untuk kalkulasi pendapatan
+const allPayments = await db.select().from(paymentLogs);
+let revenueIdr = 0;
+let revenueUsd = 0;
+let paidCount = 0;
+
+for (const p of allPayments) {
+  if (p.status === 'paid') {
+    paidCount++;
+    if (p.currency === 'USD') {
+      revenueUsd += p.amount;
+    } else {
+      revenueIdr += p.amount;
+    }
+  }
+}
+
+// 5. Serialize daftar pengguna untuk UI TanStack Table
+const serializedUsers = allUsers.map((u) => {
+  const sub = subMap.get(u.id);
+  return {
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+    plan: sub?.plan || 'standard',
+    status: sub?.status || 'active',
+    expiresAt: sub?.expiresAt ? sub.expiresAt.toISOString() : null,
+    notesCount: notesCountMap.get(u.id) || 0,
+    createdAt: u.createdAt.toISOString(),
+  };
+});
+
+const proCount = serializedUsers.filter((u) => u.plan === 'pro').length;
+const standardCount = serializedUsers.length - proCount;
+
+const metrics = {
+  totalUsers: allUsers.length,
+  totalNotes: allNotes.length,
+  proCount,
+  standardCount,
+  revenueIdr,
+  revenueUsd,
+  paidTransactionsCount: paidCount,
+};
+---
+
+<Layout title="Admin Console – UnlazyNotes">
+  <AdminDashboard
+    client:load
+    metrics={metrics}
+    users={serializedUsers}
+    currentUser={{ id: user.id, email: user.email, name: user.name }}
+  />
+</Layout>

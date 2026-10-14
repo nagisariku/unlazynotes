@@ -13,8 +13,9 @@
  */
 
 import { db } from '../src/db';
-import { notes, apiKeys } from '../src/db/schema';
+import { users, subscriptions, notes, apiKeys } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
+import { hashApiKey } from '../src/lib/telegram';
 
 const BASE_URL = process.env.TEST_URL || 'http://localhost:4321';
 const WEBHOOK_SECRET = 'super_secret_webhook_token_123';
@@ -41,6 +42,39 @@ async function sendWebhook(update: any, secret = WEBHOOK_SECRET) {
 
 async function runTests() {
   console.log(`=== Starting UnlazyNotes Webhook Test Suite against ${BASE_URL} ===\n`);
+
+  // Ensure test fixture user and API Key exist
+  const keyHash = hashApiKey(TEST_API_KEY);
+  const [existingUser] = await db.select().from(users).where(eq(users.id, 'usr_test_riku_01')).limit(1);
+  if (!existingUser) {
+    await db.insert(users).values({
+      id: 'usr_test_riku_01',
+      name: 'Riku Test',
+      email: 'riku.test@unlazynotes.local',
+      role: 'user',
+    });
+  }
+  const [existingSub] = await db.select().from(subscriptions).where(eq(subscriptions.userId, 'usr_test_riku_01')).limit(1);
+  if (!existingSub) {
+    await db.insert(subscriptions).values({
+      id: 'sub_test_riku_01',
+      userId: 'usr_test_riku_01',
+      plan: 'standard',
+      currency: 'IDR',
+      status: 'active',
+    });
+  }
+  const [existingKey] = await db.select().from(apiKeys).where(eq(apiKeys.userId, 'usr_test_riku_01')).limit(1);
+  if (existingKey) {
+    await db.update(apiKeys).set({ keyHash, telegramChatId: null, isActive: true }).where(eq(apiKeys.id, existingKey.id));
+  } else {
+    await db.insert(apiKeys).values({
+      id: 'key_test_riku_01',
+      userId: 'usr_test_riku_01',
+      keyHash,
+      isActive: true,
+    });
+  }
 
   // Test 1: Security Header Validation
   console.log('[Test 1] Testing security header rejection with invalid secret token...');

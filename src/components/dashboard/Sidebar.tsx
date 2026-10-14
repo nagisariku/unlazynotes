@@ -1,4 +1,4 @@
-import { FileText, Bookmark, Settings, LogOut, ExternalLink } from 'lucide-react';
+import { FileText, Bookmark, Settings, LogOut, ExternalLink, ShieldAlert, Sparkles } from 'lucide-react';
 
 interface SidebarProps {
   currentPath: string;
@@ -6,15 +6,21 @@ interface SidebarProps {
     name?: string | null;
     email: string;
     image?: string | null;
+    role?: string;
   };
+  subscriptionPlan?: string;
 }
 
-export default function Sidebar({ currentPath, user }: SidebarProps) {
+export default function Sidebar({ currentPath, user, subscriptionPlan = 'standard' }: SidebarProps) {
   const navItems = [
     { label: 'All Notes', href: '/dashboard', icon: FileText },
     { label: 'Bookmarks', href: '/dashboard/bookmarks', icon: Bookmark },
     { label: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
+
+  if (user.role === 'admin') {
+    navItems.push({ label: 'Admin Panel', href: '/admin', icon: ShieldAlert });
+  }
 
   const handleLogout = async () => {
     try {
@@ -58,6 +64,24 @@ export default function Sidebar({ currentPath, user }: SidebarProps) {
           );
         })}
       </nav>
+
+      {/* Pro Upgrade CTA Banner if not Pro */}
+      {subscriptionPlan !== 'pro' && (
+        <div className="px-3 mb-2">
+          <a
+            href="/dashboard/settings#upgrade"
+            className="block p-3 rounded-xl border border-indigo-500/20 bg-indigo-950/20 hover:bg-indigo-950/40 text-xs transition-colors group"
+          >
+            <div className="flex items-center gap-1.5 text-indigo-400 font-semibold mb-1">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Upgrade ke Pro</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-tight">
+              Unlimited catatan &amp; AI <code className="text-indigo-300">/ask</code> bot.
+            </p>
+          </a>
+        </div>
+      )}
 
       {/* Telegram Bot Link Quick Banner */}
       <div className="px-4 py-3 mx-3 mb-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs">

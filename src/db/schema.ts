@@ -97,3 +97,18 @@ export const notes = pgTable('notes', {
   source: varchar('source', { length: 100 }), // youtube, instagram, twitter, etc.
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const paymentLogs = pgTable('payment_logs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  orderId: varchar('order_id', { length: 100 }).notNull().unique(),
+  provider: varchar('provider', { length: 50 }).default('doku').notNull(),
+  amount: integer('amount').notNull(),
+  currency: varchar('currency', { length: 10 }).default('IDR').notNull(),
+  plan: varchar('plan', { length: 50 }).default('pro').notNull(),
+  period: varchar('period', { length: 20 }).default('monthly').notNull(), // 'monthly' | 'yearly'
+  status: varchar('status', { length: 50 }).default('pending').notNull(), // 'pending' | 'paid' | 'failed'
+  payloadRaw: jsonb('payload_raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+

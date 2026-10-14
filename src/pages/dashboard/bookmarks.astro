@@ -4,7 +4,7 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import BookmarksView from '../../components/dashboard/BookmarksView';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { notes } from '../../db/schema';
+import { notes, subscriptions } from '../../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 export const prerender = false;
@@ -13,6 +13,12 @@ const user = await getSessionUser(Astro.request);
 if (!user) {
   return Astro.redirect('/login');
 }
+
+const [sub] = await db
+  .select({ plan: subscriptions.plan })
+  .from(subscriptions)
+  .where(eq(subscriptions.userId, user.id))
+  .limit(1);
 
 const bookmarkNotes = await db
   .select()
@@ -31,7 +37,7 @@ const serializedBookmarks = bookmarkNotes.map((b) => ({
 
 <Layout title="Bookmarks – UnlazyNotes">
   <div class="flex min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard/bookmarks" user={user} />
+    <Sidebar client:load currentPath="/dashboard/bookmarks" user={user} subscriptionPlan={sub?.plan || 'standard'} />
     <main class="flex-1 min-w-0 overflow-y-auto">
       <BookmarksView client:load initialBookmarks={serializedBookmarks} />
     </main>

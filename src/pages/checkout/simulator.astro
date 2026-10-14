@@ -1,0 +1,126 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+export const prerender = false;
+
+const url = new URL(Astro.request.url);
+const orderId = url.searchParams.get('order_id') || 'ORD-UNKNOWN';
+const amount = url.searchParams.get('amount') || '49000';
+const currency = url.searchParams.get('currency') || 'IDR';
+const plan = url.searchParams.get('plan') || 'pro';
+const period = url.searchParams.get('period') || 'monthly';
+---
+
+<Layout title="DOKU Payment Simulator – UnlazyNotes">
+  <div class="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
+    <div class="w-full max-w-lg p-6 sm:p-8 rounded-3xl border border-zinc-800 bg-zinc-900/60 shadow-2xl space-y-6">
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center text-white font-bold text-sm">
+            D
+          </div>
+          <span class="font-bold text-zinc-100 text-sm">DOKU Checkout Simulator</span>
+        </div>
+        <span class="text-[11px] px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono font-medium">
+          Sandbox Mode
+        </span>
+      </div>
+
+      <div class="space-y-3">
+        <div class="p-4 rounded-xl border border-zinc-800 bg-zinc-950 space-y-2 text-xs">
+          <div class="flex justify-between text-zinc-400">
+            <span>Invoice / Order ID:</span>
+            <span class="font-mono text-zinc-200 font-semibold" id="val-order-id">{orderId}</span>
+          </div>
+          <div class="flex justify-between text-zinc-400">
+            <span>Paket:</span>
+            <span class="text-zinc-200 font-semibold uppercase">{plan} ({period})</span>
+          </div>
+          <div class="flex justify-between text-zinc-400">
+            <span>Total Tagihan:</span>
+            <span class="text-emerald-400 font-bold text-sm">
+              {currency === 'USD' ? `$${amount}` : `Rp${Number(amount).toLocaleString('id-ID')}`}
+            </span>
+          </div>
+        </div>
+
+        <div class="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs text-zinc-400">
+          <p class="font-semibold text-zinc-300 mb-2">Simulasi Metode Pembayaran:</p>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="p-2.5 rounded-lg border border-zinc-700 bg-zinc-800/60 text-zinc-300 font-medium text-center">
+              QRIS / E-Wallet
+            </div>
+            <div class="p-2.5 rounded-lg border border-zinc-700 bg-zinc-800/60 text-zinc-300 font-medium text-center">
+              Virtual Account
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="space-y-3 pt-2">
+        <button
+          id="btn-pay-success"
+          class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-all shadow-lg shadow-emerald-600/20"
+        >
+          ✅ Simulasikan Bayar Sukses (Lunas)
+        </button>
+
+        <button
+          id="btn-pay-fail"
+          class="w-full py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 font-medium text-xs transition-colors"
+        >
+          ❌ Batalkan Transaksi
+        </button>
+      </div>
+
+      <p class="text-[11px] text-zinc-500 text-center leading-normal">
+        Halaman simulator internal UnlazyNotes untuk menguji integrasi webhook DOKU secara nyata tanpa memotong saldo.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const orderId = document.getElementById('val-order-id')?.textContent || '';
+
+    const btnSuccess = document.getElementById('btn-pay-success');
+    if (btnSuccess) {
+      btnSuccess.addEventListener('click', async () => {
+        btnSuccess.setAttribute('disabled', 'true');
+        btnSuccess.textContent = 'Memproses Webhook...';
+
+        try {
+          const res = await fetch('/api/payment/webhook', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Payment-Simulator': 'true',
+            },
+            body: JSON.stringify({
+              order: { invoice_number: orderId },
+              transaction: { status: 'SUCCESS' },
+            }),
+          });
+
+          if (res.ok) {
+            window.location.href = '/dashboard/settings?payment=success';
+          } else {
+            alert('Gagal memproses webhook pembayaran');
+            btnSuccess.removeAttribute('disabled');
+            btnSuccess.textContent = '✅ Simulasikan Bayar Sukses (Lunas)';
+          }
+        } catch {
+          alert('Terjadi kesalahan jaringan');
+          btnSuccess.removeAttribute('disabled');
+        }
+      });
+    }
+
+    const btnFail = document.getElementById('btn-pay-fail');
+    if (btnFail) {
+      btnFail.addEventListener('click', () => {
+        window.location.href = '/dashboard/settings?payment=cancelled';
+      });
+    }
+  </script>
+</Layout>

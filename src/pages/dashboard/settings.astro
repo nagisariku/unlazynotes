@@ -49,7 +49,7 @@ const apiKeyInfo = {
 
 <Layout title="Settings – UnlazyNotes">
   <div class="flex min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard/settings" user={user} />
+    <Sidebar client:load currentPath="/dashboard/settings" user={user} subscriptionPlan={serializedSub?.plan || 'standard'} />
     <main class="flex-1 min-w-0 overflow-y-auto">
       <SettingsView
         client:load
