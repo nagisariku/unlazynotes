@@ -1,0 +1,39 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Sidebar from '../../components/dashboard/Sidebar';
+import BookmarksView from '../../components/dashboard/BookmarksView';
+import { getSessionUser } from '../../lib/session';
+import { db } from '../../db';
+import { notes } from '../../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const bookmarkNotes = await db
+  .select()
+  .from(notes)
+  .where(and(eq(notes.userId, user.id), eq(notes.category, 'bookmark')))
+  .orderBy(desc(notes.createdAt));
+
+const serializedBookmarks = bookmarkNotes.map((b) => ({
+  id: b.id,
+  content: b.content,
+  specificTags: b.specificTags,
+  source: b.source,
+  createdAt: b.createdAt.toISOString(),
+}));
+---
+
+<Layout title="Bookmarks – UnlazyNotes">
+  <div class="flex min-h-screen bg-zinc-950">
+    <Sidebar client:load currentPath="/dashboard/bookmarks" user={user} />
+    <main class="flex-1 min-w-0 overflow-y-auto">
+      <BookmarksView client:load initialBookmarks={serializedBookmarks} />
+    </main>
+  </div>
+</Layout>

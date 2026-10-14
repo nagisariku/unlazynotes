@@ -1,0 +1,137 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getSessionUser } from '../lib/session';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+if (user) {
+  return Astro.redirect('/dashboard');
+}
+---
+
+<Layout title="Sign In – UnlazyNotes">
+  <div class="min-h-screen flex items-center justify-center p-4 bg-zinc-950">
+    <div class="w-full max-w-md p-8 rounded-3xl border border-zinc-800 bg-zinc-900/40 shadow-2xl space-y-6">
+      <div class="text-center">
+        <a href="/" class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-xl mb-4 shadow-lg shadow-indigo-600/30">
+          U
+        </a>
+        <h1 class="text-2xl font-bold tracking-tight text-zinc-100">Welcome to UnlazyNotes</h1>
+        <p class="text-zinc-400 text-xs mt-1.5 leading-relaxed">
+          Masuk untuk mengakses dashboard catatan, mengelola integrasi bot Telegram, dan mengekspor bookmark.
+        </p>
+      </div>
+
+      <!-- Google Sign In -->
+      <div class="space-y-3">
+        <button
+          id="google-signin-btn"
+          class="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold text-sm transition-all shadow-sm"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24">
+            <path
+              fill="#4285F4"
+              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.15z"
+            />
+            <path
+              fill="#34A853"
+              d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"
+            />
+            <path
+              fill="#FBBC05"
+              d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+            />
+            <path
+              fill="#EA4335"
+              d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+            />
+          </svg>
+          <span>Lanjutkan dengan Google</span>
+        </button>
+
+        <!-- Sandbox / Local Quick Test Login -->
+        <div class="relative py-2">
+          <div class="absolute inset-0 flex items-center">
+            <div class="w-full border-t border-zinc-800"></div>
+          </div>
+          <div class="relative flex justify-center text-[10px] uppercase">
+            <span class="bg-zinc-900 px-2 text-zinc-500 font-semibold tracking-wider">
+              Atau Uji Coba Cepat (Sandbox)
+            </span>
+          </div>
+        </div>
+
+        <form id="dev-login-form" class="space-y-3">
+          <div>
+            <input
+              type="email"
+              id="dev-email"
+              placeholder="Masukkan email uji coba (contoh: riku@test.com)"
+              value="riku.test@unlazynotes.local"
+              required
+              class="w-full px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <button
+            type="submit"
+            class="w-full py-2.5 px-4 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-semibold text-xs transition-colors"
+          >
+            Masuk Langsung ke Dashboard &rarr;
+          </button>
+        </form>
+      </div>
+
+      <p class="text-[11px] text-zinc-500 text-center leading-normal">
+        Dengan masuk, Anda menyetujui Ketentuan Layanan dan Kebijakan Privasi UnlazyNotes.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // Google Sign in handler
+    const googleBtn = document.getElementById('google-signin-btn');
+    if (googleBtn) {
+      googleBtn.addEventListener('click', async () => {
+        try {
+          const res = await fetch('/api/auth/sign-in/social', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              provider: 'google',
+              callbackURL: '/dashboard',
+            }),
+          });
+          const data = await res.json();
+          if (data?.url) {
+            window.location.href = data.url;
+          } else {
+            alert('Google OAuth Client ID belum dikonfigurasi di VPS. Gunakan opsi Uji Coba Cepat di bawah.');
+          }
+        } catch {
+          alert('Google OAuth belum aktif. Silakan gunakan opsi Uji Coba Cepat di bawah.');
+        }
+      });
+    }
+
+    // Dev Login Form
+    const devForm = document.getElementById('dev-login-form');
+    if (devForm) {
+      devForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const emailInput = document.getElementById('dev-email') as HTMLInputElement;
+        const email = emailInput?.value || 'user@test.local';
+
+        const res = await fetch('/api/auth/dev-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name: email.split('@')[0] }),
+        });
+
+        if (res.ok) {
+          window.location.href = '/dashboard';
+        }
+      });
+    }
+  </script>
+</Layout>

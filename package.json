@@ -14,22 +14,32 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "test:webhook": "tsx scripts/test-webhook.ts"
+    "test:webhook": "tsx scripts/test-webhook.ts",
+    "test:phase2": "tsx scripts/test-phase2.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^0.0.12",
     "@astrojs/check": "^0.9.4",
     "@astrojs/node": "^9.0.0",
     "@astrojs/react": "^4.2.0",
+    "@better-auth/drizzle-adapter": "^1.7.7",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.104.2",
     "ai": "^4.1.20",
     "astro": "^5.4.0",
+    "better-auth": "^1.7.7",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.3",
     "grammy": "^1.34.0",
+    "lucide-react": "^1.57.0",
+    "nuqs": "^2.10.2",
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -38,6 +48,7 @@
     "@types/react-dom": "^19.0.3",
     "drizzle-kit": "^0.30.2",
     "tailwindcss": "^4.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.3"
   }
 }
