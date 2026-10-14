@@ -42,7 +42,16 @@ export async function sendTelegramMessage(
   try {
     await bot.api.sendMessage(chatId, text, options);
     return true;
-  } catch (error) {
+  } catch (error: any) {
+    // Jika gagal karena formatting markdown/HTML dari respons LLM, kirim ulang sebagai plain text
+    if (options?.parse_mode) {
+      try {
+        await bot.api.sendMessage(chatId, text);
+        return true;
+      } catch (retryErr) {
+        console.error(`[Telegram] Retry plain text send failed:`, retryErr);
+      }
+    }
     console.error(`[Telegram] Failed to send message to ${chatId}:`, error);
     return false;
   }
