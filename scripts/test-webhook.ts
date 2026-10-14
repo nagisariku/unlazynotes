@@ -13,8 +13,8 @@
  */
 
 import { db } from '../src/db';
-import { notes, apiKeys, subscriptions } from '../src/db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { notes, apiKeys } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
 
 const BASE_URL = process.env.TEST_URL || 'http://localhost:4321';
 const WEBHOOK_SECRET = 'super_secret_webhook_token_123';
