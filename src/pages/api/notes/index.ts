@@ -1,9 +1,10 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
 import { notes, type NoteCategory } from '@/db/schema';
-import { eq, and, ilike, desc, gte, lte, sql } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 
 export const prerender = false;
 
@@ -27,7 +28,7 @@ export const GET: APIRoute = async ({ request }) => {
   const conditions = [eq(notes.userId, user.id)];
 
   if (q) {
-    conditions.push(ilike(notes.content, `%${q}%`));
+    conditions.push(buildFlexibleSearchCondition(q));
   }
 
   if (category) {
@@ -52,11 +53,15 @@ export const GET: APIRoute = async ({ request }) => {
     } catch {}
   }
 
+  const orderConditions = q
+    ? buildSearchRelevanceOrder(q)
+    : [desc(notes.createdAt)];
+
   const results = await db
     .select()
     .from(notes)
     .where(and(...conditions))
-    .orderBy(desc(notes.createdAt));
+    .orderBy(...orderConditions);
 
   return new Response(JSON.stringify({ notes: results }), {
     status: 200,

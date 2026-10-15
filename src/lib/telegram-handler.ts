@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { subscriptions, apiKeys, notes, type NoteCategory } from '@/db/schema';
-import { eq, and, ilike, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import {
@@ -15,6 +15,7 @@ import {
 } from '@/lib/telegram';
 import { generateNoteTags, normalizeTag } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
+import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 
 export interface TelegramProcessResult {
   ok: boolean;
@@ -278,16 +279,19 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'search_missing_keyword' };
     }
 
+    const searchCondition = buildFlexibleSearchCondition(keyword);
+    const orderConditions = buildSearchRelevanceOrder(keyword);
+
     const searchResults = await db
       .select()
       .from(notes)
       .where(
         and(
           eq(notes.userId, activeKey.userId),
-          ilike(notes.content, `%${keyword}%`)
+          searchCondition
         )
       )
-      .orderBy(desc(notes.createdAt))
+      .orderBy(...orderConditions)
       .limit(5);
 
     if (searchResults.length === 0) {
