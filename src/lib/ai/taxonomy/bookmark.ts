@@ -64,4 +64,103 @@ export const BOOKMARK_TAXONOMY: CanonicalTagDef[] = [
       en: ['tools', 'utility', 'devtools', 'software'],
     },
   },
+  {
+    canonical: 'netflix',
+    category: 'bookmark',
+    description: 'Netflix movies, shows, and streaming',
+    aliases: {
+      id: ['netflix', 'film', 'movie', 'cinema', 'nonton', 'series'],
+      en: ['netflix', 'movie', 'film', 'series'],
+    },
+  },
+  {
+    canonical: 'facebook',
+    category: 'bookmark',
+    description: 'Facebook posts, videos, and groups',
+    aliases: {
+      id: ['facebook', 'fb', 'fbwatch'],
+      en: ['facebook', 'fb'],
+    },
+  },
+  {
+    canonical: 'spotify',
+    category: 'bookmark',
+    description: 'Spotify songs, podcasts, and playlists',
+    aliases: {
+      id: ['spotify', 'lagu', 'musik', 'playlist'],
+      en: ['spotify', 'music', 'song', 'playlist'],
+    },
+  },
+  {
+    canonical: 'linkedin',
+    category: 'bookmark',
+    description: 'LinkedIn posts, jobs, and career profiles',
+    aliases: {
+      id: ['linkedin', 'loker', 'karir', 'lowongan'],
+      en: ['linkedin', 'career', 'job', 'hiring'],
+    },
+  },
+  {
+    canonical: 'reddit',
+    category: 'bookmark',
+    description: 'Reddit posts, discussions, and subreddits',
+    aliases: {
+      id: ['reddit', 'subreddit'],
+      en: ['reddit', 'subreddit'],
+    },
+  },
+  {
+    canonical: 'dev',
+    category: 'bookmark',
+    description: 'Developer, coding, and software engineering resources',
+    aliases: {
+      id: ['dev', 'koding', 'coding', 'pemrograman', 'programmer'],
+      en: ['dev', 'coding', 'developer', 'programming'],
+    },
+  },
+  {
+    canonical: 'design',
+    category: 'bookmark',
+    description: 'UI/UX design, visual assets, and prototypes',
+    aliases: {
+      id: ['design', 'desain', 'ui', 'ux', 'figma'],
+      en: ['design', 'ui', 'ux', 'figma'],
+    },
+  },
+  {
+    canonical: 'ai',
+    category: 'bookmark',
+    description: 'Artificial intelligence, machine learning, and LLM resources',
+    aliases: {
+      id: ['ai', 'kecerdasan', 'ml', 'llm', 'chatgpt'],
+      en: ['ai', 'ml', 'llm', 'gpt', 'chatgpt'],
+    },
+  },
+  {
+    canonical: 'news',
+    category: 'bookmark',
+    description: 'News outlets, journalism, and tech media',
+    aliases: {
+      id: ['news', 'berita', 'kabar'],
+      en: ['news', 'journalism'],
+    },
+  },
+  {
+    canonical: 'fintech',
+    category: 'bookmark',
+    description: 'Financial technology, payment gateways, and billing services',
+    aliases: {
+      id: ['fintech', 'pembayaran', 'payment', 'transfer'],
+      en: ['fintech', 'payment'],
+    },
+  },
+  {
+    canonical: 'entertainment',
+    category: 'bookmark',
+    description: 'Entertainment media, movies, anime, and video streaming',
+    aliases: {
+      id: ['hiburan', 'entertainment', 'anime', 'tontonan', 'streaming'],
+      en: ['entertainment', 'streaming', 'anime'],
+    },
+  },
 ];

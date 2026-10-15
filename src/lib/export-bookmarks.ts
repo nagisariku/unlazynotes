@@ -18,17 +18,23 @@ function escapeHtml(str: string): string {
 /**
  * Generates standard Netscape Bookmark HTML file content,
  * ready to be directly imported into Google Chrome, Firefox, Safari, Edge, etc.
+ * Supports multiple links inside a single note by creating an export entry per link.
  */
 export function generateNetscapeBookmarksHtml(bookmarks: BookmarkNote[]): string {
-  const urlRegex = /(https?:\/\/[^\s]+)/i;
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
 
   const items = bookmarks
-    .map((b) => {
-      const urlMatch = b.content.match(urlRegex);
-      const url = urlMatch ? urlMatch[0] : b.content.startsWith('http') ? b.content : null;
-      if (!url) return null;
+    .flatMap((b) => {
+      const urls = Array.from(b.content.matchAll(urlRegex), (m) => m[0]);
+      if (urls.length === 0) {
+        if (b.content.startsWith('http')) {
+          urls.push(b.content.trim());
+        } else {
+          return [];
+        }
+      }
 
-      const title = b.content.replace(url, '').trim() || url;
+      const textWithoutUrls = b.content.replace(urlRegex, '').trim();
       const addDate = Math.floor(new Date(b.createdAt).getTime() / 1000);
 
       const tagsList = [...(b.specificTags || [])];
@@ -37,11 +43,18 @@ export function generateNetscapeBookmarksHtml(bookmarks: BookmarkNote[]): string
       }
       const tagsStr = tagsList.join(',');
 
-      return `    <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${addDate}" TAGS="${escapeHtml(
-        tagsStr
-      )}">${escapeHtml(title)}</A>`;
+      return urls.map((url, idx) => {
+        let title = textWithoutUrls;
+        if (!title) {
+          title = url;
+        } else if (urls.length > 1) {
+          title = `${textWithoutUrls} (${idx + 1})`;
+        }
+        return `    <DT><A HREF="${escapeHtml(url)}" ADD_DATE="${addDate}" TAGS="${escapeHtml(
+          tagsStr
+        )}">${escapeHtml(title)}</A>`;
+      });
     })
-    .filter(Boolean)
     .join('\n');
 
   return `<!DOCTYPE NETSCAPE-Bookmark-file-1>

@@ -180,6 +180,29 @@ const TEST_CASES = [
     expectedCat: 'credential',
     expectedTags: ['wifi'],
   },
+
+  // --- MULTI-LINK BOOKMARK CASES ---
+  {
+    input: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ https://youtu.be/abc12345678',
+    description: '[MULTI] 2 YouTube links (Same platform: source youtube, tag youtube)',
+    expectedCat: 'bookmark',
+    expectedTags: ['youtube'],
+    expectedSource: 'youtube',
+  },
+  {
+    input: 'https://github.com/astral-sh/uv\nhttps://www.netflix.com/title/12345\nhttps://www.instagram.com/p/67890',
+    description: '[MULTI] GitHub + Netflix + IG (Mixed platforms: source null, NO multi tag)',
+    expectedCat: 'bookmark',
+    expectedTags: ['github', 'netflix', 'instagram'],
+    expectedSource: null,
+  },
+  {
+    input: 'koleksi materi belajar dan tutorial koding:\nhttps://github.com/torvalds/linux\nhttps://www.youtube.com/watch?v=123',
+    description: '[MULTI] Multi-link with contextual caption (Tags study, dev, github, youtube)',
+    expectedCat: 'bookmark',
+    expectedTags: ['github', 'youtube', 'study', 'dev'],
+    expectedSource: null,
+  },
 ];
 
 async function runTests() {
@@ -192,9 +215,10 @@ async function runTests() {
     const res = await generateNoteTags(tc.input);
     const catMatch = tc.expectedNotCat ? res.category !== tc.expectedNotCat : res.category === tc.expectedCat;
     const tagsMatch = tc.expectedTags.length === 0 || tc.expectedTags.every(t => res.specific_tags.includes(t));
-    const singleWordPass = res.specific_tags.every(t => !t.includes('-') && !/\d/.test(t));
+    const singleWordPass = res.specific_tags.every(t => !t.includes('-') && !/\d/.test(t) && t !== 'multi');
+    const sourceMatch = tc.expectedSource !== undefined ? res.source === tc.expectedSource : true;
 
-    const status = catMatch && tagsMatch && singleWordPass ? '✅ PASS' : '❌ FAIL';
+    const status = catMatch && tagsMatch && singleWordPass && sourceMatch ? '✅ PASS' : '❌ FAIL';
     if (status === '✅ PASS') passed++;
 
     console.log(`${status} | "${tc.input}"`);

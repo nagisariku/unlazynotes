@@ -26,6 +26,7 @@ export const BANNED_TAGS = new Set([
   'item',
   'data',
   'tag',
+  'multi',
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -46,7 +47,7 @@ export function normalizeTag(tag: string): string {
  * 4. Extracts single strongest token if compound word remains.
  * 5. Limits output to max 2 unique single-word tags.
  */
-export function sanitizeTags(tags: string[], category: string, noteContent?: string): string[] {
+export function sanitizeTags(tags: string[], category: string, noteContent?: string, maxTags: number = 2): string[] {
   let result: string[] = [];
   const catNormalized = category.toLowerCase().trim() as Category;
 
@@ -94,7 +95,7 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     if (BANNED_TAGS.has(t)) continue;
     if (result.includes(t)) continue;
     result.push(t);
-    if (result.length >= 2) break;
+    if (result.length >= maxTags) break;
   }
 
   // Finance Category Guarantee
@@ -109,23 +110,23 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
 
     if (isIncome) {
       const otherTags = result.filter(t => t !== 'income' && t !== 'expenses' && t !== 'bill');
-      result = ['income', ...otherTags].slice(0, 2);
+      result = ['income', ...otherTags].slice(0, maxTags);
     } else {
       const mainTag = isBill ? 'bill' : 'expenses';
 
       // Auto-cluster recognizable bilingual taxonomy items if room permits
-      if (result.length < 2 && noteContent) {
-        const autoTags = extractTagsFromContent(noteContent, 'finance', 2);
+      if (result.length < maxTags && noteContent) {
+        const autoTags = extractTagsFromContent(noteContent, 'finance', maxTags);
         for (const at of autoTags) {
           if (at !== 'expenses' && at !== 'income' && at !== 'bill' && !result.includes(at)) {
             result.push(at);
-            if (result.length >= 2) break;
+            if (result.length >= maxTags) break;
           }
         }
       }
 
       const otherTags = result.filter(t => t !== 'expenses' && t !== 'bill' && t !== 'income');
-      result = [mainTag, ...otherTags].slice(0, 2);
+      result = [mainTag, ...otherTags].slice(0, maxTags);
     }
   }
 
@@ -137,5 +138,5 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     }
   }
 
-  return result.slice(0, 2);
+  return result.slice(0, maxTags);
 }

@@ -62,9 +62,9 @@ export default function NoteCard({ note, onDelete, onCopySuccess }: NoteCardProp
     }
   };
 
-  // Detect URL inside content
-  const urlMatch = note.content.match(/(https?:\/\/[^\s]+)/i);
-  const detectedUrl = urlMatch ? urlMatch[0] : null;
+  // Detect URLs inside content
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
+  const detectedUrls = Array.from(note.content.matchAll(urlRegex), (m) => m[0]);
 
   return (
     <div className="p-4 sm:p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between group">
@@ -104,18 +104,21 @@ export default function NoteCard({ note, onDelete, onCopySuccess }: NoteCardProp
           )}
         </div>
 
-        {/* Open Direct Link if URL detected */}
-        {detectedUrl && (
-          <div className="mb-4">
-            <a
-              href={detectedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 text-xs font-medium hover:bg-cyan-500/20 transition-colors"
-            >
-              <ExternalLink className="w-3 h-3" />
-              <span className="truncate max-w-xs">{detectedUrl}</span>
-            </a>
+        {/* Open Direct Links if URL detected */}
+        {detectedUrls.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-2">
+            {detectedUrls.map((url, i) => (
+              <a
+                key={i}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 text-xs font-medium hover:bg-cyan-500/20 transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span className="truncate max-w-xs">{url}</span>
+              </a>
+            ))}
           </div>
         )}
       </div>

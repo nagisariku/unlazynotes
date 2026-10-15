@@ -71,9 +71,10 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
       {bookmarks.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {bookmarks.map((b) => {
-            const urlMatch = b.content.match(/(https?:\/\/[^\s]+)/i);
-            const url = urlMatch ? urlMatch[0] : b.content;
-            const title = b.content.replace(url, '').trim() || url;
+            const urlRegex = /(https?:\/\/[^\s]+)/gi;
+            const urls = Array.from(b.content.matchAll(urlRegex), (m) => m[0]);
+            const primaryUrl = urls[0] || b.content;
+            const title = b.content.replace(urlRegex, '').trim() || primaryUrl;
 
             return (
               <div
@@ -97,15 +98,32 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
                     {title}
                   </h3>
 
-                  <a
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium break-all max-w-full truncate mb-4"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{url}</span>
-                  </a>
+                  {urls.length <= 1 ? (
+                    <a
+                      href={primaryUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium break-all max-w-full truncate mb-4"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{primaryUrl}</span>
+                    </a>
+                  ) : (
+                    <div className="space-y-1.5 mb-4 max-h-32 overflow-y-auto">
+                      {urls.map((u, i) => (
+                        <a
+                          key={i}
+                          href={u}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium break-all max-w-full truncate block"
+                        >
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                          <span className="truncate">{u}</span>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-3 border-t border-zinc-800/60 flex items-center justify-between gap-2 text-xs">
@@ -122,7 +140,7 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
 
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => handleCopy(b.id, url)}
+                      onClick={() => handleCopy(b.id, primaryUrl)}
                       className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
                       title="Copy URL"
                     >
