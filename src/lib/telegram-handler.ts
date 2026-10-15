@@ -12,7 +12,6 @@ import {
 import {
   hashApiKey,
   sendTelegramMessage,
-  formatSavedMessage,
 } from '@/lib/telegram';
 import { generateNoteTags, normalizeTag } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
@@ -37,6 +36,27 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   }
 
   const chatId = String(message.chat.id);
+
+  // 1. Deteksi file / media (foto, dokumen, video, audio, voice, sticker, dsb.)
+  const isMedia = Boolean(
+    (message.photo && message.photo.length > 0) ||
+    message.document ||
+    message.video ||
+    message.voice ||
+    message.audio ||
+    message.video_note ||
+    message.sticker ||
+    message.animation
+  );
+
+  if (isMedia) {
+    await sendTelegramMessage(
+      chatId,
+      'UnlazyNotes belum mendukung format catatan ini, file/gambar anda tetap tersimpan aman disini.'
+    );
+    return { ok: true, action: 'unsupported_media' };
+  }
+
   const rawText: string | undefined = message.text || message.caption;
 
   if (!rawText || !rawText.trim()) {
@@ -386,14 +406,13 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         })
         .where(eq(notes.id, noteId));
 
-      const confirmationText = formatSavedMessage(
-        validCategory,
-        tagResult.specific_tags,
-        text
-      );
-      await sendTelegramMessage(chatId, confirmationText);
+      // Note captured & tagged silently without spamming chat with 'Saved...' confirmations
     } catch (bgError) {
       console.error(`[Background AI Worker] Error processing note ${noteId}:`, bgError);
+      await sendTelegramMessage(
+        chatId,
+        '⚠️ Terjadi kendala teknis saat memproses catatan Anda. Silakan coba kirim kembali.'
+      );
     }
   })();
 
