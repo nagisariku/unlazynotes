@@ -233,7 +233,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .where(
         and(
           eq(notes.userId, activeKey.userId),
-          sql`(${notes.category} = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
+          sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
         )
       )
       .orderBy(desc(notes.createdAt))

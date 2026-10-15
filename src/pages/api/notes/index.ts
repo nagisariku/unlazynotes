@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { notes, type NoteCategory } from '@/db/schema';
+import { notes } from '@/db/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
@@ -32,7 +32,7 @@ export const GET: APIRoute = async ({ request }) => {
   }
 
   if (category) {
-    conditions.push(eq(notes.category, category as NoteCategory));
+    conditions.push(sql`${notes.category}::text = ${category}`);
   }
 
   if (tag) {
