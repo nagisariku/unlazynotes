@@ -7,47 +7,90 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch**: `main` (Bersih, sinkron dengan `origin/main` commit `d3f136b`)
+- **Branch**: `main` (Bersih di commit lokal `78b982a`)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
+  - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
+  - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
 - **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
+- **Validasi Test Suite**:
+  - `npm run test:tagging`: 31/31 unit test lolos (100% PASS)
+  - `npm run test:webhook`: 10/10 integrasi end-to-end lolos (100% PASS)
+  - `npm run typecheck`: 0 TypeScript error
 
 ---
 
-## 2. Arsitektur AI & Tagging Engine yang Telah Selesai
+## 2. Fitur & Arsitektur yang Telah Selesai Diimplementasikan
 
-Sistem telah dirombak dari classifier monolitik menjadi **4-Layer Modular Architecture**:
-
+### A. 4-Layer Modular Tagging Engine & Bilingual Taxonomy
 1. **Deterministic Intent Router (`src/lib/ai/router.ts`)**:
    - Memotong latensi & biaya token dengan mengklasifikasikan catatan tanpa memanggil LLM jika pola sudah jelas.
    - Prioritas *Action Intent* (todo/study) sebelum URL.
    - Penjagaan *False-Positive* nominal angka (kodepos/tahun/nomor HP tidak salah masuk ke finance).
 2. **Specialized Domain Modules (`src/lib/ai/modules/`)**:
-   - `finance.ts`: Pengeluaran/pemasukan dengan tag kanonikal (`expenses`, `income`, `bill`, `food`, `transport`, `laundry`, `hangout`). Anti-guessing: jika konteks tidak spesifik, fallback aman ke `['expenses']`.
-   - `bookmark.ts`: Platform tags (`github`, `youtube`, `twitter`, `instagram`, `tiktok`) dan *Domain-Aware Recognition* (`dev` untuk dev.to/gitlab, `design` untuk figma/dribbble, `fintech` untuk payermax/stripe, `news`, `ai`, `career`).
+   - `finance.ts`: Pengeluaran/pemasukan dengan tag kanonikal (`expenses`, `income`, `bill`, `food`, `transport`, `laundry`, `hangout`).
+   - `bookmark.ts`: Dukungan multi-link tanpa pemecahan (*no splitting*). Ekstraksi platform (`github`, `youtube`, `twitter`, `instagram`, `tiktok`, `netflix`, `facebook`, `spotify`, `linkedin`, `reddit`) dan pembacaan teks caption pendamping secara kontekstual.
    - `todo.ts`: Kluster aksi (`study`, `exam`, `work`, `dev`, `health`).
    - `credential.ts`: Kluster keamanan (`wifi`, `server`, `account`, `database`, `api`, `bank`).
    - `general.ts`: LLM fallback untuk catatan unrouted (`schedule`, `draft`, `reference`, `random-yap`) dengan *Strict Single-Word Prompt*.
 3. **Bilingual Canonical Taxonomy (`src/lib/ai/taxonomy/`)**:
    - Kamus terstandarisasi dwibahasa (ID & EN) dengan indeks in-memory $O(1)$ alias mapping (misal: `seblak`, `ciken`, `lunch` $\rightarrow$ `food`).
 4. **Strict Single-Word Sanitizer (`src/lib/ai/sanitizer.ts`)**:
-   - Pemecah CamelCase (`foodExpense` $\rightarrow$ `food`).
-   - Pemangkas kata majemuk & suffix (`-price`, `-spending`).
-   - Pemblokiran angka nominal (`15k`, `60k`, `100k`, `$25`).
-   - Pemblokiran tag sampah (`read-later`, `money`, `task`).
-5. **Bot Feedback UX (`src/lib/telegram.ts`)**:
-   - Konfirmasi bot kini menyertakan cuplikan teks catatan: `Saved "<snippet>" • tags: ...`.
-6. **Validasi Test Suite**:
-   - `npm run test:tagging`: 28 skenario pengujian komprehensif (100% PASS).
+   - Pemecah CamelCase, pemangkas kata majemuk & suffix (`-price`, `-spending`), pemblokiran angka nominal (`15k`, `$25`), serta pemblokiran kata non-semantik (`read-later`, `multi`, `money`, `task`).
+
+### B. Telegram Bot UX & Interaksi Bersih (*Zero Friction*)
+1. **Silent Note Capture ([`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts))**:
+   - Balasan konfirmasi `Saved "..." • tags: ...` telah dinonaktifkan agar chat history Telegram user tetap rapi tanpa spam.
+   - Catatan langsung tersimpan di latar belakang. Respons teks hanya dikirim jika ada *error*, peringatan kuota harian, status langganan kedaluwarsa, atau perintah eksplisit (`/tags`, `/search`, `/ask`).
+2. **Unsupported Media Guard**:
+   - Jika user mengirim foto, gambar, dokumen/file, video, pesan suara (*voice note*), audio, stiker, atau animasi, bot merespons otomatis:
+     > `UnlazyNotes belum mendukung format catatan ini, file/gambar anda tetap tersimpan aman disini.`
+
+### C. Flexible & Fuzzy Search Engine ([`src/lib/search.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/search.ts))
+Mengatasi kekakuan `ILIKE` eksak biasa melalui **3-Tier Matching**:
+1. **Punctuation & Delimiter Stripping (`regexp_replace`)**: Menghilangkan tanda baca/spasi sehingga pencarian `almuhajirin` otomatis cocok dengan teks `Al-Muhajirin`.
+2. **PostgreSQL Trigram Similarity (`pg_trgm`)**: Menggunakan `word_similarity(query, notes.content) >= 0.35` untuk mentoleransi saltik (*typo*), misal `almuhajrin` atau `rekrusif`.
+3. **Smart Relevance Ordering**: Hasil pencarian diurutkan dari kecocokan eksak $\rightarrow$ kecocokan bersih tanpa delimiter $\rightarrow$ skor similarity trigram $\rightarrow$ tanggal terbaru.
 
 ---
 
-## 3. Roadmap Fitur Berikutnya (The 5 Pillars Blueprint)
+## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
 
-Rencana pengembangan lanjutan yang telah disepakati:
+Evaluasi teknis arsitektur saat menangani beban 1.000 hingga 10.000 pengguna:
+
+### A. Pemodelan Beban (Traffic Modeling)
+- **10.000 Registered Users** $\approx$ 10%–20% DAU = **1.000 – 2.000 user aktif harian**.
+- Rata-rata 10–15 catatan/user/hari = **15.000 – 30.000 catatan baru/hari**.
+- Rata-rata write request: **~0.35 write/detik**.
+- Jam sibuk (*peak traffic*): **~3 – 8 write/detik (QPS)**. Beban ini berada jauh di bawah kapasitas PostgreSQL & Node.js (yang sanggup melayani >500 QPS pada server standar).
+
+### B. Efisiensi Komponen
+1. **Ingestion Layer Non-Blocking (<25 ms)**:
+   - Request HTTP dari Telegram langsung merespons 200 OK setelah `INSERT` dasar selesai (<25ms).
+   - Tagging AI dieksekusi di *background worker*, koneksi database tidak tertahan (*no connection holding*).
+2. **Deterministic Router Menghemat 70–80% Biaya & Latensi LLM**:
+   - Mayoritas catatan (URL, belanja/makanan, password wifi, todo) diproses lokal dalam memori (<0.5ms CPU).
+   - Hanya ~20% catatan yang memanggil LLM Cosmoshub (~1 panggilan LLM/detik di jam sibuk).
+3. **Pencarian Terindeks GIN Trigram**:
+   - Pencarian tidak melakukan *full table scan*, melainkan memakai *inverted index* `GIN` yang difilter per `user_id`. Query selesai dalam <10ms.
+4. **Footprint Resource**:
+   - RAM Node.js: ~150 – 350 MB.
+   - RAM PostgreSQL: ~200 – 500 MB (seluruh index termuat di RAM).
+   - Disk Database: ~1 – 2 GB untuk 1 juta baris catatan.
+
+### C. Checklist Optimasi Menuju Produksi Singapore (>10.000 Users)
+1. **Composite Index Multi-Tenant**: Pasang index `CREATE INDEX idx_notes_user_created ON notes(user_id, created_at DESC);` untuk menjamin timeline tetap instan di jutaan baris.
+2. **Connection Pool Tuning**: Naikkan `max: 10` menjadi `max: 20-30` pada `src/db/index.ts` (atau pasang PgBouncer jika multi-instance).
+3. **Queue Worker Eksternal (>50.000 Users)**: Isolasi *background worker* dengan Redis BullMQ jika lonjakan pesan serentak sangat tinggi.
+
+---
+
+## 4. Roadmap Fitur Berikutnya (The 5 Pillars Blueprint)
+
+Rencana pengembangan lanjutan yang tersimpan di backlog:
 
 ### Fase 1: Core AI & Entity Extraction
 - **Pilar 1 (URL OpenGraph / Metadata Scraper)**:
@@ -58,8 +101,6 @@ Rencana pengembangan lanjutan yang telah disepakati:
   - Ekstraksi waktu jadwal (`besok jam 14.00` $\rightarrow$ ISO 8601 UTC timestamp).
 
 ### Fase 2: Telegram UX & Personalisasi
-- **Pilar 3 (Interactive Telegram Feedback Loop)**:
-  - Inline keyboard buttons pada notifikasi simpan: `[ ➕ Tambah Tag ]`, `[ ✏️ Ubah Kategori ]`, `[ ❌ Hapus Tag ]`.
 - **Pilar 2 (User Tag Memory)**:
   - Mengingat frekuensi tag yang sering dipakai user dari database dan memprioritaskannya dibanding sinonim baru.
 
@@ -71,7 +112,7 @@ Rencana pengembangan lanjutan yang telah disepakati:
 
 ---
 
-## 4. Konteks Migrasi ke VPS Production (Singapore)
+## 5. Konteks Migrasi ke VPS Production (Singapore)
 
 - Server Tencent saat ini adalah **Sandbox / Dev VPS**.
 - Semua credential real (Google OAuth Production & Akun DOKU Merchant Production) akan diintegrasikan saat persiapan pindah ke VPS Singapore.
