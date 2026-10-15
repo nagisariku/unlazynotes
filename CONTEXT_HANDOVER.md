@@ -55,6 +55,16 @@ Mengatasi kekakuan `ILIKE` eksak biasa melalui **3-Tier Matching**:
 2. **PostgreSQL Trigram Similarity (`pg_trgm`)**: Menggunakan `word_similarity(query, notes.content) >= 0.35` untuk mentoleransi saltik (*typo*), misal `almuhajrin` atau `rekrusif`.
 3. **Smart Relevance Ordering**: Hasil pencarian diurutkan dari kecocokan eksak $\rightarrow$ kecocokan bersih tanpa delimiter $\rightarrow$ skor similarity trigram $\rightarrow$ tanggal terbaru.
 
+### D. Mobile Responsive UI Overhaul
+Memastikan navigasi dan pembacaan catatan di layar ponsel berjalan mulus:
+1. **Adaptive Top Bar & Slide-over Drawer ([`Sidebar.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/Sidebar.tsx))**: Header khusus mobile dengan tombol hamburger drawer dan backdrop blur.
+2. **Thumb-Friendly Bottom Navigation**: Menu aksi cepat (Notes, Bookmarks, Settings) di bagian bawah layar ponsel dengan padding safe-area iOS (`.safe-area-bottom`).
+3. **Responsive Grid & Viewports**: Layout flex responsif (`flex-col md:flex-row`), pencegahan clipping pada API key box, serta scrolling terisolasi pada dialog modal.
+
+### E. Database Enum Casting Resilience
+Menghindari error PostgreSQL `22P02 (invalid input value for enum note_category)` saat pengguna memfilter tag kustom yang bukan 9 kategori utama (misal `/tags expenses` atau `/tags twitter`):
+- Seluruh perbandingan dinamis di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts) dan [`src/pages/api/notes/index.ts`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/index.ts) menggunakan `notes.category::text = ${targetTag}` sehingga PostgreSQL memperlakukan parameter sebagai string aman.
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
