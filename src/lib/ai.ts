@@ -117,24 +117,31 @@ export function heuristicTagNote(content: string): NoteTagResult {
 }
 
 /**
- * Generate structured note tags using Modular Routing Architecture.
- * Fast deterministic router intercepts high-confidence modules (bookmark, finance, credential, todo)
- * while delegating unrouted notes to the specialized general LLM classifier.
+ * Generate structured note tags using AI.
+ * Pure URLs are fast-tracked through the bookmark module, while all text-bearing notes
+ * are analyzed by the LLM for deep contextual intelligence, Indonesian slang understanding,
+ * and entity extraction.
  */
 export async function generateNoteTags(content: string): Promise<NoteTagResult> {
-  const detected = routeNoteIntent(content);
+  const text = content.trim();
+  const urlRegex = /(https?:\/\/[^\s]+)/i;
+  const isPureUrl = urlRegex.test(text) && text.replace(/(https?:\/\/[^\s]+)/gi, '').trim().length === 0;
 
-  switch (detected) {
-    case 'bookmark':
-      return processBookmarkNote(content);
-    case 'finance':
-      return processFinanceNote(content);
-    case 'credential':
-      return processCredentialNote(content);
-    case 'todo':
-      return processTodoNote(content);
-    case 'general':
-    default:
-      return await processGeneralNote(content, heuristicTagNote);
+  if (isPureUrl) {
+    return processBookmarkNote(content);
   }
+
+  const result = await processGeneralNote(content, heuristicTagNote);
+
+  // If the note was classified as bookmark and contains URLs, merge with bookmark module for rich platform & URL tags
+  if (result.category === 'bookmark' && urlRegex.test(text)) {
+    const bm = processBookmarkNote(content);
+    return {
+      category: 'bookmark',
+      source: bm.source,
+      specific_tags: sanitizeTags([...bm.specific_tags, ...result.specific_tags], 'bookmark', content, 5),
+    };
+  }
+
+  return result;
 }

@@ -56,8 +56,7 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     if (!t) continue;
 
     // 1. Strip -price, -cost, -fee, -amount, -nominal, -spending, -expense suffixes
-    t = t.replace(/(?<=[a-z]{3})-(price|cost|fee|nominal|amount|spending|expense|expenses)$/, '');
-    t = t.replace(/(?<=[a-z]{3})(price|cost|fee|nominal|amount|spending|expense|expenses)$/, '');
+    t = t.replace(/-(price|cost|fee|nominal|amount|spending|expense|expenses)$/, '');
 
     // 2. Reject pure numbers, prices, or currency (e.g. 15k, 60k, 100k, 50rb, $10, rp15k)
     if (
@@ -86,6 +85,10 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
         continue;
       }
     }
+
+    // Strip trailing digits (e.g. chapter4 -> chapter)
+    t = t.replace(/\d+$/, '');
+    if (/\d/.test(t)) continue;
 
     // Final clean alphanumeric check
     t = t.replace(/[^a-z0-9]/g, '');
@@ -131,10 +134,13 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
   }
 
   // Study/Exam Category Guarantee
-  if (result.includes('study') && noteContent) {
+  if (noteContent && (category === 'todo' || result.includes('study') || result.includes('exam'))) {
     const lower = noteContent.toLowerCase();
-    if (/ujian|exam|uts|uas|quiz|kuis|finals|midterm/i.test(lower)) {
-      result = ['study', 'exam'];
+    const hasStudy = /belajar|study|kuliah|pelajari|materi/i.test(lower);
+    const hasExam = /ujian|exam|uts|uas|quiz|kuis|finals|midterm/i.test(lower);
+    if (hasStudy && hasExam) {
+      const rest = result.filter(t => t !== 'study' && t !== 'exam');
+      result = ['study', 'exam', ...rest].slice(0, maxTags);
     }
   }
 
