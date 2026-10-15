@@ -67,23 +67,23 @@ export default function NoteCard({ note, onDelete, onCopySuccess }: NoteCardProp
   const detectedUrls = Array.from(note.content.matchAll(urlRegex), (m) => m[0]);
 
   return (
-    <div className="p-4 sm:p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between group">
+    <div className="p-3.5 sm:p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between group">
       <div>
         {/* Header: Date & Category Chip */}
-        <div className="flex items-center justify-between gap-2 mb-3">
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5">
+          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-zinc-500">
             <Calendar className="w-3.5 h-3.5" />
             <span>{format(new Date(note.createdAt), 'dd MMM yyyy, HH:mm')}</span>
           </div>
 
           <div className="flex items-center gap-1.5">
             {note.source && (
-              <span className="px-2 py-0.5 rounded-full border border-zinc-700 bg-zinc-800 text-zinc-300 text-[11px] font-medium uppercase tracking-wider">
+              <span className="px-2 py-0.5 rounded-full border border-zinc-700 bg-zinc-800 text-zinc-300 text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">
                 {note.source}
               </span>
             )}
             <span
-              className={`px-2.5 py-0.5 rounded-full border text-xs font-semibold uppercase tracking-wider ${colors.bg} ${colors.text} ${colors.border}`}
+              className={`px-2.5 py-0.5 rounded-full border text-[10px] sm:text-xs font-semibold uppercase tracking-wider ${colors.bg} ${colors.text} ${colors.border}`}
             >
               {note.category}
             </span>
@@ -113,10 +113,10 @@ export default function NoteCard({ note, onDelete, onCopySuccess }: NoteCardProp
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 text-xs font-medium hover:bg-cyan-500/20 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-cyan-500/20 bg-cyan-500/10 text-cyan-300 text-xs font-medium hover:bg-cyan-500/20 transition-colors max-w-full"
               >
-                <ExternalLink className="w-3 h-3" />
-                <span className="truncate max-w-xs">{url}</span>
+                <ExternalLink className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[190px] sm:max-w-xs">{url}</span>
               </a>
             ))}
           </div>

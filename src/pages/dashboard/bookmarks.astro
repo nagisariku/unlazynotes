@@ -36,9 +36,9 @@ const serializedBookmarks = bookmarkNotes.map((b) => ({
 ---
 
 <Layout title="Bookmarks – UnlazyNotes">
-  <div class="flex min-h-screen bg-zinc-950">
+  <div class="flex flex-col md:flex-row min-h-screen bg-zinc-950">
     <Sidebar client:load currentPath="/dashboard/bookmarks" user={user} subscriptionPlan={sub?.plan || 'standard'} />
-    <main class="flex-1 min-w-0 overflow-y-auto">
+    <main class="flex-1 min-w-0 pb-24 md:pb-8 overflow-y-auto">
       <BookmarksView client:load initialBookmarks={serializedBookmarks} />
     </main>
   </div>

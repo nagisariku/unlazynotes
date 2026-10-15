@@ -37,13 +37,13 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-8">
+    <div className="max-w-5xl mx-auto p-3.5 sm:p-8">
       <Toaster position="bottom-right" theme="dark" />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
             <span>Bookmarks</span>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
               {bookmarks.length}
@@ -59,7 +59,7 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
           <a
             href="/api/bookmarks/export"
             download="unlazynotes-bookmarks.html"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition-all shadow-lg shadow-cyan-600/20"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs transition-all shadow-lg shadow-cyan-600/20 w-full sm:w-auto"
           >
             <Download className="w-4 h-4" />
             <span>Export to Browser (HTML)</span>
@@ -69,7 +69,7 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
 
       {/* Bookmarks Grid */}
       {bookmarks.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
           {bookmarks.map((b) => {
             const urlRegex = /(https?:\/\/[^\s]+)/gi;
             const urls = Array.from(b.content.matchAll(urlRegex), (m) => m[0]);
@@ -79,7 +79,7 @@ export default function BookmarksView({ initialBookmarks }: BookmarksViewProps) 
             return (
               <div
                 key={b.id}
-                className="p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between"
+                className="p-4 sm:p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-3 text-xs">

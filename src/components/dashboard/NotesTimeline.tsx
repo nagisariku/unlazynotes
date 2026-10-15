@@ -110,27 +110,45 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-4 sm:p-8">
+    <div className="max-w-5xl mx-auto p-3.5 sm:p-8">
       <Toaster position="bottom-right" theme="dark" />
 
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
-            <span>Notes Timeline</span>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
-              {filteredNotes.length}
-            </span>
-          </h1>
-          <p className="text-zinc-400 text-xs mt-1">
-            Seluruh catatan yang ditangkap otomatis melalui Telegram Bot.
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100 flex items-center gap-2">
+              <span>Notes Timeline</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400">
+                {filteredNotes.length}
+              </span>
+            </h1>
+            <p className="text-zinc-400 text-xs mt-0.5">
+              Catatan yang ditangkap otomatis via bot Telegram.
+            </p>
+          </div>
+
+          {/* Mobile Filter Button */}
+          <button
+            onClick={() => setShowFilterPanel(!showFilterPanel)}
+            className={`sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+              showFilterPanel || selectedCategory || dateRange !== 'all'
+                ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
+                : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <Filter className="w-3.5 h-3.5" />
+            <span>Filter</span>
+            {(selectedCategory || dateRange !== 'all') && (
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+            )}
+          </button>
         </div>
 
-        {/* Filter Trigger */}
+        {/* Desktop Filter Trigger */}
         <button
           onClick={() => setShowFilterPanel(!showFilterPanel)}
-          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-all ${
+          className={`hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-all ${
             showFilterPanel || selectedCategory || dateRange !== 'all'
               ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
               : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -145,14 +163,14 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
       </div>
 
       {/* Search Input */}
-      <div className="relative mb-5">
+      <div className="relative mb-4">
         <Search className="w-4 h-4 text-zinc-500 absolute left-3.5 top-3.5" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Cari kata kunci dalam catatan (misal: 'meeting', 'wifi', 'invoice')..."
-          className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-200 placeholder-zinc-500 text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 transition-all"
+          placeholder="Cari kata kunci, tag, atau kategori catatan..."
+          className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-zinc-800 bg-zinc-900/60 text-zinc-200 placeholder-zinc-500 text-xs sm:text-sm focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/50 transition-all"
         />
         {searchQuery && (
           <button
@@ -166,7 +184,7 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
 
       {/* Collapsible Filter Panel */}
       {showFilterPanel && (
-        <div className="mb-8 p-5 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-4">
+        <div className="mb-6 p-3.5 sm:p-5 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-3.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-zinc-300 tracking-wide uppercase">
               Filter Parameters

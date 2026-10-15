@@ -92,25 +92,25 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
   const notesCount = subscription?.notesTodayCount || 0;
 
   return (
-    <div className="max-w-4xl mx-auto p-4 sm:p-8 space-y-8">
+    <div className="max-w-4xl mx-auto p-3.5 sm:p-8 space-y-6 sm:space-y-8">
       <Toaster position="bottom-right" theme="dark" />
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Account &amp; Integrations</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100">Account &amp; Integrations</h1>
         <p className="text-zinc-400 text-xs mt-1">
           Kelola profil, kunci integrasi Telegram Bot, dan status paket langganan Anda.
         </p>
       </div>
 
       {/* Section 1: Telegram Integration & API Key */}
-      <div className="p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-5">
-        <div className="flex items-center justify-between">
+      <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
               <Bot className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-base font-semibold text-zinc-100">Telegram Bot Integration</h2>
               <p className="text-xs text-zinc-400">
                 Hubungkan bot <span className="font-semibold text-zinc-300">@unlazynotes_bot</span> dengan akun Anda
@@ -120,7 +120,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
           {/* Connection Status Badge */}
           <div
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold self-start sm:self-auto ${
               isConnected
                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                 : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
@@ -128,12 +128,12 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
           >
             {isConnected ? (
               <>
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Terhubung (Chat ID: {telegramChatId})</span>
+                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate max-w-[200px] sm:max-w-none">Terhubung ({telegramChatId})</span>
               </>
             ) : (
               <>
-                <AlertCircle className="w-3.5 h-3.5" />
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                 <span>Belum Terhubung</span>
               </>
             )}
@@ -143,35 +143,37 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
         {/* API Key Box */}
         <div>
           <label className="text-xs font-medium text-zinc-400 block mb-2">Telegram API Key Anda:</label>
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 font-mono text-xs text-zinc-300 select-all">
-              <span>{showKey ? currentKey : '••••••••••••••••••••••••••••••••••••••••••••'}</span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="flex-1 min-w-0 flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 font-mono text-xs text-zinc-300 select-all overflow-hidden">
+              <span className="truncate mr-2">{showKey ? currentKey : '••••••••••••••••••••••••••••••••••••••••••••'}</span>
               <button
                 onClick={() => setShowKey(!showKey)}
-                className="text-zinc-500 hover:text-zinc-300 ml-2"
+                className="text-zinc-500 hover:text-zinc-300 shrink-0 p-1"
                 title={showKey ? 'Sembunyikan' : 'Tampilkan'}
               >
                 {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
 
-            <button
-              onClick={handleCopy}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors shrink-0"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? 'Tersalin' : 'Salin Key'}</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleCopy}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors"
+              >
+                {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                <span>{copied ? 'Tersalin' : 'Salin Key'}</span>
+              </button>
 
-            <button
-              onClick={handleRegenerate}
-              disabled={isRegenerating}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors shrink-0"
-              title="Buat ulang kunci API baru"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
-              <span>Regenerate Key</span>
-            </button>
+              <button
+                onClick={handleRegenerate}
+                disabled={isRegenerating}
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors"
+                title="Buat ulang kunci API baru"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
+                <span>Regenerate Key</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -221,10 +223,10 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
       )}
 
       {/* Section 2: Subscription Status */}
-      <div id="upgrade" className="p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-6">
-        <div className="flex items-center justify-between">
+      <div id="upgrade" className="p-4 sm:p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
               <Shield className="w-5 h-5" />
             </div>
             <div>
@@ -234,14 +236,14 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
           </div>
 
           {plan === 'pro' ? (
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 self-start sm:self-auto">
               <Sparkles className="w-3.5 h-3.5" />
               <span>Pro Member</span>
             </div>
           ) : (
             <button
               onClick={() => setIsUpgradeModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 transition-all self-start sm:self-auto"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Upgrade ke Pro</span>
@@ -249,7 +251,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950">
             <span className="text-[11px] text-zinc-500 block uppercase font-medium">Paket Aktif</span>
             <span className="text-lg font-bold text-zinc-100 capitalize">{plan} Plan</span>
@@ -278,7 +280,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
         {/* Upgrade Callout Card for Standard Plan */}
         {plan !== 'pro' && (
-          <div className="p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-zinc-950 to-zinc-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="p-4 sm:p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-zinc-950 to-zinc-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-indigo-400" />
@@ -290,7 +292,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
             </div>
             <button
               onClick={() => setIsUpgradeModalOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shrink-0 shadow-lg shadow-indigo-600/25"
+              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shrink-0 shadow-lg shadow-indigo-600/25 text-center"
             >
               Mulai Rp 49.000 / bln
             </button>
@@ -299,14 +301,14 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
         {/* Extend Subscription for Pro Plan */}
         {plan === 'pro' && (
-          <div className="flex items-center justify-between p-4 rounded-xl border border-zinc-800 bg-zinc-950 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-4 rounded-xl border border-zinc-800 bg-zinc-950 text-xs">
             <div className="flex items-center gap-2 text-zinc-400">
-              <Zap className="w-4 h-4 text-indigo-400" />
+              <Zap className="w-4 h-4 text-indigo-400 shrink-0" />
               <span>Ingin memperpanjang atau beralih ke paket tahunan?</span>
             </div>
             <button
               onClick={() => setIsUpgradeModalOpen(true)}
-              className="text-indigo-400 hover:text-indigo-300 font-semibold"
+              className="text-indigo-400 hover:text-indigo-300 font-semibold self-start sm:self-auto"
             >
               Perpanjang Langganan &rarr;
             </button>
@@ -321,7 +323,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
       />
 
       {/* Section 3: Profile Info */}
-      <div className="p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-4">
+      <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-4">
         <h2 className="text-base font-semibold text-zinc-100">Profil Akun (Google OAuth)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
