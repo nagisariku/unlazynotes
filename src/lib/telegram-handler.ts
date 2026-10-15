@@ -388,7 +388,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
       const confirmationText = formatSavedMessage(
         validCategory,
-        tagResult.specific_tags
+        tagResult.specific_tags,
+        text
       );
       await sendTelegramMessage(chatId, confirmationText);
     } catch (bgError) {

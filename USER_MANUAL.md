@@ -49,28 +49,28 @@ Agar catatan yang Anda kirimkan ke Telegram tersimpan di akun Anda, Anda perlu m
 ### Cara Mencatat Cepat (Quick Capture)
 Cukup ketik atau *forward* pesan apa saja langsung ke chat bot. AI kami akan otomatis mendeteksi jenis catatan, mengelompokkannya ke kategori yang tepat, serta memberikan label (tag) spesifik dalam hitungan detik.
 
-#### Contoh-Contoh Catatan:
+#### Contoh-Contoh Catatan & Hasil Kategorisasi Otomatis:
 * **Ide Spontan (random-yap):**
-  > *ide bikin landing page interaktif bergaya terminal retro untuk portfolio*
-  * AI akan mengkategorikannya sebagai `random-yap` dengan tag `[landing-page, portfolio]`.
-* **Daftar Tugas / Action Items (todo):**
-  > *ingat besok kirim draf proposal revisi ke pak bambang jam 10 pagi*
-  * AI akan mengkategorikannya sebagai `todo` dengan tag `[proposal, pak-bambang]`.
+  > *ide bikin bot telegram otomatis kirim rekap mingguan*
+  * Bot membalas: `Saved "ide bikin bot telegram…" • tags: random-yap, idea, bot`
+* **Daftar Tugas & Pembelajaran (todo):**
+  > *belajar rekursif, ujian minggu depan*
+  * Bot membalas: `Saved "belajar rekursif, ujian…" • tags: todo, study, exam`
 * **Jadwal & Agenda (schedule):**
-  > *meeting evaluasi sprint mingguan bareng tim engineering kamis jam 2 siang*
-  * AI akan mengkategorikannya sebagai `schedule` dengan tag `[sprint, engineering]`.
+  > *meeting sprint planning tim backend besok jam 14.00*
+  * Bot membalas: `Saved "meeting sprint planning…" • tags: schedule, meeting, planning`
 * **Keuangan & Belanja (finance):**
-  > *beli kopi kenangan 25rb sama rina di mall*
-  * AI akan mengkategorikannya sebagai `finance` dengan tag `[kopi-kenangan, rina]`.
+  > *seblak prasmanan 20k* atau *coffee $5 uber $25*
+  * Bot membalas: `Saved "seblak prasmanan 20k" • tags: finance, expenses, food`
 * **Tautan / Web Bookmark (bookmark):**
-  > *artikel arsitektur bagus https://astro.build/blog/astro-5/*
-  * AI akan menyimpannya sebagai `bookmark` dengan sumber `article` dan tag `[astro, read-later]`.
+  > *https://github.com/dietrichgebert/ponytail* atau *https://www.payermax.com/*
+  * Bot otomatis mengekstrak platform/domain bersih: `Saved "https://github.com/…" • tags: bookmark, github` atau `Saved "https://www.payermax.com/" • tags: bookmark, fintech` *(Bebas dari slug URL acak dan tag sampah 'read-later')*.
 * **Kredensial Non-Kritis (credential):**
-  > *wifi cafe lt 2: SSID KopiSenja Pass: senjasore123*
-  * AI akan menyimpannya sebagai `credential` dengan tag `[wifi-cafe, kopisenja]`. *(Catatan Keamanan: Jangan gunakan untuk menyimpan password perbankan atau kredensial kritis!)*
+  > *password wifi kantor: KopiSenja2026!*
+  * Bot membalas: `Saved "password wifi kantor…" • tags: credential, wifi`. *(Catatan Keamanan: Jangan gunakan untuk menyimpan password perbankan atau kredensial kritis!)*
 * **Draf & Tulisan Panjang (draft):**
   > Kirimkan catatan diskusi meeting atau draf tulisan di atas 200 karakter.
-  * AI akan menyimpannya sebagai kategori `draft`.
+  * Bot menyimpannya sebagai kategori `draft` dengan tag `writing`.
 
 ---
 

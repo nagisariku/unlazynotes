@@ -73,9 +73,21 @@ export async function sendTelegramMessage(
 
 /**
  * Format saved confirmation message.
- * e.g. "Saved • tags: bookmark, read-later"
+ * e.g. 'Saved "seblak 15k" • tags: finance, expenses, food'
  */
-export function formatSavedMessage(category: string, specificTags: string[]): string {
-  const allTags = [category, ...specificTags];
-  return `Saved • tags: ${allTags.join(', ')}`;
+export function formatSavedMessage(
+  category: string,
+  specificTags?: string[] | null,
+  noteSnippet?: string
+): string {
+  const cleanTags = [category, ...(specificTags || [])].filter(Boolean);
+  const uniqueTags = Array.from(new Set(cleanTags));
+
+  if (noteSnippet) {
+    const trimmed = noteSnippet.trim().replace(/\s+/g, ' ');
+    const snippet = trimmed.length > 25 ? `${trimmed.slice(0, 25)}…` : trimmed;
+    return `Saved "${snippet}" • tags: ${uniqueTags.join(', ')}`;
+  }
+
+  return `Saved • tags: ${uniqueTags.join(', ')}`;
 }

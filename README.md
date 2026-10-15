@@ -132,7 +132,13 @@ unlazynotes/
     │   ├── index.ts          # Inisialisasi koneksi PostgreSQL Pool
     │   └── schema.ts         # Definisi schema database Drizzle
     ├── lib/
-    │   ├── ai.ts             # Vercel AI SDK categorization & entity extraction
+    │   ├── ai.ts             # Orchestrator kategorisasi AI & backward compatibility
+    │   ├── ai/               # Modular Categorization & Tagging Engine
+    │   │   ├── router.ts     # Fast deterministic intent router
+    │   │   ├── sanitizer.ts  # Strict single-word normalizer & anti-bloat filters
+    │   │   ├── types.ts      # Schema Zod & TypeScript types
+    │   │   ├── modules/      # Modul khusus (finance, bookmark, todo, credential, general)
+    │   │   └── taxonomy/     # Kamus taksonomi kanonikal dwibahasa (ID & EN)
     │   ├── ask.ts            # Logika AI Pro Q&A berbasis catatan user
     │   ├── auth.ts           # Konfigurasi Better Auth & Google OAuth
     │   ├── constants.ts      # Definisi enum, kuota, dan teks pesan
@@ -222,12 +228,60 @@ Keduanya berbagi business logic yang 100% identik melalui modul [`src/lib/telegr
 
 ---
 
-## 🧠 Integrasi AI & Auto-Tagging
+## 🧠 Arsitektur AI & Modular Auto-Tagging Engine
 
-Auto-tagging menggunakan library **Vercel AI SDK** (`@ai-sdk/openai-compatible`) dengan skema JSON terstruktur (`zod`).
+UnlazyNotes mengimplementasikan sistem kategorisasi dan *tagging* bertingkat (multi-layered modular architecture) untuk menjamin akurasi tinggi, kecepatan kilat, zero-hallucination pada catatan informal, serta kepatuhan ketat terhadap aturan **Strict Single-Word & Anti-Bloat**:
+
+```
++--------------------------------------------------------------------------+
+|                       Catatan Masuk (Text / Link)                        |
++--------------------------------------------------------------------------+
+                                     |
+                                     v
++--------------------------------------------------------------------------+
+|  Layer 1: Deterministic Intent Router (src/lib/ai/router.ts)             |
+|  - Deteksi format harga/rupiah (15k, 20rb, 1.5jt, $25, traktir, bayar)    |
+|  - Deteksi Action/Todo Intent (harus, kerjakan, tugas, belajar...ujian)  |
+|  - Deteksi URL / Link Bookmark murni                                     |
+|  - Deteksi Kredensial (wifi, server ssh, token api, pin bank)            |
++--------------------------------------------------------------------------+
+                                     |
+             +-----------------------+-----------------------+
+             |                                               |
+  (High Confidence Match)                            (Unrouted / Complex)
+             v                                               v
++-----------------------------------------+   +----------------------------+
+|  Layer 2: Specialized Domain Handlers   |   |  General AI Module (LLM)   |
+|  - finance.ts    (Pengeluaran/Pemasukan)|   |  (src/lib/ai/modules/      |
+|  - bookmark.ts   (Domain-Aware Platforms|   |   general.ts)              |
+|                   github, dev, design)  |   |  Vercel AI SDK             |
+|  - todo.ts       (Study, Exam, Work)    |   |  deepseek-v4.1-flash       |
+|  - credential.ts (Wifi, Server, API)    |   |  Strict Single-Word Prompt |
++-----------------------------------------+   +----------------------------+
+             |                                               |
+             +-----------------------+-----------------------+
+                                     |
+                                     v
++--------------------------------------------------------------------------+
+|  Layer 3: Bilingual Canonical Taxonomy (src/lib/ai/taxonomy/)            |
+|  - Kamus terstandarisasi ID & EN (expenses, food, transport, study, exam)|
+|  - Pencocokan alias O(1) in-memory (seblak/ciken/burger -> food)         |
++--------------------------------------------------------------------------+
+                                     |
+                                     v
++--------------------------------------------------------------------------+
+|  Layer 4: Strict Single-Word Sanitizer (src/lib/ai/sanitizer.ts)         |
+|  - Normalisasi CamelCase & pemangkasan kata majemuk berpenghubung        |
+|  - Pemblokiran angka nominal & harga (15k, 60k, 100k, $10)               |
+|  - Pemblokiran tag sampah redundan (read-later, money, task, spending)   |
++--------------------------------------------------------------------------+
+                                     |
+                                     v
+                    [ Database PostgreSQL (notes) ]
+```
 
 * **Model Default:** `deepseek-v4.1-flash` via Cosmoshub AI Gateway (atau model OpenAI-compatible lainnya seperti `gpt-4o-mini`).
-* **Heuristic Offline Fallback:** Jika koneksi API AI mengalami gangguan atau kehabisan kredit, sistem secara otomatis beralih ke *rule-based heuristic parser* bawaan ([`src/lib/ai.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai.ts)) sehingga catatan user dijamin tetap tersimpan 100% tanpa pernah error.
+* **Heuristic & Offline Fallback:** Jika koneksi API AI mengalami gangguan, router deterministik dan taksonomi offline memastikan catatan tetap terkategorisasi 100% tanpa pernah gagal simpan.
 
 ---
 
@@ -251,13 +305,16 @@ Auto-tagging menggunakan library **Vercel AI SDK** (`@ai-sdk/openai-compatible`)
 UnlazyNotes dilengkapi dengan rangkaian *integration test suite* komprehensif tanpa dependensi mocking eksternal:
 
 ```bash
-# 1. Test Suite Fase 1: Core Bot, Webhook Header Security, Instant Capture & Auto-tagging (10 Tests)
+# 1. Test Suite Modular Tagging Engine & Bilingual Taxonomy (28 Skenario)
+npm run test:tagging
+
+# 2. Test Suite Fase 1: Core Bot, Webhook Header Security, Instant Capture & Auto-tagging (10 Tests)
 npm run test:webhook
 
-# 2. Test Suite Fase 2: User Session, Auto-provisioning, Dashboard SSR, Bookmark Export (9 Tests)
+# 3. Test Suite Fase 2: User Session, Auto-provisioning, Dashboard SSR, Bookmark Export (9 Tests)
 npm run test:phase2
 
-# 3. Test Suite Fase 3: DOKU Signature Verification, Daily Quota, AI Pro /ask, Admin Access (14 Tests)
+# 4. Test Suite Fase 3: DOKU Signature Verification, Daily Quota, AI Pro /ask, Admin Access (14 Tests)
 npm run test:phase3
 ```
 
