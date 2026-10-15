@@ -27,6 +27,17 @@ export const BANNED_TAGS = new Set([
   'data',
   'tag',
   'multi',
+  'mingdep',
+  'besok',
+  'lusa',
+  'kemarin',
+  'hariini',
+  'sekarang',
+  'ganjil',
+  'genap',
+  'psts',
+  'pts',
+  'pas',
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -130,6 +141,17 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
 
       const otherTags = result.filter(t => t !== 'expenses' && t !== 'bill' && t !== 'income');
       result = [mainTag, ...otherTags].slice(0, maxTags);
+    }
+  }
+
+  // Credential Category Guarantee
+  if (category === 'credential' && result.length < maxTags && noteContent) {
+    const autoTags = extractTagsFromContent(noteContent, 'credential', maxTags);
+    for (const at of autoTags) {
+      if (!result.includes(at)) {
+        result.push(at);
+        if (result.length >= maxTags) break;
+      }
     }
   }
 

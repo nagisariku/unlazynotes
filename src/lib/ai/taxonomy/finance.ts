@@ -83,6 +83,24 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     },
   },
   {
+    canonical: 'gaming',
+    category: 'finance',
+    description: 'Video games, gaming top-ups, skins, and digital entertainment',
+    aliases: {
+      id: ['game', 'gaming', 'skin', 'vandal', 'steam', 'topup', 'diamond', 'mlbb', 'valorant', 'genshin', 'playstation'],
+      en: ['game', 'gaming', 'skin', 'steam', 'topup', 'videogame'],
+    },
+  },
+  {
+    canonical: 'debt',
+    category: 'finance',
+    description: 'Loans, debts, and borrowed money',
+    aliases: {
+      id: ['utang', 'hutang', 'piutang', 'pinjam', 'pinjaman', 'talangan'],
+      en: ['debt', 'loan', 'owe', 'borrowed'],
+    },
+  },
+  {
     canonical: 'indihome',
     category: 'finance',
     description: 'Specific major Indonesian ISP service expense',

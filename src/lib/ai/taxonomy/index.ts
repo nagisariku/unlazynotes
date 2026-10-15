@@ -4,15 +4,17 @@ import { FINANCE_TAXONOMY } from './finance';
 import { TODO_TAXONOMY } from './todo';
 import { CREDENTIAL_TAXONOMY } from './credential';
 import { BOOKMARK_TAXONOMY } from './bookmark';
+import { GENERAL_TAXONOMY } from './general';
 
 export * from './types';
-export { FINANCE_TAXONOMY, TODO_TAXONOMY, CREDENTIAL_TAXONOMY, BOOKMARK_TAXONOMY };
+export { FINANCE_TAXONOMY, TODO_TAXONOMY, CREDENTIAL_TAXONOMY, BOOKMARK_TAXONOMY, GENERAL_TAXONOMY };
 
 const ALL_TAXONOMIES: CanonicalTagDef[] = [
   ...FINANCE_TAXONOMY,
   ...TODO_TAXONOMY,
   ...CREDENTIAL_TAXONOMY,
   ...BOOKMARK_TAXONOMY,
+  ...GENERAL_TAXONOMY,
 ];
 
 // In-memory fast alias lookup map: normalized alias -> canonical tag

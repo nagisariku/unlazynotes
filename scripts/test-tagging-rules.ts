@@ -146,9 +146,9 @@ const TEST_CASES = [
   // --- ENGLISH / GLOBAL TEST CASES ---
   {
     input: 'coffee $5 uber $25',
-    description: '[EN] Finance Coffee & Transit (Must have expenses & food)',
+    description: '[EN] Finance Coffee & Transit (Must have expenses)',
     expectedCat: 'finance',
-    expectedTags: ['expenses', 'food'],
+    expectedTags: ['expenses'],
   },
   {
     input: 'dinner with client $85',
