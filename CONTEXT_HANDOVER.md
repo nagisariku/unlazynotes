@@ -152,6 +152,28 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
 - Menghapus badge teks `"TELEGRAM"` yang sebelumnya bersanding membingungkan dengan badge Kategori di toolbar kanan atas pada [`NoteCard.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NoteCard.tsx).
 - Menggantikannya dengan icon pesawat kertas Telegram (`Send`) kecil berwarna sky di samping waktu catatan (`createdAt`), sehingga toolbar kanan atas hanya fokus menampilkan badge Kategori utama yang bersih.
 
+### Q. Tier Plan & Quota Management Engine
+1. **Tier & Pricing Specification**:
+   - **Free Tier**: Maksimal 30 catatan per bulan kalender, reset otomatis tiap tanggal 1 awal bulan berdasarkan zona waktu Asia/Jakarta (WIB). Fitur: basic AI tagging & Web Dashboard view.
+   - **Pro Tier**: UNLIMITED Notes tanpa batas kuota.
+     - Harga resmi: IDR Rp 15.000/bulan atau Rp 150.000/tahun; USD $1/bulan atau $10/tahun.
+     - Fitur Eksklusif Pro: Private Encrypted Vault (`/secure` & `/vault` AES-256-GCM), AI Otak Kedua (`/ask` Temporal RAG), Prioritas Fast-Lane AI Tagging.
+2. **Database & Schema User Model**:
+   - Atribut tabel `users`: `tier` ('free' | 'pro', default 'free'), `monthly_notes_count` (integer, default 0), `current_billing_period` (varchar 'YYYY-MM', misal '2026-10'), `pro_expires_at` (timestamp with timezone, nullable).
+3. **Lazy Monthly Calendar Reset & Expiry Downgrade ([`src/lib/quota-service.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/quota-service.ts))**:
+   - Setiap ada request pembuatan catatan baru (Telegram bot atau Web API), sistem memeriksa apakah bulan berjalan berbeda dengan `current_billing_period`. Jika berganti bulan, `monthly_notes_count` direset ke 0 dan `current_billing_period` diperbarui ke bulan baru.
+   - Jika akun Pro telah melewati tanggal `pro_expires_at`, sistem otomatis men-downgrade akun ke `free` dan menerapkan kuota Free 30 catatan/bulan.
+4. **Non-Refundable Quota Integrity**:
+   - Menghapus catatan tidak pernah mengurangi `monthly_notes_count` (kuota dihitung berdasarkan konsumsi komputasi pembuatan).
+5. **Feature Gatekeeping & Paywall**:
+   - Perintah Telegram `/secure` & `/vault`: Diblokir untuk akun Free, menampilkan preview manfaat enkripsi rahasia dan link CTA Upgrade Pro.
+   - Perintah Telegram `/ask`: Diblokir untuk akun Free, menampilkan penjelasan AI otak kedua eksklusif Pro Tier.
+   - Note Capture Paywall: Saat akun Free mencapai 30 catatan, bot membalas dengan pesan Paywall ramah dan menolak penyimpanan. Pada Web Composer (`POST /api/notes`), API merespons HTTP 403 `quotaExceeded: true`.
+6. **Prioritas Fast-Lane Tagging Queue ([`src/lib/tagging-queue.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/tagging-queue.ts))**:
+   - Sistem antrean prioritas berbasis memori memisahkan antrean `fastLane` (Pro Tier) dan `standardLane` (Free Tier). Catatan dari pengguna Pro selalu dieksekusi terlebih dahulu.
+7. **Validasi Test Suite**:
+   - `scripts/test-tier-quota.ts`: 19/19 skenario pengujian komprehensif lolos 100% PASS (lazy reset, 30-note paywall, non-refund on delete, pro unlimited, expired downgrade, gating /secure, /vault, /ask, dan priority queue).
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
