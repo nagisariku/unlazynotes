@@ -39,13 +39,18 @@ export function generateApiKey(): { rawKey: string; keyHash: string } {
   return { rawKey, keyHash };
 }
 
+export interface TelegramSendOptions {
+  parse_mode?: 'Markdown' | 'HTML';
+  reply_markup?: any;
+}
+
 /**
  * Send a message back to Telegram user with graceful error handling.
  */
 export async function sendTelegramMessage(
   chatId: string | number,
   text: string,
-  options?: { parse_mode?: 'Markdown' | 'HTML' }
+  options?: TelegramSendOptions
 ): Promise<boolean> {
   const currentToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
@@ -60,13 +65,71 @@ export async function sendTelegramMessage(
     // Jika gagal karena formatting markdown/HTML dari respons LLM, kirim ulang sebagai plain text
     if (options?.parse_mode) {
       try {
-        await bot.api.sendMessage(chatId, text);
+        await bot.api.sendMessage(chatId, text, {
+          reply_markup: options.reply_markup,
+        });
         return true;
       } catch (retryErr) {
         console.error(`[Telegram] Retry plain text send failed:`, retryErr);
       }
     }
     console.error(`[Telegram] Failed to send message to ${chatId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Edit an existing message in-place in Telegram chat.
+ */
+export async function editTelegramMessage(
+  chatId: string | number,
+  messageId: number,
+  text: string,
+  options?: TelegramSendOptions
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Edit] Message ${messageId} in Chat ID ${chatId}:\n${text}`);
+    return true;
+  }
+
+  try {
+    await bot.api.editMessageText(chatId, messageId, text, options);
+    return true;
+  } catch (error: any) {
+    if (options?.parse_mode) {
+      try {
+        await bot.api.editMessageText(chatId, messageId, text, {
+          reply_markup: options.reply_markup,
+        });
+        return true;
+      } catch (retryErr) {
+        console.error(`[Telegram] Retry plain text edit failed:`, retryErr);
+      }
+    }
+    console.error(`[Telegram] Failed to edit message ${messageId} in ${chatId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Answer a callback query from an inline keyboard to dismiss the loading state.
+ */
+export async function answerTelegramCallbackQuery(
+  callbackQueryId: string,
+  options?: { text?: string; show_alert?: boolean }
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Answer Callback] Query ID ${callbackQueryId}`);
+    return true;
+  }
+
+  try {
+    await bot.api.answerCallbackQuery(callbackQueryId, options);
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to answer callback query ${callbackQueryId}:`, error);
     return false;
   }
 }

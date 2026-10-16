@@ -28,7 +28,12 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const message = body?.message || body?.edited_message;
-  const result = await processTelegramMessage(message);
+  let result;
+  if (body?.callback_query) {
+    result = await processTelegramMessage(body.callback_query);
+  } else {
+    result = await processTelegramMessage(message);
+  }
 
   return new Response(JSON.stringify(result), {
     status: result.httpStatus || 200,

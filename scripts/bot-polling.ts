@@ -10,7 +10,11 @@ import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 
 import { bot } from '../src/lib/telegram';
-import { processTelegramMessage } from '../src/lib/telegram-handler';
+import {
+  processTelegramMessage,
+  processTelegramCallbackQuery,
+  flushAllDebounceBuffers,
+} from '../src/lib/telegram-handler';
 
 async function main() {
   console.log('=== Starting UnlazyNotes Telegram Polling Worker ===');
@@ -37,15 +41,28 @@ async function main() {
       }
     });
 
-    // 3. Tangani graceful shutdown
-    process.once('SIGINT', () => {
-      console.log('Received SIGINT, stopping bot polling...');
-      bot.stop();
+    // 3. Register callback_query handler untuk Inline Keyboard pagination
+    bot.on('callback_query', async (ctx) => {
+      try {
+        await processTelegramCallbackQuery(ctx.callbackQuery);
+      } catch (err) {
+        console.error('[Bot Polling Callback Query Error]:', err);
+      }
     });
-    process.once('SIGTERM', () => {
-      console.log('Received SIGTERM, stopping bot polling...');
+
+    // 4. Tangani graceful shutdown
+    const handleShutdown = async (signal: string) => {
+      console.log(`Received ${signal}, flushing active debounced notes...`);
+      try {
+        await flushAllDebounceBuffers();
+      } catch (e) {
+        console.error('Error during shutdown buffer flush:', e);
+      }
       bot.stop();
-    });
+    };
+
+    process.once('SIGINT', () => handleShutdown('SIGINT'));
+    process.once('SIGTERM', () => handleShutdown('SIGTERM'));
 
     // 4. Jalankan bot
     console.log('🚀 Connecting to Telegram via Long Polling...');
