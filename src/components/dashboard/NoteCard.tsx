@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { Copy, Check, Trash2, ExternalLink, Calendar, Tag } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -28,10 +28,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
   others: { bg: 'bg-zinc-500/10', text: 'text-zinc-400', border: 'border-zinc-500/20' },
 };
 
-function cleanTodoMarker(line: string): string {
-  return line.replace(/^\s*([-*•]|\d+\.|\([0-9a-zA-Z]\)|\[[ xX]\])\s*/, '');
-}
-
 export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick }: NoteCardProps) {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -39,31 +35,7 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick }: 
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const colors = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.others;
-  const isTodo = note.category === 'todo';
-  const lines = useMemo(() => note.content.split('\n'), [note.content]);
-
-  // State for checked items in todo lists
-  const [checkedIndices, setCheckedIndices] = useState<Record<number, boolean>>(() => {
-    const initial: Record<number, boolean> = {};
-    if (note.category === 'todo') {
-      note.content.split('\n').forEach((line, idx) => {
-        if (/^\s*(\[x\]|\[X\])/.test(line)) {
-          initial[idx] = true;
-        }
-      });
-    }
-    return initial;
-  });
-
-  const toggleTodoItem = (index: number) => {
-    setCheckedIndices((prev) => ({
-      ...prev,
-      [index]: !prev[index],
-    }));
-  };
-
-  const isLong = isTodo ? lines.length > 5 : note.content.length > 200 || lines.length > 4;
-  const displayedTodoLines = isLong && !isExpanded ? lines.slice(0, 4) : lines;
+  const isLong = note.content.length > 200 || note.content.split('\n').length > 4;
 
   const handleCopy = async () => {
     try {
@@ -119,65 +91,19 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick }: 
           </div>
         </div>
 
-        {/* Content Body: Interactive Todo Checklist OR Regular Text */}
-        {isTodo ? (
-          <div className="space-y-1 mb-3">
-            {displayedTodoLines.map((line, idx) => {
-              if (!line.trim()) return null;
-              const isChecked = Boolean(checkedIndices[idx]);
-              const cleaned = cleanTodoMarker(line);
-              return (
-                <div
-                  key={idx}
-                  onClick={() => toggleTodoItem(idx)}
-                  className={`group/todo flex items-start gap-2.5 p-1.5 -mx-1 rounded-lg cursor-pointer transition-all select-none ${
-                    isChecked
-                      ? 'bg-zinc-950/40 text-zinc-500'
-                      : 'hover:bg-zinc-800/40 text-zinc-200'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}} // handled by parent onClick
-                    className="mt-0.5 h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-950 text-indigo-500 focus:ring-indigo-500 focus:ring-offset-0 transition-colors cursor-pointer accent-indigo-500 shrink-0"
-                  />
-                  <span
-                    className={`text-xs sm:text-sm leading-relaxed break-words flex-1 transition-all ${
-                      isChecked
-                        ? 'line-through text-zinc-500 decoration-zinc-600 decoration-1'
-                        : 'text-zinc-200'
-                    }`}
-                  >
-                    {cleaned || line}
-                  </span>
-                </div>
-              );
-            })}
+        {/* Content Body */}
+        <div className="text-zinc-200 text-sm leading-relaxed mb-4 whitespace-pre-wrap break-words font-normal">
+          {isLong && !isExpanded ? `${note.content.substring(0, 200)}...` : note.content}
 
-            {isLong && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="mt-1 text-indigo-400 hover:text-indigo-300 font-medium text-xs underline cursor-pointer inline-block"
-              >
-                {isExpanded ? 'Tutup' : `+ ${lines.length - 4} item lainnya (Selengkapnya)`}
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="text-zinc-200 text-sm leading-relaxed mb-4 whitespace-pre-wrap break-words font-normal">
-            {isLong && !isExpanded ? `${note.content.substring(0, 200)}...` : note.content}
-
-            {isLong && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="ml-2 text-indigo-400 hover:text-indigo-300 font-medium text-xs underline cursor-pointer"
-              >
-                {isExpanded ? 'Tutup' : 'Selengkapnya'}
-              </button>
-            )}
-          </div>
-        )}
+          {isLong && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="ml-2 text-indigo-400 hover:text-indigo-300 font-medium text-xs underline cursor-pointer"
+            >
+              {isExpanded ? 'Tutup' : 'Selengkapnya'}
+            </button>
+          )}
+        </div>
 
         {/* Open Direct Links if URL detected */}
         {detectedUrls.length > 0 && (
