@@ -1,9 +1,49 @@
 import { db } from '@/db';
 import { notes } from '@/db/schema';
 import { eq, and, gte, desc } from 'drizzle-orm';
-import { subMonths, format } from 'date-fns';
+import { subMonths } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
+
+/**
+ * Formats a Date object into human-friendly Asia/Jakarta short datetime
+ * e.g. "Jum, 16 Okt 2026, 13:30"
+ */
+function formatNoteDate(date: Date): string {
+  const dtf = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(date);
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+  return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')}`;
+}
+
+/**
+ * Formats current date and time for dynamic prompt injection
+ * e.g. "Jumat, 16 Oktober 2026, 14:05 WIB"
+ */
+function formatCurrentTime(date: Date): string {
+  const dtf = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const parts = dtf.formatToParts(date);
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+  return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')} WIB`;
+}
 
 /**
  * Answers a user's question strictly based on their notes from the last 6 months.
@@ -13,7 +53,9 @@ export async function answerNoteQuestion(
   userId: string,
   question: string
 ): Promise<string> {
-  const sixMonthsAgo = subMonths(new Date(), 6);
+  const now = new Date();
+  const nowFormatted = formatCurrentTime(now);
+  const sixMonthsAgo = subMonths(now, 6);
 
   // 1. Fetch user notes created within the last 6 months
   const userNotes = await db
@@ -32,12 +74,13 @@ export async function answerNoteQuestion(
     return 'Belum ada catatan yang tersimpan dalam 6 bulan terakhir untuk dianalisis oleh AI.';
   }
 
-  // 2. Format notes context
+  // 2. Format notes context with human-friendly localized timestamp and category
   const contextNotes = userNotes
     .map((n, idx) => {
-      const dateStr = format(new Date(n.createdAt), 'yyyy-MM-dd HH:mm');
-      const tags = [n.category, ...(n.specificTags || [])].join(', ');
-      return `[Catatan #${idx + 1}] (${dateStr}) [Tags: ${tags}]:\n${n.content}`;
+      const dateStr = formatNoteDate(new Date(n.createdAt));
+      const tags = (n.specificTags || []).filter(Boolean).join(', ');
+      const categoryTag = tags ? `${n.category} • ${tags}` : n.category;
+      return `${idx + 1}. [${dateStr}] [${categoryTag}] ${n.content}`;
     })
     .join('\n\n');
 
@@ -66,27 +109,32 @@ export async function answerNoteQuestion(
     });
 
     const systemPrompt = `Anda adalah asisten cerdas personal UnlazyNotes.
-Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, to-the-point, dan akurat strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
+Waktu Saat Ini (Current Time): ${nowFormatted}
 
-Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Bahasa & Domain):
-1. Keselarasan Bahasa (Language Mirroring):
-   - Selalu balas menggunakan bahasa yang sama persis dengan bahasa yang digunakan pengguna dalam pertanyaannya (misal: jika pengguna bertanya dalam bahasa Inggris, jawab sepenuhnya dalam bahasa Inggris yang alami; jika bertanya dalam bahasa Indonesia atau bahasa daerah seperti Jawa/Sunda, sesuaikan bahasanya secara natural).
-2. Integritas Data (Anti-Halusinasi):
+Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, ramah, to-the-point, dan akurat strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
+
+Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Bahasa & Kasus):
+1. Kesadaran Waktu Dinamis (Temporal Awareness):
+   - Waktu saat ini (Current Time) adalah acuan utama: ${nowFormatted}.
+   - Hitung selisih waktu secara akurat untuk pertanyaan temporal relatif (seperti "hari ini", "kemarin", "lusa", "2 hari lalu", "minggu ini", "bulan ini", dsb.) relatif terhadap Current Time.
+   - Evaluasi tanggal dan jam pembuatan pada setiap catatan ([createdAt]) secara teliti.
+   - Jika pengguna bertanya tentang rentang waktu tertentu (misal: "kemarin") dan tidak ada catatan pada waktu tersebut, nyatakan dengan jelas bahwa tidak ada catatan untuk waktu itu. Jika ada catatan relevan di waktu lain yang dapat membantu, sebutkan sebagai konteks tambahan (misal: "Kemarin tidak ada catatan transfer, tapi ada catatan hari ini yaitu...").
+2. Keselarasan Bahasa (Language Mirroring):
+   - Selalu balas menggunakan bahasa yang sama persis dengan bahasa yang digunakan pengguna dalam pertanyaannya (misal: jika pengguna bertanya dalam bahasa Inggris, jawab sepenuhnya dalam bahasa Inggris yang alami; jika dalam bahasa Indonesia atau bahasa daerah, sesuaikan secara natural).
+3. Integritas Data (Anti-Halusinasi):
    - Jawab strictly HANYA berdasarkan informasi yang tertulis di catatan pengguna.
    - Jika informasi mengenai pertanyaan tersebut tidak ditemukan dalam catatan, katakan secara lugas bahwa data tersebut tidak ditemukan. Jangan mengarang data di luar catatan.
-3. Pemahaman Semantik Inklusif (Bukan Sekadar Pencocokan Kata Harfiah):
+4. Pemahaman Semantik Inklusif (Bukan Sekadar Pencocokan Harfiah):
    - Pahami maksud dan entitas dalam pertanyaan berdasarkan makna kontekstual di kehidupan nyata di berbagai bahasa dan budaya, bukan sekadar mencari kata yang sama persis (string matching).
    - Saat pengguna menanyakan suatu kategori, sertakan seluruh item yang secara logis merupakan jenis, turunan, atau bagian dari kategori tersebut.
-4. Pembedahan Catatan Campuran (Multi-Item Dissection):
+5. Pembedahan Catatan Campuran (Multi-Item Dissection):
    - Pengguna sering mencatat beberapa entitas/topik berbeda dalam satu catatan (misal dalam baris terpisah atau format daftar). Evaluasi setiap baris/poin secara independen. Ambil hanya item yang relevan dengan pertanyaan.
-5. Integritas Metadata Tingkat Catatan:
-   - Tag pada header [Tags: ...] adalah label konteks tingkat catatan, bukan batasan kaku per-kata.
 6. Mata Uang, Angka, & Slang Multibahasa:
    - Pahami format dan singkatan kasual internasional maupun lokal (misal: k / rb / ewu / rebu = ribu, goceng = 5rb, cepek = 100rb).
-   - JANGAN menggabungkan angka dengan mata uang yang berbeda (misal $ USD dan Rp IDR) menjadi satu angka tanpa konversi kurs yang jelas; pisahkan rincian dan total per mata uang secara rapi.
+   - JANGAN menggabungkan angka dengan mata uang yang berbeda ($ USD dan Rp IDR) tanpa konversi kurs yang jelas; pisahkan rincian dan total per mata uang secara rapi.
    - Tampilkan rincian item yang ditemukan sebelum menyimpulkan atau menampilkan kalkulasi total.`;
 
-    const userPrompt = `Berikut adalah catatan pengguna yang tersimpan (< 6 bulan terakhir):
+    const userPrompt = `Catatan pengguna yang tersimpan (< 6 bulan terakhir):
 ---
 ${contextNotes}
 ---

@@ -70,14 +70,19 @@ Memastikan navigasi dan pembacaan catatan di layar ponsel berjalan mulus:
 Menghindari error PostgreSQL `22P02 (invalid input value for enum note_category)` saat pengguna memfilter tag kustom yang bukan 9 kategori utama (misal `/tags expenses` atau `/tags twitter`):
 - Seluruh perbandingan dinamis di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts) dan [`src/pages/api/notes/index.ts`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/index.ts) menggunakan `notes.category::text = ${targetTag}` sehingga PostgreSQL memperlakukan parameter sebagai string aman.
 
-### F. Tanya Jawab AI (`/ask`) Universal Domain-Agnostic & Multilingual Engine ([`src/lib/ask.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ask.ts))
-Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kuliah, dll.) melalui 6 Prinsip Kognitif Universal yang berlaku untuk semua domain, bahasa (English, ID, bahasa daerah), dan mata uang:
-1. **Keselarasan Bahasa (*Language Mirroring*)**: AI membalas 100% menggunakan bahasa yang sama persis dengan pertanyaan pengguna (Inggris dijawab Inggris, Indonesia dijawab Indonesia, Jawa/Sunda disesuaikan secara natural).
-2. **Penataan Konteks RAG**: Memindahkan konteks catatan dari `system` prompt ke `user` turn agar LLM tidak memicu safety guardrail atau halusinasi pemisahan tag per baris.
-3. **Pemahaman Semantik Inklusif**: Mengutamakan makna kontekstual di dunia nyata dibanding pencocokan kata harfiah (*literal string matching*), sehingga kategori otomatis mencakup turunan atau jenisnya (misal: popcorn $\rightarrow$ konsumsi/makanan, tuweb/karil $\rightarrow$ tugas kuliah, topup valo $\rightarrow$ game).
-4. **Pembedahan Catatan Campuran (*Multi-Item Dissection*)**: Membedah catatan multi-item secara independen per baris untuk memilah item relevan vs tidak relevan tanpa membuang seluruh isi catatan.
-5. **Integritas Metadata Tingkat Catatan**: Menghilangkan halusinasi bahwa tag adalah filter rigid per-kata; tag diperlakukan sebagai konteks payung tingkat catatan.
-6. **Mata Uang Campuran & Slang Multibahasa**: Memahami singkatan kasual internasional dan lokal (`k`, `rb`, `ewu`, `rebu`, `goceng`, `cepek`), serta memisahkan perhitungan mata uang yang berbeda (`$ USD` vs `Rp IDR`) tanpa mencampurnya sembarangan.
+### F. Tanya Jawab AI (`/ask`) Universal Domain-Agnostic, Multilingual, & Temporal Awareness Engine ([`src/lib/ask.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ask.ts))
+Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kuliah, dll.) melalui 7 Prinsip Kognitif Universal yang berlaku untuk semua domain, bahasa (English, ID, bahasa daerah), waktu relatif, dan mata uang:
+1. **Kesadaran Waktu Dinamis (*Temporal Awareness*)**:
+   - Injeksi waktu saat query dieksekusi ke System Prompt secara dinamis (`Current Time: Jumat, 16 Oktober 2026, 14:05 WIB`).
+   - Setiap catatan diformat dengan metadata waktu yang ramah dibaca manusia (`[Jum, 16 Okt 2026, 13:30] [category • specific_tags] content`).
+   - LLM melakukan komputasi waktu relatif eksak terhadap *Current Time* untuk pertanyaan seperti "hari ini", "kemarin", "lusa", "2 hari lalu", "minggu ini".
+   - Jika rentang waktu yang ditanyakan tidak memiliki data, AI menyatakan ketiadaan data secara lugas dan menyebutkan catatan relevan di waktu lain sebagai konteks bantuan.
+2. **Keselarasan Bahasa (*Language Mirroring*)**: AI membalas 100% menggunakan bahasa yang sama persis dengan pertanyaan pengguna (Inggris dijawab Inggris, Indonesia dijawab Indonesia, Jawa/Sunda disesuaikan secara natural).
+3. **Penataan Konteks RAG**: Memindahkan konteks catatan dari `system` prompt ke `user` turn agar LLM tidak memicu safety guardrail atau halusinasi pemisahan tag per baris.
+4. **Pemahaman Semantik Inklusif**: Mengutamakan makna kontekstual di dunia nyata dibanding pencocokan kata harfiah (*literal string matching*), sehingga kategori otomatis mencakup turunan atau jenisnya (misal: popcorn $\rightarrow$ konsumsi/makanan, tuweb/karil $\rightarrow$ tugas kuliah, topup valo $\rightarrow$ game).
+5. **Pembedahan Catatan Campuran (*Multi-Item Dissection*)**: Membedah catatan multi-item secara independen per baris untuk memilah item relevan vs tidak relevan tanpa membuang seluruh isi catatan.
+6. **Integritas Metadata Tingkat Catatan**: Menghilangkan halusinasi bahwa tag adalah filter rigid per-kata; tag diperlakukan sebagai konteks payung tingkat catatan.
+7. **Mata Uang Campuran & Slang Multibahasa**: Memahami singkatan kasual internasional dan lokal (`k`, `rb`, `ewu`, `rebu`, `goceng`, `cepek`), serta memisahkan perhitungan mata uang yang berbeda (`$ USD` vs `Rp IDR`) tanpa mencampurnya sembarangan.
 
 ---
 
