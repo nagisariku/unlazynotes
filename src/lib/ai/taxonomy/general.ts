@@ -6,7 +6,7 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
     category: 'schedule',
     description: 'Vacations, trips, tours, and travel plans',
     aliases: {
-      id: ['travel', 'trip', 'liburan', 'wisata', 'piknik', 'bromo', 'dieng', 'bali', 'jogja', 'pantai', 'gunung'],
+      id: ['travel', 'trip', 'liburan', 'wisata', 'piknik', 'holiday'],
       en: ['travel', 'trip', 'vacation', 'holiday', 'tour', 'flight', 'journey'],
     },
   },

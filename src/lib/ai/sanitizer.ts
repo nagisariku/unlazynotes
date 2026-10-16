@@ -9,6 +9,10 @@ export const BANNED_TAGS = new Set([
   'task',
   'todo',
   'schedule',
+  'finance',
+  'expenses',
+  'income',
+  'bill',
   'note',
   'notes',
   'daily-spending',
@@ -47,18 +51,20 @@ export function normalizeTag(tag: string): string {
     .toLowerCase()
     .replace(/[_\s]+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
-    .replace(/-+/g, '-');
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 20);
 }
 
 /**
- * Enforces the Strict Single-Word Tag Rule with Bilingual Taxonomy Resolution:
+ * Enforces the Tag Rules:
  * 1. Strips suffixes (-price, -spending, etc.).
  * 2. Rejects prices, nominal amounts, and pure numbers.
- * 3. Resolves known aliases (ID & EN) to canonical tags via taxonomy.
- * 4. Extracts single strongest token if compound word remains.
- * 5. Limits output to max 2 unique single-word tags.
+ * 3. Resolves known aliases (ID & EN) to canonical tags via taxonomy if not banned.
+ * 4. Preserves specific entity, brand, store, activity, or place tags (lowercase-with-hyphens, max 20 chars).
+ * 5. Limits output to max 3 unique tags.
  */
-export function sanitizeTags(tags: string[], category: string, noteContent?: string, maxTags: number = 2): string[] {
+export function sanitizeTags(tags: string[], category: string, noteContent?: string, maxTags: number = 3): string[] {
   let result: string[] = [];
   const catNormalized = category.toLowerCase().trim() as Category;
 
@@ -79,30 +85,22 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
       continue;
     }
 
-    // 3. Resolve to canonical single-word tag via bilingual taxonomy
+    // 3. Resolve to canonical tag via bilingual taxonomy IF matched and not banned
     const canonical = resolveCanonicalTag(t, catNormalized);
-    if (canonical) {
+    if (canonical && !BANNED_TAGS.has(canonical)) {
       t = canonical;
     }
 
-    // 4. Enforce STRICT SINGLE-WORD: if still contains a hyphen, extract single strongest token
-    if (t.includes('-')) {
-      const parts = t.split('-').filter(p => p.length >= 2 && !BANNED_TAGS.has(p));
-      if (parts.length > 0) {
-        // Check if any part matches canonical tag
-        const canonicalPart = parts.find(p => resolveCanonicalTag(p, catNormalized) !== null);
-        t = canonicalPart ? resolveCanonicalTag(canonicalPart, catNormalized)! : parts[parts.length - 1];
-      } else {
-        continue;
-      }
-    }
+    // 4. Ensure lowercase-with-hyphens, max 20 chars
+    t = t
+      .replace(/[^a-z0-9-]/g, '')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 20);
+    if (!t) continue;
 
-    // Strip trailing digits (e.g. chapter4 -> chapter)
+    // Strip trailing digits only if pure word ending in digits
     t = t.replace(/\d+$/, '');
-    if (/\d/.test(t)) continue;
-
-    // Final clean alphanumeric check
-    t = t.replace(/[^a-z0-9]/g, '');
     if (!t) continue;
 
     if (t === catNormalized) continue;
@@ -110,38 +108,6 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     if (result.includes(t)) continue;
     result.push(t);
     if (result.length >= maxTags) break;
-  }
-
-  // Finance Category Guarantee
-  if (category === 'finance') {
-    const lower = (noteContent || '').toLowerCase();
-    const isIncome =
-      result.includes('income') ||
-      /gaji|salary|terima|pemasukan|transfer masuk|cair|earnings|dividend|bonus|paycheck/i.test(lower);
-    const isBill =
-      result.includes('bill') ||
-      /tagihan|subscription|langganan|pdam|pln|bill|utilities|rent|sewa/i.test(lower);
-
-    if (isIncome) {
-      const otherTags = result.filter(t => t !== 'income' && t !== 'expenses' && t !== 'bill');
-      result = ['income', ...otherTags].slice(0, maxTags);
-    } else {
-      const mainTag = isBill ? 'bill' : 'expenses';
-
-      // Auto-cluster recognizable bilingual taxonomy items if room permits
-      if (result.length < maxTags && noteContent) {
-        const autoTags = extractTagsFromContent(noteContent, 'finance', maxTags);
-        for (const at of autoTags) {
-          if (at !== 'expenses' && at !== 'income' && at !== 'bill' && !result.includes(at)) {
-            result.push(at);
-            if (result.length >= maxTags) break;
-          }
-        }
-      }
-
-      const otherTags = result.filter(t => t !== 'expenses' && t !== 'bill' && t !== 'income');
-      result = [mainTag, ...otherTags].slice(0, maxTags);
-    }
   }
 
   // Credential Category Guarantee

@@ -32,39 +32,29 @@ export async function processGeneralNote(
     const result = await generateText({
       model: openaiCompatible(modelName),
       temperature: 0,
-      system: `You are a strict JSON API backend for UnlazyNotes that classifies notes into standard categories and broad, reusable umbrella tags (topik payung).
-You must output ONLY a valid JSON object. No explanations, no markdown, no conversational commentary.
+      system: `You are an intelligent tagging engine for UnlazyNotes.
+Analyze the user's note and return a strict JSON object with:
+1. "category": exactly 1 category.
+2. "specific_tags": 1 to 3 meaningful keyword tags (lowercase-with-hyphens).
 
-CATEGORIES:
-- bookmark: Saves web links/URLs.
-- todo: Action items, tasks, checklists.
-- schedule: Events, dates, meetings, travel/trip plans.
-- finance: Expenses, purchases, bills, debt (utang), income.
-- credential: Passwords, tokens, Wi-Fi keys, server credentials.
-- draft: Long essays, articles (>150 chars).
-- reference: Snippets, recipes, quotes, postal codes.
-- random-yap: Spontaneous thoughts, rants, emotional venting.
+CATEGORIES & INTENT PRIORITY:
+- todo: Checklists, action items, tasks, wishlists, or multi-line plans WITHOUT prices/costs (e.g. "belanja bulanan tokma\\nhiling dieng\\npilates" -> category: "todo").
+- finance: Actual money transactions, expenses, bills, income WITH price/amount or payment intent (e.g. "bayar wifi 300k", "tfr 50rb nasgor", "gaji cair").
+- schedule: Specific dates, meetings, appointments, deadlines with temporal markers (e.g. "meeting bsk jam 2", "deadline tugas 18 okt").
+- bookmark: URLs / links.
+- credential: Passwords, tokens, pins, wifi keys.
+- draft: Long structured text, minutes of meeting (>150 chars).
+- reference: Snippets, recipes, quotes, documentation.
+- random-yap: Spontaneous shower thoughts, rants, musings.
 - others: Miscellaneous.
 
-TAG RULES:
-1. Output 0 to 2 broad, reusable lowercase single-word tags (topik payung).
-2. NEVER extract literal item/product names ('skin', 'vandal', 'indomie'), person names ('righty', 'ubed'), city/mountain names ('bromo', 'dieng', 'bali'), dates/temporal words ('mingdep', 'besok', 'lusa'), or prices ('15k', '250k').
-3. Examples of broad umbrella tags:
-   - Games/skins -> ["expenses", "gaming"]
-   - Food/meals -> ["expenses", "food"]
-   - Transport/fuel -> ["expenses", "transport"]
-   - Bills/ISP -> ["bill"]
-   - Debt/borrowing -> ["expenses", "debt"]
-   - Salary -> ["income"]
-   - Trips/vacation -> ["travel"]
-   - Meetings -> ["meeting", "work"]
-   - Exams -> ["exam"]
-   - Recipes -> ["recipe"]
-   - Venting/curhat -> ["rant"]
-   - Ideas -> ["idea"]
+SPECIFIC TAG RULES:
+1. Extract 1 to 3 specific keyword tags representing the core subject, place/destination, entity, brand, store, or activity (e.g. 'tokma', 'dieng', 'pilates', 'netflix', 'bca', 'indomie').
+2. DO NOT output tags that merely repeat the category name (e.g. NEVER output 'todo', 'finance', 'expenses', 'task', 'money', 'schedule', 'note').
+3. Keep tags lowercase, single-word or hyphenated, max 20 chars.
 
 JSON FORMAT:
-{"category": "finance", "specific_tags": ["bill"], "source": null}`,
+{"category": "todo", "specific_tags": ["tokma", "dieng", "pilates"], "source": null}`,
       prompt: `Classify this note and return JSON only:\n"""${content}"""`,
     });
 
@@ -77,7 +67,7 @@ JSON FORMAT:
 
     const json = JSON.parse(rawJson);
     const parsed = NoteTagResultSchema.parse(json);
-    const cleanTags = sanitizeTags(parsed.specific_tags, parsed.category, content, 2);
+    const cleanTags = sanitizeTags(parsed.specific_tags, parsed.category, content, 3);
 
     let cleanSource: Source | null = null;
     if (parsed.source) {
