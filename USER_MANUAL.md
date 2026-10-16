@@ -49,28 +49,36 @@ Agar catatan yang Anda kirimkan ke Telegram tersimpan di akun Anda, Anda perlu m
 ### Cara Mencatat Cepat (Quick Capture)
 Cukup ketik atau *forward* pesan apa saja langsung ke chat bot. AI kami akan otomatis mendeteksi jenis catatan, mengelompokkannya ke kategori yang tepat, serta memberikan label (tag) spesifik dalam hitungan detik.
 
+**Silent Note Capture UX:**
+Untuk menjaga riwayat obrolan Telegram Anda tetap rapi dan bebas dari spam balasan bot, UnlazyNotes menyimpan catatan secara **hening di latar belakang**. Bot tidak akan mengirim pesan konfirmasi untuk setiap catatan teks biasa, melainkan langsung menyimpannya ke akun Anda. Pesan balasan hanya dikirim jika:
+- Anda menjalankan perintah eksplisit (`/tags`, `/search`, `/ask`, `/help`).
+- Batas kuota harian Anda tercapai atau masa aktif langganan habis.
+- Terjadi kendala teknis saat memproses catatan.
+
 #### Contoh-Contoh Catatan & Hasil Kategorisasi Otomatis:
 * **Ide Spontan (random-yap):**
-  > *ide bikin bot telegram otomatis kirim rekap mingguan*
-  * Bot membalas: `Saved "ide bikin bot telegram…" • tags: random-yap, idea, bot`
-* **Daftar Tugas & Pembelajaran (todo):**
-  > *belajar rekursif, ujian minggu depan*
-  * Bot membalas: `Saved "belajar rekursif, ujian…" • tags: todo, study, exam`
+  > *kepikiran kenapa ya kucing suka kardus*
+  * Kategori: `random-yap` • Tags: `kucing`, `kardus`
+* **Daftar Tugas & Rencana Rinci (todo):**
+  > *belanja bulanan tokma*  
+  > *hiling dieng*  
+  > *pilates*  
+  * Kategori: `todo` • Tags: `tokma`, `dieng`, `pilates`
 * **Jadwal & Agenda (schedule):**
   > *meeting sprint planning tim backend besok jam 14.00*
-  * Bot membalas: `Saved "meeting sprint planning…" • tags: schedule, meeting, planning`
-* **Keuangan & Belanja (finance):**
-  > *seblak prasmanan 20k* atau *coffee $5 uber $25*
-  * Bot membalas: `Saved "seblak prasmanan 20k" • tags: finance, expenses, food`
+  * Kategori: `schedule` • Tags: `meeting`, `planning`
+* **Keuangan & Transaksi Riil (finance):**
+  > *bayar wifi 300k indihome* atau *tfr 50rb nasgor*
+  * Kategori: `finance` • Tags: `indihome`, `wifi` *(tag murni subjek/entitas tanpa redundansi)*
 * **Tautan / Web Bookmark (bookmark):**
-  > *https://github.com/dietrichgebert/ponytail* atau *https://www.payermax.com/*
-  * Bot otomatis mengekstrak platform/domain bersih: `Saved "https://github.com/…" • tags: bookmark, github` atau `Saved "https://www.payermax.com/" • tags: bookmark, fintech` *(Bebas dari slug URL acak dan tag sampah 'read-later')*.
+  > *https://github.com/dietrichgebert/ponytail* atau *https://x.com/karpathy/status/12345*
+  * Kategori: `bookmark` • Tags: `github` atau `twitter` *(Bebas dari slug URL acak dan tag sampah 'read-later')*.
 * **Kredensial Non-Kritis (credential):**
   > *password wifi kantor: KopiSenja2026!*
-  * Bot membalas: `Saved "password wifi kantor…" • tags: credential, wifi`. *(Catatan Keamanan: Jangan gunakan untuk menyimpan password perbankan atau kredensial kritis!)*
+  * Kategori: `credential` • Tags: `wifi-kantor`, `wifi`. *(Catatan Keamanan: Jangan gunakan untuk menyimpan password perbankan atau kredensial kritis!)*
 * **Draf & Tulisan Panjang (draft):**
-  > Kirimkan catatan diskusi meeting atau draf tulisan di atas 200 karakter.
-  * Bot menyimpannya sebagai kategori `draft` dengan tag `writing`.
+  > Kirimkan catatan diskusi meeting atau draf tulisan di atas 150 karakter.
+  * Kategori: `draft` • Tags: `writing`
 
 ---
 
@@ -84,22 +92,25 @@ Cukup ketik atau *forward* pesan apa saja langsung ke chat bot. AI kami akan oto
 | `/tags` | Menampilkan daftar seluruh kategori dan tag aktif yang pernah Anda gunakan. |
 | `/tags <nama_tag>` | Mencari dan menampilkan 10 catatan terakhir yang memiliki tag tersebut. |
 | `/tags draft` | Khusus tag draft, bot akan menampilkan ringkasan jumlah draf dan tautan langsung untuk membaca di web dashboard. |
-| `/search <kata_kunci>` | Mencari catatan berdasarkan kata kunci teks (menampilkan hingga 5 hasil terbaru). |
-| `/ask <pertanyaan>` | **[Eksklusif Pro]** Mengajukan pertanyaan cerdas ke AI mengenai catatan pribadi Anda. |
+| `/search <kata_kunci>` | Mencari catatan berdasarkan kata kunci teks dengan toleransi saltik/typo (`pg_trgm`). |
+| `/ask <pertanyaan>` | **[Eksklusif Pro]** Mengajukan pertanyaan cerdas ke AI mengenai catatan pribadi Anda (multibahasa & agregasi otomatis). |
 
 ---
 
 ### Fitur Eksklusif Pro: AI Q&A (`/ask`)
 
-Jika Anda berlangganan **Paket Pro**, Anda memiliki asisten AI pribadi yang memahami seluruh catatan Anda selama 6 bulan terakhir.
+Jika Anda berlangganan **Paket Pro**, Anda memiliki asisten AI pribadi yang memahami seluruh catatan Anda selama 6 bulan terakhir:
+- **Universal Semantics**: Memahami pengeluaran makanan & minuman (F&B), belanja, tugas, hobi, dan agenda secara komprehensif.
+- **Multilingual Support & Language Mirroring**: Otomatis menjawab dalam bahasa yang sama dengan pertanyaan Anda (Bahasa Indonesia, English, Jawa, Sunda, dsb.).
+- **Multi-Currency Segregation**: Menghitung secara cerdas tanpa mencampur aduk mata uang yang berbeda ($ USD vs Rp IDR).
 
 #### Contoh Penggunaan `/ask`:
-* `/ask Kapan jadwal meeting saya dengan klien minggu ini?`
-  > 🤖 **Jawaban AI:** Berdasarkan catatan Anda pada 12 Oktober, Anda memiliki jadwal *meeting evaluasi sprint bersama tim engineering* pada hari Kamis pukul 14:00.
-* `/ask Berapa total pengeluaran kopi saya baru-baru ini?`
-  > 🤖 **Jawaban AI:** Ditemukan catatan pengeluaran kopi: *beli kopi kenangan 25rb sama rina*.
-* `/ask Apa password wifi di kantor lt 2?`
-  > 🤖 **Jawaban AI:** Password WiFi kantor lt 2 yang tersimpan adalah *senjasore123* dengan SSID *KopiSenja*.
+* `/ask berapa pengeluaran makan dan nonton kemarin?`
+  > 🤖 **Jawaban AI:** Ditemukan catatan pengeluaran: Makan 102k, Popcorn 66k, Nonton 45k. Total pengeluaran F&B: 168k, Tiket nonton: 45k. Total keseluruhan: **213k**.
+* `/ask How much did I spend on food in USD today?`
+  > 🤖 **Jawaban AI:** Based on your notes, you spent **$17.50** on food (Subway $12, Starbucks $5.50).
+* `/ask piro total tuku jajan dina iki?`
+  > 🤖 **Jawaban AI:** Total jajan dina iki yaiku **Rp17.000** (sego pecel 15 ewu + es teh 2 ewu).
 
 ---
 
@@ -107,7 +118,11 @@ Jika Anda berlangganan **Paket Pro**, Anda memiliki asisten AI pribadi yang mema
 
 Web Dashboard dapat diakses melalui browser di desktop maupun smartphone Anda di `/dashboard`.
 
-### Navigasi & Tampilan Catatan
+### Tampilan & Navigasi Mobile Responsif
+* **Desktop View:** Sidebar persisten di sisi kiri dengan daftar kategori, pencarian, dan tautan halaman.
+* **Mobile View:**
+  * **Top Bar & Drawer:** Header ramping dengan logo dan menu *hamburger* slide-over.
+  * **Bottom Navigation Bar:** Akses cepat satu jempol di bagian bawah layar untuk menu *Notes*, *Bookmarks*, dan *Settings* lengkap dengan *safe-area inset* untuk iOS.
 * **Koleksi Catatan (Feed):** Setiap catatan ditampilkan dalam bentuk kartu modern yang dilengkapi informasi waktu pencatatan, badge kategori berwarna, tag spesifik, serta indikator sumber (jika berupa bookmark tautan).
 * **Sidebar / Menu Navigasi:**
   * **All Notes:** Menampilkan seluruh catatan Anda secara kronologis.

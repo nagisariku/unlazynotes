@@ -50,18 +50,25 @@
 4. **Flexible & Fuzzy Search (PostgreSQL `pg_trgm`):**
    * Pencarian cerdas berbasis Trigram Similarity dan pembersih tanda baca/spasi.
    * Menemukan catatan meski ada perbedaan tanda hubung (misal `almuhajirin` menemukan `Al-Muhajirin`) atau sedikit saltik (*typo tolerance*).
-5. **AI Pro Q&A (`/ask`):**
-   * Pengguna paket Pro dapat bertanya kepada AI tentang catatan mereka dalam 6 bulan terakhir langsung dari chat Telegram (misal: *"/ask Kapan meeting sprint berikutnya?"* atau *"/ask Berapa total pengeluaran kopi minggu ini?"*).
-6. **Modern Web Dashboard:**
+5. **AI Pro Q&A (`/ask` - Universal Multilingual Engine):**
+   * Pengguna paket Pro dapat bertanya kepada AI tentang catatan mereka dalam 6 bulan terakhir langsung dari chat Telegram (misal: *"/ask berapa pengeluaran makan hari ini?"* atau *"/ask How much did I spend in USD today?"*).
+   * **Language Mirroring**: Menjawab otomatis dalam bahasa yang sama dengan pertanyaan (Bahasa Indonesia, English, Jawa, Sunda).
+   * **Multi-Currency Segregation**: Menghitung transaksi tanpa mencampur aduk mata uang ($ USD vs Rp IDR).
+   * **Domain-Agnostic Semantics**: Memahami rincian F&B, transportasi, tugas, dan agenda multi-item tanpa halusinasi.
+6. **Modern Web Dashboard & Mobile Responsive UI:**
    * Dibangun dengan Astro 5 Server-Side Rendering (SSR) dan React 19.
+   * **Tampilan Mobile Lengkap**: Header top bar ramping dengan *drawer slide-over* dan *bottom navigation bar* yang ramah jempol serta kompatibel dengan iOS *safe-area inset*.
    * Filter kategori instan, pencarian berbasis teks (full-text search), dan filter tag interaktif.
    * Modal dialog untuk membaca dan menyalin catatan panjang dengan nyaman.
    * Halaman Bookmark Khusus dengan dukungan **Ekspor Netscape Bookmark HTML** (siap diimpor ke Google Chrome, Mozilla Firefox, Brave, Safari).
-7. **SaaS Monetization & Kuota Harian:**
+7. **Intelligent Tagging Engine & Intent Priority:**
+   * Membedakan rencana/checklist tanpa harga (masuk kategori `todo`, misal: `belanja bulanan tokma\nhiling dieng\npilates`) vs transaksi riil dengan harga (masuk kategori `finance`).
+   * Mengekstrak entitas spesifik (nama toko, tempat/destinasi, merk, atau aktivitas) sebagai tag yang bermakna tanpa redundansi nama kategori.
+8. **SaaS Monetization & Kuota Harian:**
    * Paket **Standard**: Batas kuota 25 catatan/hari.
    * Paket **Pro**: Catatan tanpa batas (Unlimited) + Akses eksklusif AI Pro `/ask`.
    * Integrasi gateway pembayaran DOKU Hosted Checkout (QRIS, Virtual Account, Kartu Kredit) dengan verifikasi signature HMAC-SHA256 yang aman dan idempotent.
-8. **Admin Metrics Console (`/admin`):**
+9. **Admin Metrics Console (`/admin`):**
    * Dashboard metrik SaaS khusus role admin: MRR, ARR, Total Pendapatan, Distribusi Paket, dan Metrik Aktivitas Catatan.
 
 ---
