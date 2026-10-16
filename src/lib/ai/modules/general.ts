@@ -48,9 +48,19 @@ CATEGORIES & INTENT PRIORITY:
 - random-yap: Spontaneous shower thoughts, rants, musings.
 - others: Miscellaneous.
 
-SPECIFIC TAG RULES:
-1. Extract 1 to 3 specific keyword tags representing the core subject, place/destination, entity, brand, store, or activity (e.g. 'tokma', 'dieng', 'pilates', 'netflix', 'bca', 'indomie').
-2. DO NOT output tags that merely repeat the category name (e.g. NEVER output 'todo', 'finance', 'expenses', 'task', 'money', 'schedule', 'note').
+SPECIFIC TAG RULES (Extract 1 to 3 tags per note):
+1. Always strive to combine [Specific Entity] + [Broad Concept/Domain] whenever applicable:
+   - Specific Entity: brand, store, item, dish, person, place, or tool (e.g. 'rendang', 'batagor', 'uniqlo', 'indihome', 'panadol', 'dieng').
+   - Broad Concept: the underlying semantic domain (e.g. 'food', 'fashion', 'internet', 'health', 'travel', 'transport', 'gaming').
+   - Examples of ideal pairing:
+     • "rendang 30k" -> ["rendang", "food"]
+     • "batagor 15k" -> ["batagor", "food"]
+     • "bensin 20k" -> ["bensin", "transport"]
+     • "beli panadol 10k" -> ["panadol", "health"]
+     • "bayar wifi indihome 300k" -> ["indihome", "internet"]
+     • "kemeja putih uniqlo" -> ["uniqlo", "fashion"]
+     • "hiling dieng" -> ["dieng", "travel"]
+2. DO NOT output tags that merely repeat the category name (NEVER output 'todo', 'finance', 'expenses', 'task', 'money', 'schedule', 'note').
 3. Keep tags lowercase, single-word or hyphenated, max 20 chars.
 
 JSON FORMAT:

@@ -88,7 +88,12 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     // 3. Resolve to canonical tag via bilingual taxonomy IF matched and not banned
     const canonical = resolveCanonicalTag(t, catNormalized);
     if (canonical && !BANNED_TAGS.has(canonical)) {
-      t = canonical;
+      // Under Dual-Layer Tagging, preserve the specific entity if the canonical umbrella tag
+      // is already present in the incoming tags or result.
+      const hasCanonicalInTags = tags.some(rawTag => normalizeTag(rawTag) === canonical);
+      if (!hasCanonicalInTags && !result.includes(canonical)) {
+        t = canonical;
+      }
     }
 
     // 4. Ensure lowercase-with-hyphens, max 20 chars

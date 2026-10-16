@@ -418,8 +418,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'subscription_inactive' };
   }
 
-  // 5. /tags
-  if (text === '/tags') {
+  // 5. /tags (tanpa argumen)
+  if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text)) {
     const userNotes = await db
       .select({
         category: notes.category,
@@ -445,15 +445,26 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       if (n.category) categoriesSet.add(n.category);
       if (Array.isArray(n.specificTags)) {
         for (const t of n.specificTags) {
-          if (t) specificTagsSet.add(t);
+          if (t && typeof t === 'string' && t.trim()) {
+            specificTagsSet.add(t.trim());
+          }
         }
       }
     }
 
-    const catList = Array.from(categoriesSet).map((c) => `• \`${c}\``).join('\n') || '-';
-    const tagList = Array.from(specificTagsSet).map((t) => `• \`${t}\``).join('\n') || '-';
+    const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
 
-    const msg = `🏷️ *Daftar Tag & Kategori Aktif Anda:*\n\n*Kategori Utama:*\n${catList}\n\n*Specific Tags:*\n${tagList}\n\n_Ketik \`/tags <nama_tag>\` untuk mencari catatan berlabel tersebut._`;
+    const catList =
+      Array.from(categoriesSet)
+        .map(escapeMd)
+        .join(', ') || '-';
+
+    const tagList =
+      Array.from(specificTagsSet)
+        .map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`))
+        .join(', ') || '-';
+
+    const msg = `🏷 *Daftar Kategori & Tag Aktif Anda*\n\n📂 *Kategori Utama:*\n${catList}\n\n🏷 *Specific Tags:*\n${tagList}\n\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`;
     await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
 
     return { ok: true, action: 'tags_list' };
