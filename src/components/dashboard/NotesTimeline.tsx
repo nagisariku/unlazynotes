@@ -147,17 +147,58 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
     }
   };
 
+/**
+ * Helper to match a search token against target text ignoring delimiters like '_' and '-'.
+ */
+function checkTokenMatch(targetText: string | null | undefined, token: string): boolean {
+  if (!targetText) return false;
+  const targetLower = targetText.toLowerCase();
+  const tokenLower = token.toLowerCase();
+
+  // 1. Direct substring match
+  if (targetLower.includes(tokenLower)) return true;
+
+  // 2. Normalized space match (e.g. "bank-bca" -> "bank bca", "bank_bca" -> "bank bca")
+  const normTarget = targetLower.replace(/[-_]/g, ' ');
+  const normToken = tokenLower.replace(/[-_]/g, ' ');
+  if (normTarget.includes(normToken)) return true;
+
+  // 3. Stripped match ignoring delimiters and whitespace
+  const stripTarget = targetLower.replace(/[-_\s]/g, '');
+  const stripToken = tokenLower.replace(/[-_\s]/g, '');
+  if (stripToken && stripTarget.includes(stripToken)) return true;
+
+  return false;
+}
+
   // Filter notes in memory for instant reactivity
   const filteredNotes = useMemo(() => {
     return notes.filter((n) => {
-      // 1. Keyword search (case-insensitive)
+      // 1. Smart Multi-Token Search (case-insensitive & loose delimiter matching)
       if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const contentMatch = !n.isEncrypted && n.content.toLowerCase().includes(query);
-        const vaultMatch = Boolean(n.isEncrypted && n.vaultKey?.toLowerCase().includes(query));
-        const tagMatch = n.specificTags?.some((t) => t.toLowerCase().includes(query));
-        const catMatch = n.category.toLowerCase().includes(query);
-        if (!contentMatch && !vaultMatch && !tagMatch && !catMatch) return false;
+        const tokens = searchQuery.toLowerCase().trim().split(/\s+/).filter(Boolean);
+
+        const isMatch = tokens.every((token) => {
+          // 1. Teks konten catatan
+          if (!n.isEncrypted && checkTokenMatch(n.content, token)) {
+            return true;
+          }
+          // 2. Kategori
+          if (checkTokenMatch(n.category, token)) {
+            return true;
+          }
+          // 3. Array tag spesifik
+          if (n.specificTags && n.specificTags.some((t) => checkTokenMatch(t, token))) {
+            return true;
+          }
+          // 4. Kunci vault
+          if (n.vaultKey && checkTokenMatch(n.vaultKey, token)) {
+            return true;
+          }
+          return false;
+        });
+
+        if (!isMatch) return false;
       }
 
       // 2. Category filter

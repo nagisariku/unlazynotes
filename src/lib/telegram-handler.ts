@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { users, subscriptions, apiKeys, notes, type NoteCategory } from '@/db/schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, ilike } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
@@ -511,42 +511,63 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'vault_list' };
     }
 
-    const [matchedVault] = await db
+    const cleanQuery = vaultParam.trim();
+    const matchedVaults = await db
       .select()
       .from(notes)
       .where(
         and(
           eq(notes.userId, activeKey.userId),
           eq(notes.isEncrypted, true),
-          sql`LOWER(${notes.vaultKey}) = LOWER(${vaultParam})`
+          ilike(notes.vaultKey, `%${cleanQuery}%`)
         )
       )
       .orderBy(desc(notes.createdAt))
-      .limit(1);
+      .limit(5);
 
-    if (!matchedVault) {
+    if (matchedVaults.length === 0) {
       await sendTelegramMessage(
         chatId,
-        `❌ Tidak ditemukan rahasia di Private Vault dengan kunci \`${vaultParam}\`.\n\nKetik \`/vault\` untuk melihat daftar seluruh kunci yang tersimpan.`,
+        `❌ Tidak ditemukan rahasia di Private Vault dengan kata kunci \`${cleanQuery}\`.\n\nKetik \`/vault\` untuk melihat daftar seluruh kunci yang tersimpan.`,
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'vault_not_found' };
     }
 
-    try {
-      const decrypted = decryptSecret(matchedVault.content, activeKey.userId);
-      const dateStr = format(new Date(matchedVault.createdAt), 'dd MMM yyyy, HH:mm');
-      const reply = `🔓 *Private Vault: [${matchedVault.vaultKey}]*\n📅 _Disimpan: ${dateStr}_\n\n\`\`\`\n${decrypted}\n\`\`\``;
-      await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
-      return { ok: true, action: 'vault_revealed' };
-    } catch (decErr) {
-      console.error('[Private Vault] Decryption error:', decErr);
-      await sendTelegramMessage(
-        chatId,
-        '❌ Gagal mendekripsi data vault. Terjadi kendala kunci atau format data korup.'
-      );
-      return { ok: false, error: 'vault_decryption_failed' };
+    if (matchedVaults.length === 1) {
+      const matchedVault = matchedVaults[0];
+      try {
+        const decrypted = decryptSecret(matchedVault.content, activeKey.userId);
+        const dateStr = format(new Date(matchedVault.createdAt), 'dd MMM yyyy, HH:mm');
+        const reply = `🔓 *Private Vault: [${matchedVault.vaultKey}]*\n📅 _Disimpan: ${dateStr}_\n\n\`\`\`\n${decrypted}\n\`\`\``;
+        await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
+        return { ok: true, action: 'vault_revealed' };
+      } catch (decErr) {
+        console.error('[Private Vault] Decryption error:', decErr);
+        await sendTelegramMessage(
+          chatId,
+          '❌ Gagal mendekripsi data vault. Terjadi kendala kunci atau format data korup.'
+        );
+        return { ok: false, error: 'vault_decryption_failed' };
+      }
     }
+
+    // Jika ditemukan lebih dari 1 catatan yang cocok
+    let reply = `🔓 *Ditemukan ${matchedVaults.length} Catatan Private Vault untuk "*${cleanQuery}*":*\n\n`;
+    for (let i = 0; i < matchedVaults.length; i++) {
+      const item = matchedVaults[i];
+      const dateStr = format(new Date(item.createdAt), 'dd MMM yyyy, HH:mm');
+      let decrypted = '';
+      try {
+        decrypted = decryptSecret(item.content, activeKey.userId);
+      } catch (err) {
+        decrypted = '[Gagal mendekripsi data vault]';
+      }
+      reply += `*${i + 1}. 🔑 ${item.vaultKey}* (📅 _${dateStr}_)\n\`\`\`\n${decrypted}\n\`\`\`\n\n`;
+    }
+
+    await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
+    return { ok: true, action: 'vault_revealed_multiple' };
   }
 
   // 11. Core Note Capture

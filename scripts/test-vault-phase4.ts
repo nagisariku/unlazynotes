@@ -14,7 +14,7 @@ async function runTest() {
     throw new Error('No user found in DB');
   }
 
-  const [keyRecord] = await db
+  let [keyRecord] = await db
     .select()
     .from(apiKeys)
     .where(eq(apiKeys.userId, testUser.id))
@@ -35,7 +35,8 @@ async function runTest() {
         telegramChatId: null,
         isActive: true,
       });
-      keyRecord = { id: `key_${Date.now()}`, rawKey, keyHash };
+      const [inserted] = await db.select().from(apiKeys).where(eq(apiKeys.userId, testUser.id)).limit(1);
+      keyRecord = inserted;
     }
   }
 
@@ -93,8 +94,8 @@ async function runTest() {
   }
   console.log('✅ PASS: /secure encrypted content with AES-256-GCM and bypassed AI.');
 
-  // 3. Test /vault (list) & /vault <kunci>
-  console.log('\n[3] Testing /vault list & /vault <kunci>...');
+  // 3. Test /vault (list) & /vault <kunci> (Partial loose matching)
+  console.log('\n[3] Testing /vault list & /vault <kunci> with partial matching...');
   const vaultListResult = await processTelegramMessage({
     chat: { id: testChatId },
     text: '/vault',
@@ -103,14 +104,41 @@ async function runTest() {
     throw new Error(`Expected vault_list, got: ${vaultListResult.action}`);
   }
 
-  const vaultGetResult = await processTelegramMessage({
+  // Simpan catatan kedua untuk menguji multiple partial match: 'bca_card'
+  const secondSecure = await processTelegramMessage({
     chat: { id: testChatId },
-    text: `/vault ${secretKey}`,
+    text: `/secure bca_card PinBCA123456`,
   });
-  if (vaultGetResult.action !== 'vault_revealed') {
-    throw new Error(`Expected vault_revealed, got: ${vaultGetResult.action}`);
+
+  // Cari dengan query 'bca' -> harus menemukan 'bca_card' dan jika ada bank_bca
+  const vaultPartialResult = await processTelegramMessage({
+    chat: { id: testChatId },
+    text: `/vault bca`,
+  });
+  console.log('Result /vault bca:', vaultPartialResult);
+  if (
+    vaultPartialResult.action !== 'vault_revealed' &&
+    vaultPartialResult.action !== 'vault_revealed_multiple'
+  ) {
+    throw new Error(`Expected vault_revealed or vault_revealed_multiple, got: ${vaultPartialResult.action}`);
   }
-  console.log('✅ PASS: /vault commands successfully retrieved and decrypted secret.');
+
+  // Cari dengan query 'staging' -> harus menemukan 'db-staging'
+  const vaultStagingResult = await processTelegramMessage({
+    chat: { id: testChatId },
+    text: `/vault staging`,
+  });
+  console.log('Result /vault staging:', vaultStagingResult);
+  if (vaultStagingResult.action !== 'vault_revealed') {
+    throw new Error(`Expected vault_revealed for 'staging', got: ${vaultStagingResult.action}`);
+  }
+
+  console.log('✅ PASS: /vault partial match successfully retrieved and decrypted secrets.');
+
+  // Bersihkan note kedua
+  if (secondSecure.noteId) {
+    await db.delete(notes).where(eq(notes.id, secondSecure.noteId));
+  }
 
   // 4. Test Total Isolation: /search must NOT see encrypted vault notes
   console.log('\n[4] Testing Total Isolation from Search & RAG Context...');
