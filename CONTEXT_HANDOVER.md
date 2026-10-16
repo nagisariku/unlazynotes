@@ -65,6 +65,13 @@ Memastikan navigasi dan pembacaan catatan di layar ponsel berjalan mulus:
 Menghindari error PostgreSQL `22P02 (invalid input value for enum note_category)` saat pengguna memfilter tag kustom yang bukan 9 kategori utama (misal `/tags expenses` atau `/tags twitter`):
 - Seluruh perbandingan dinamis di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts) dan [`src/pages/api/notes/index.ts`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/index.ts) menggunakan `notes.category::text = ${targetTag}` sehingga PostgreSQL memperlakukan parameter sebagai string aman.
 
+### F. Tanya Jawab AI (`/ask`) Semantics & RAG Alignment ([`src/lib/ask.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ask.ts))
+Mengatasi kekeliruan perhitungan pengeluaran (misal `popcorn 66k` tidak terhitung saat menanyakan pengeluaran makan):
+1. **Penataan Konteks RAG**: Memindahkan konteks catatan dari `system` prompt ke `user` turn agar LLM tidak memicu safety guardrail atau halusinasi pemisahan tag per baris.
+2. **Semantik Food & Beverages (F&B)**: Menegaskan bahwa istilah pengeluaran "makan/makanan" mencakup seluruh makanan berat, camilan/snack (popcorn, roti, jajanan), dan minuman.
+3. **Pemisahan Multi-Item per Catatan**: Pada catatan campuran (`nonton 45k, popcorn 66k, gojek 23k, makan 102k`), LLM diajarkan membedah item per baris secara semantik (nonton = hiburan, gojek = transport, popcorn & makan = konsumsi/F&B).
+4. **Kalkulasi & Transparansi**: Menghasilkan rincian item matematis beserta total akhir yang akurat.
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
