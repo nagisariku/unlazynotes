@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Filter, X, Sparkles, FileText, Send, Loader2 } from 'lucide-react';
 import NoteCard from './NoteCard';
+import EditNoteModal from './EditNoteModal';
 import { Toaster, toast } from 'sonner';
 
 interface NoteItem {
@@ -40,6 +41,9 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Edit Note Modal State
+  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
+
   // Initialize filters from URL search params on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -76,6 +80,12 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
   const handleTagClick = (tag: string) => {
     setSearchQuery(tag);
     toast.info(`Memfilter catatan dengan #${tag}`);
+  };
+
+  const handleNoteUpdated = (updatedNote: NoteItem) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
+    );
   };
 
   const handleCreateNote = async () => {
@@ -395,6 +405,7 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
               onDelete={handleDeleteNote}
               onCopySuccess={handleCopySuccess}
               onTagClick={handleTagClick}
+              onEdit={(n) => setEditingNote(n as NoteItem)}
             />
           ))}
         </div>
@@ -430,6 +441,14 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
           )}
         </div>
       )}
+
+      {/* Edit Note Modal */}
+      <EditNoteModal
+        note={editingNote}
+        isOpen={Boolean(editingNote)}
+        onClose={() => setEditingNote(null)}
+        onSave={handleNoteUpdated}
+      />
     </div>
   );
 }

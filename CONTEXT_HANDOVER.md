@@ -91,6 +91,10 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
    - Endpoint `POST /api/notes` memvalidasi kuota harian Standard/Pro, memanggil AI tagging (`generateNoteTags`), dan menyimpan catatan ke PostgreSQL dengan `source: 'web'`.
 2. **Clickable Specific Tags**:
    - Tag pills `#tag` pada [`NoteCard.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NoteCard.tsx) interaktif. Mengklik tag langsung memicu filtering feed ke tag tersebut via callback ke `NotesTimeline`.
+3. **Modal Dialog Note & Tag Editor ([`EditNoteModal.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/EditNoteModal.tsx) & [`PATCH /api/notes/[id]`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/%5Bid%5D.ts))**:
+   - Ikon pensil di toolbar NoteCard membuka dialog modal bertema zinc dark.
+   - Pengguna dapat mengedit konten teks catatan, mengubah kategori dari 9 pilihan resmi, serta menambah/menghapus specific tags secara dinamis.
+   - Endpoint `PATCH /api/notes/[id]` memvalidasi hak milik user, membersihkan tag, menyimpan perubahan ke database, dan mengembalikan data terbaru ke UI secara instan.
 
 ---
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Trash2, ExternalLink, Calendar, Tag } from 'lucide-react';
+import { Copy, Check, Trash2, ExternalLink, Calendar, Tag, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface NoteCardProps {
@@ -14,6 +14,7 @@ interface NoteCardProps {
   onDelete: (id: string) => void;
   onCopySuccess?: (content: string) => void;
   onTagClick?: (tag: string) => void;
+  onEdit?: (note: NoteCardProps['note']) => void;
 }
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -28,7 +29,7 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
   others: { bg: 'bg-zinc-500/10', text: 'text-zinc-400', border: 'border-zinc-500/20' },
 };
 
-export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick }: NoteCardProps) {
+export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, onEdit }: NoteCardProps) {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -152,8 +153,16 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick }: 
         {/* Action Buttons */}
         <div className="flex items-center gap-1 shrink-0">
           <button
+            onClick={() => onEdit && onEdit(note)}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Edit Catatan & Tag"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+
+          <button
             onClick={handleCopy}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors cursor-pointer"
             title="Copy Text"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
