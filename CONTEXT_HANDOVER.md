@@ -65,12 +65,13 @@ Memastikan navigasi dan pembacaan catatan di layar ponsel berjalan mulus:
 Menghindari error PostgreSQL `22P02 (invalid input value for enum note_category)` saat pengguna memfilter tag kustom yang bukan 9 kategori utama (misal `/tags expenses` atau `/tags twitter`):
 - Seluruh perbandingan dinamis di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts) dan [`src/pages/api/notes/index.ts`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/index.ts) menggunakan `notes.category::text = ${targetTag}` sehingga PostgreSQL memperlakukan parameter sebagai string aman.
 
-### F. Tanya Jawab AI (`/ask`) Semantics & RAG Alignment ([`src/lib/ask.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ask.ts))
-Mengatasi kekeliruan perhitungan pengeluaran (misal `popcorn 66k` tidak terhitung saat menanyakan pengeluaran makan):
+### F. Tanya Jawab AI (`/ask`) Universal Domain-Agnostic Engine ([`src/lib/ask.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ask.ts))
+Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kuliah, dll.) melalui 5 Prinsip Kognitif Universal yang berlaku untuk semua domain/kasus:
 1. **Penataan Konteks RAG**: Memindahkan konteks catatan dari `system` prompt ke `user` turn agar LLM tidak memicu safety guardrail atau halusinasi pemisahan tag per baris.
-2. **Semantik Food & Beverages (F&B)**: Menegaskan bahwa istilah pengeluaran "makan/makanan" mencakup seluruh makanan berat, camilan/snack (popcorn, roti, jajanan), dan minuman.
-3. **Pemisahan Multi-Item per Catatan**: Pada catatan campuran (`nonton 45k, popcorn 66k, gojek 23k, makan 102k`), LLM diajarkan membedah item per baris secara semantik (nonton = hiburan, gojek = transport, popcorn & makan = konsumsi/F&B).
-4. **Kalkulasi & Transparansi**: Menghasilkan rincian item matematis beserta total akhir yang akurat.
+2. **Pemahaman Semantik Inklusif**: Mengutamakan makna kontekstual di dunia nyata dibanding pencocokan kata harfiah (*literal string matching*), sehingga kategori otomatis mencakup turunan atau jenisnya (misal: popcorn $\rightarrow$ konsumsi/makanan, tuweb/karil $\rightarrow$ tugas kuliah, topup valo $\rightarrow$ game).
+3. **Pembedahan Catatan Campuran (Multi-Item Dissection)**: Membedah catatan multi-item secara independen per baris untuk memilah item relevan vs tidak relevan tanpa membuang seluruh isi catatan.
+4. **Integritas Metadata Tingkat Catatan**: Menghilangkan halusinasi bahwa tag adalah filter rigid per-kata; tag diperlakukan sebagai konteks payung tingkat catatan.
+5. **Transparansi & Kejujuran Data (Anti-Halusinasi)**: Menyajikan rincian item matematis beserta total akhir yang transparan, dan secara lugas menyatakan data tidak ditemukan jika informasi tidak ada di catatan.
 
 ---
 
