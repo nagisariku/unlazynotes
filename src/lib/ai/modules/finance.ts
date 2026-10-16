@@ -1,5 +1,6 @@
 import { sanitizeTags } from '../sanitizer';
 import { extractTagsFromContent } from '../taxonomy';
+import { enrichDualLayerTags } from './general';
 import type { NoteTagResult } from '../types';
 
 /**
@@ -9,10 +10,11 @@ import type { NoteTagResult } from '../types';
 export function processFinanceNote(content: string): NoteTagResult {
   const text = content.trim();
   const matchedCanonical = extractTagsFromContent(text, 'finance', 3);
+  const enriched = enrichDualLayerTags(matchedCanonical, 'finance', text);
 
   return {
     category: 'finance',
-    specific_tags: sanitizeTags(matchedCanonical, 'finance', text, 3),
+    specific_tags: sanitizeTags(enriched, 'finance', text, 3),
     source: null,
   };
 }

@@ -33,7 +33,7 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Food, dining, groceries, and beverages',
     aliases: {
-      id: ['seblak', 'ciken', 'ayam', 'bakso', 'makan', 'kopi', 'coffee', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang', 'minum'],
+      id: ['rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'kopi', 'coffee', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang', 'minum'],
       en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'coffee', 'cafe', 'restaurant', 'groceries', 'snack', 'burger', 'pizza', 'drink'],
     },
   },

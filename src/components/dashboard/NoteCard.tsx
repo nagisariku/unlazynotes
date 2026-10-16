@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Trash2, ExternalLink, Calendar, Tag, Pencil, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Copy, Check, Trash2, ExternalLink, Calendar, Tag, Pencil, Lock, Eye, EyeOff, Loader2, Send } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface NoteCardProps {
@@ -121,6 +121,15 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
           <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-zinc-500">
             <Calendar className="w-3.5 h-3.5" />
             <span>{format(new Date(note.createdAt), 'dd MMM yyyy, HH:mm')}</span>
+            {note.source?.toLowerCase() === 'telegram' && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-sky-500/10 text-sky-400 text-[10px] font-medium"
+                title="Tersinkron otomatis via Telegram"
+              >
+                <Send className="w-2.5 h-2.5" />
+                <span>Telegram</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -128,11 +137,6 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300 text-[10px] sm:text-xs font-semibold tracking-wider">
                 <Lock className="w-3 h-3 text-rose-400" />
                 <span>Private Vault{note.vaultKey ? `: ${note.vaultKey}` : ''}</span>
-              </span>
-            )}
-            {note.source && (
-              <span className="px-2 py-0.5 rounded-full border border-zinc-700 bg-zinc-800 text-zinc-300 text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">
-                {note.source}
               </span>
             )}
             <span

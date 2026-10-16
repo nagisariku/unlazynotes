@@ -11,14 +11,18 @@ export const BANNED_TAGS = new Set([
   'schedule',
   'finance',
   'expenses',
+  'expense',
   'income',
   'bill',
+  'bill-payment',
   'note',
   'notes',
   'daily-spending',
   'spending',
   'general',
   'others',
+  'other',
+  'unknown',
   'text',
   'daily',
   'link',
@@ -42,6 +46,20 @@ export const BANNED_TAGS = new Set([
   'psts',
   'pts',
   'pas',
+  'price',
+  'prices',
+  'cost',
+  'costs',
+  'fee',
+  'fees',
+  'purchase',
+  'purchases',
+  'payment',
+  'payments',
+  'phrase',
+  'word',
+  'sentence',
+  'term',
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -73,7 +91,7 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     if (!t) continue;
 
     // 1. Strip -price, -cost, -fee, -amount, -nominal, -spending, -expense suffixes
-    t = t.replace(/-(price|cost|fee|nominal|amount|spending|expense|expenses)$/, '');
+    t = t.replace(/-(price|cost|fee|nominal|amount|spending|expense|expenses|payment|purchase)$/, '');
 
     // 2. Reject pure numbers, prices, or currency (e.g. 15k, 60k, 100k, 50rb, $10, rp15k)
     if (
@@ -89,9 +107,18 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     const canonical = resolveCanonicalTag(t, catNormalized);
     if (canonical && !BANNED_TAGS.has(canonical)) {
       // Under Dual-Layer Tagging, preserve the specific entity if the canonical umbrella tag
-      // is already present in the incoming tags or result.
+      // is already present in the incoming tags or result, or if t is an entity keyword
+      const isSpecificEntity = [
+        'seblak', 'ayam', 'bakso', 'mie', 'sate', 'cireng', 'rendang', 'batagor',
+        'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
+        'indihome', 'biznet', 'wifi', 'kuota', 'pulsa',
+        'panadol', 'bodrex', 'obat', 'vitamin',
+        'uniqlo', 'zara', 'kemeja',
+        'dieng', 'bali', 'jogja'
+      ].includes(t);
+
       const hasCanonicalInTags = tags.some(rawTag => normalizeTag(rawTag) === canonical);
-      if (!hasCanonicalInTags && !result.includes(canonical)) {
+      if (!isSpecificEntity && !hasCanonicalInTags && !result.includes(canonical)) {
         t = canonical;
       }
     }
