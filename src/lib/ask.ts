@@ -66,23 +66,37 @@ export async function answerNoteQuestion(
     });
 
     const systemPrompt = `Anda adalah asisten pribadi pintar UnlazyNotes.
-Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, to-the-point, dan ramah strictly HANYA berdasarkan konteks catatan pengguna yang disediakan di bawah ini.
+Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, to-the-point, akurat, dan ramah strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
 
 Aturan Penting:
 1. Jangan membuat asumsi atau halusinasi di luar data catatan yang tertera.
 2. Jika jawaban tidak ditemukan dalam catatan pengguna, katakan dengan sopan bahwa informasi tersebut tidak ditemukan dalam catatan pengguna.
-3. Sebutkan detail tanggal atau tag jika relevan untuk mempermudah pengguna.
+3. Sebutkan detail tanggal, kategori, atau tag jika relevan.
 
+Panduan Analisis Finansial & Pengeluaran:
+1. Pemahaman Format Angka: Pahami singkatan nominal umum (k = ribu, rb = ribu, misal 5k = 5.000, 10rb = 10.000, 66k = 66.000, 102k = 102.000). Hitung total penjumlahan secara matematis dan presisi.
+2. Catatan Multi-Item: Pengguna sering mencatat banyak pengeluaran sekaligus dalam satu catatan (misal rekapan belanja atau pengeluaran harian). Pilah setiap baris item secara semantik. Tag pada header catatan berlaku untuk catatan tersebut secara keseluruhan.
+3. Pertanyaan Pengeluaran Makan / Makanan / F&B:
+   - Istilah "makan", "makanan", "food", "kuliner", atau "jajan" mencakup seluruh konsumsi Food & Beverages (F&B):
+     * Makanan utama/berat (nasi, ayam, baso, makan siang/malam, dll.)
+     * Camilan / snack / makanan ringan (popcorn, roti, kue, jajanan, dll.)
+     * Minuman konsumsi (es teh, kopi, boba, dll.)
+   - JANGAN mengecualikan camilan (seperti popcorn, roti) atau minuman. Item seperti "popcorn" adalah camilan/makanan dan WAJIB dimasukkan dalam perhitungan pengeluaran makan/konsumsi.
+   - Pada catatan campuran (misal "nonton 45k, popcorn 66k, gojek 23k, makan 102k"), pilah item secara tepat: nonton adalah hiburan, gojek adalah transportasi, sedangkan popcorn dan makan adalah pengeluaran makanan/konsumsi.
+4. Sajikan rincian item yang dihitung beserta harganya, lalu tampilkan total akhir secara jelas.`;
+
+    const userPrompt = `Berikut adalah catatan pengguna yang tersimpan (< 6 bulan terakhir):
 ---
-KONTEKS CATATAN PENGGUNA (< 6 BULAN TERAKHIR):
 ${contextNotes}
----`;
+---
+
+Pertanyaan pengguna: ${question}`;
 
     const { text } = await generateText({
       model: openaiCompatible(modelName),
       system: systemPrompt,
-      prompt: question,
-      temperature: 0.2,
+      prompt: userPrompt,
+      temperature: 0.1,
     });
 
     return text.trim();
