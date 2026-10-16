@@ -31,15 +31,20 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
    - Prioritas *Action Intent* (todo/study) sebelum URL.
    - Penjagaan *False-Positive* nominal angka (kodepos/tahun/nomor HP tidak salah masuk ke finance).
 2. **Specialized Domain Modules (`src/lib/ai/modules/`)**:
-   - `finance.ts`: Pengeluaran/pemasukan dengan tag kanonikal (`expenses`, `income`, `bill`, `food`, `transport`, `laundry`, `hangout`).
+   - `finance.ts`: Pengeluaran/pemasukan dengan tag kanonikal berorientasi subjek/entitas (tanpa redundansi tag `expenses`/`income`/`bill`).
    - `bookmark.ts`: Dukungan multi-link tanpa pemecahan (*no splitting*). Ekstraksi platform (`github`, `youtube`, `twitter`, `instagram`, `tiktok`, `netflix`, `facebook`, `spotify`, `linkedin`, `reddit`) dan pembacaan teks caption pendamping secara kontekstual.
    - `todo.ts`: Kluster aksi (`study`, `exam`, `work`, `dev`, `health`).
    - `credential.ts`: Kluster keamanan (`wifi`, `server`, `account`, `database`, `api`, `bank`).
-   - `general.ts`: LLM fallback untuk catatan unrouted (`schedule`, `draft`, `reference`, `random-yap`) dengan *Strict Single-Word Prompt*.
+   - `general.ts`: Intelligent Tagging Engine dengan **Intent Priority**:
+     - `todo`: Rencana, daftar belanja, agenda multi-baris tanpa nominal/harga (misal `belanja bulanan tokma\nhiling dieng\npilates`).
+     - `finance`: Transaksi riil dengan nominal/harga atau niat bayar (`bayar wifi 300k`, `tfr 50rb nasgor`).
+     - Ekstraksi 1–3 specific keyword tags yang merepresentasikan subjek, tempat/toko, merk, atau aktivitas (`tokma`, `dieng`, `pilates`).
 3. **Bilingual Canonical Taxonomy (`src/lib/ai/taxonomy/`)**:
    - Kamus terstandarisasi dwibahasa (ID & EN) dengan indeks in-memory $O(1)$ alias mapping (misal: `seblak`, `ciken`, `lunch` $\rightarrow$ `food`).
-4. **Strict Single-Word Sanitizer (`src/lib/ai/sanitizer.ts`)**:
-   - Pemecah CamelCase, pemangkas kata majemuk & suffix (`-price`, `-spending`), pemblokiran angka nominal (`15k`, `$25`), serta pemblokiran kata non-semantik (`read-later`, `multi`, `money`, `task`).
+4. **Specific Entity Sanitizer (`src/lib/ai/sanitizer.ts`)**:
+   - Menghapus pemaksaan tag `expenses`/`bill`/`income` pada kategori `finance` agar tag diisi oleh subjek/entitas nyata.
+   - Memasukkan `expenses`, `income`, `bill` ke `BANNED_TAGS` agar specific tags tidak redundan dengan kategori `finance`.
+   - Menjaga entitas unik, nama toko, tempat, atau aktivitas (lowercase-with-hyphens, max 20 karakter).
 
 ### B. Telegram Bot UX & Interaksi Bersih (*Zero Friction*)
 1. **Silent Note Capture ([`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts))**:
