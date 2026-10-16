@@ -41,7 +41,7 @@ const serializedSub = sub
   : null;
 
 const apiKeyInfo = {
-  rawKey: null, // key asli di-hash di DB; saat regenerate akan memunculkan raw key baru
+  rawKey: keyRecord?.rawKey || null,
   telegramChatId: keyRecord?.telegramChatId || null,
   isActive: keyRecord?.isActive ?? true,
 };

@@ -83,6 +83,7 @@ export const apiKeys = pgTable('api_keys', {
   id: text('id').primaryKey(),
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
   keyHash: text('key_hash').notNull().unique(),
+  rawKey: text('raw_key'),
   telegramChatId: text('telegram_chat_id'),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -95,6 +96,8 @@ export const notes = pgTable('notes', {
   category: categoryEnum('category').default('others').notNull(),
   specificTags: jsonb('specific_tags').$type<string[]>().default([]).notNull(),
   source: varchar('source', { length: 100 }), // youtube, instagram, twitter, etc.
+  isEncrypted: boolean('is_encrypted').default(false).notNull(),
+  vaultKey: varchar('vault_key', { length: 100 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

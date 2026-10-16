@@ -1,5 +1,21 @@
 import { useState, useEffect } from 'react';
-import { Eye, EyeOff, Copy, Check, RefreshCw, Bot, Shield, CheckCircle2, AlertCircle, Sparkles, Zap } from 'lucide-react';
+import {
+  Eye,
+  EyeOff,
+  Copy,
+  Check,
+  RefreshCw,
+  Bot,
+  Shield,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+  Zap,
+  Send,
+  Download,
+  FileJson,
+  FileText,
+} from 'lucide-react';
 import { Toaster, toast } from 'sonner';
 import UpgradeModal from './UpgradeModal';
 
@@ -99,7 +115,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
       <div>
         <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-zinc-100">Account &amp; Integrations</h1>
         <p className="text-zinc-400 text-xs mt-1">
-          Kelola profil, kunci integrasi Telegram Bot, dan status paket langganan Anda.
+          Kelola profil, kunci integrasi Telegram Bot, portabilitas data, dan status paket langganan Anda.
         </p>
       </div>
 
@@ -140,9 +156,34 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
           </div>
         </div>
 
+        {/* 1-Click Auto Connect Button */}
+        <div>
+          {currentKey && !currentKey.includes('***') ? (
+            <a
+              href={`https://t.me/unlazynotes_bot?start=${encodeURIComponent(currentKey)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-lg shadow-indigo-500/20 transition-all cursor-pointer"
+            >
+              <Send className="w-4 h-4 shrink-0" />
+              <span>📱 Hubungkan ke Telegram Otomatis (1-Click Connect)</span>
+            </a>
+          ) : (
+            <div className="p-3 rounded-xl border border-zinc-800 bg-zinc-950/60 flex items-center justify-between text-xs text-zinc-400">
+              <span>Ingin menghubungkan bot secara instan tanpa ketik token manual?</span>
+              <button
+                onClick={handleRegenerate}
+                className="text-indigo-400 hover:text-indigo-300 font-semibold underline cursor-pointer"
+              >
+                Aktifkan 1-Click Connect
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* API Key Box */}
         <div>
-          <label className="text-xs font-medium text-zinc-400 block mb-2">Telegram API Key Anda:</label>
+          <label className="text-xs font-medium text-zinc-400 block mb-2">Telegram API Key Anda (Manual):</label>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             <div className="flex-1 min-w-0 flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 font-mono text-xs text-zinc-300 select-all overflow-hidden">
               <span className="truncate mr-2">{showKey ? currentKey : '••••••••••••••••••••••••••••••••••••••••••••'}</span>
@@ -158,7 +199,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleCopy}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl border border-zinc-800 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold transition-colors cursor-pointer"
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? 'Tersalin' : 'Salin Key'}</span>
@@ -167,7 +208,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
               <button
                 onClick={handleRegenerate}
                 disabled={isRegenerating}
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors"
+                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold transition-colors cursor-pointer"
                 title="Buat ulang kunci API baru"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRegenerating ? 'animate-spin' : ''}`} />
@@ -179,7 +220,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
         {/* Quick Instructions */}
         <div className="p-4 rounded-xl border border-zinc-800/80 bg-zinc-950/60 text-xs text-zinc-400 space-y-2">
-          <p className="font-semibold text-zinc-300">Cara Menghubungkan ke Bot:</p>
+          <p className="font-semibold text-zinc-300">Cara Alternatif Menghubungkan Secara Manual:</p>
           <ol className="list-decimal list-inside space-y-1 text-zinc-400">
             <li>Buka Telegram dan cari bot <a href="https://t.me/unlazynotes_bot" target="_blank" rel="noreferrer" className="text-indigo-400 underline font-semibold">@unlazynotes_bot</a>.</li>
             <li>Salin API Key di atas.</li>
@@ -344,6 +385,57 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
               className="w-full px-3.5 py-2 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-300 text-xs cursor-not-allowed"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Section 4: Universal Data Export (Data Portability) */}
+      <div className="p-4 sm:p-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+            <Download className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-zinc-100">Universal Data Export (Portabilitas Data)</h2>
+            <p className="text-xs text-zinc-400">
+              Cadangkan seluruh catatan Anda kapan saja tanpa vendor lock-in. Catatan Private Vault Anda didekripsi khusus untuk berkas backup pribadi Anda.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          <a
+            href="/api/notes/export?format=json"
+            download
+            className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 hover:border-zinc-700 transition-all group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-lg bg-zinc-900 text-amber-400 group-hover:bg-amber-500/10 transition-colors shrink-0">
+                <FileJson className="w-4 h-4" />
+              </div>
+              <div className="text-left min-w-0">
+                <span className="text-xs font-semibold text-zinc-200 block truncate">Ekspor Cadangan (JSON)</span>
+                <span className="text-[11px] text-zinc-500 block truncate">Format data lengkap untuk developer</span>
+              </div>
+            </div>
+            <Download className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors shrink-0 ml-2" />
+          </a>
+
+          <a
+            href="/api/notes/export?format=markdown"
+            download
+            className="flex items-center justify-between p-3.5 rounded-xl border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 hover:border-zinc-700 transition-all group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="p-2.5 rounded-lg bg-zinc-900 text-indigo-400 group-hover:bg-indigo-500/10 transition-colors shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div className="text-left min-w-0">
+                <span className="text-xs font-semibold text-zinc-200 block truncate">Ekspor Cadangan (Markdown)</span>
+                <span className="text-[11px] text-zinc-500 block truncate">Untuk Obsidian, Notion, atau Logseq</span>
+              </div>
+            </div>
+            <Download className="w-4 h-4 text-zinc-500 group-hover:text-indigo-400 transition-colors shrink-0 ml-2" />
+          </a>
         </div>
       </div>
     </div>

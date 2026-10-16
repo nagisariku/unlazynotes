@@ -51,10 +51,20 @@ export async function ensureUserInitialResources(userId: string, preferredLocale
       id: keyId,
       userId,
       keyHash,
+      rawKey,
       telegramChatId: null,
       isActive: true,
       createdAt: new Date(),
     });
+  } else if (!existingKey.rawKey) {
+    const { rawKey, keyHash } = generateApiKey();
+    userRawKey = rawKey;
+    await db
+      .update(apiKeys)
+      .set({ rawKey, keyHash })
+      .where(eq(apiKeys.id, existingKey.id));
+  } else {
+    userRawKey = existingKey.rawKey;
   }
 
   return { userRawKey };

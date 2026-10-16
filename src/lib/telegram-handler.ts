@@ -1,8 +1,9 @@
 import { db } from '@/db';
-import { subscriptions, apiKeys, notes, type NoteCategory } from '@/db/schema';
+import { users, subscriptions, apiKeys, notes, type NoteCategory } from '@/db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
+import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import {
   HELP_MESSAGE,
   SECURITY_DISCLAIMER,
@@ -68,6 +69,41 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 1. /start atau /help
   if (text.startsWith('/start') || text.startsWith('/help')) {
+    const startPayload = text.replace(/^\/start\s*/, '').trim();
+
+    // 1-Click Connect Onboarding jika user datang dari link: https://t.me/unlazynotes_bot?start=<token>
+    if (text.startsWith('/start') && startPayload && startPayload !== '/start') {
+      const keyHash = hashApiKey(startPayload);
+      const [matchedKey] = await db
+        .select()
+        .from(apiKeys)
+        .where(
+          and(
+            sql`(${apiKeys.keyHash} = ${keyHash} OR ${apiKeys.rawKey} = ${startPayload})`,
+            eq(apiKeys.isActive, true)
+          )
+        )
+        .limit(1);
+
+      if (matchedKey) {
+        await db
+          .update(apiKeys)
+          .set({ telegramChatId: chatId })
+          .where(eq(apiKeys.id, matchedKey.id));
+
+        const [matchedUser] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, matchedKey.userId))
+          .limit(1);
+
+        const userName = matchedUser?.name || 'Teman';
+        const welcomeMsg = `🎉 *Halo ${userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.`;
+        await sendTelegramMessage(chatId, welcomeMsg, { parse_mode: 'Markdown' });
+        return { ok: true, action: 'start_auto_connected' };
+      }
+    }
+
     await sendTelegramMessage(chatId, HELP_MESSAGE, { parse_mode: 'Markdown' });
     return { ok: true, action: 'help' };
   }
@@ -90,7 +126,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const [matchedKey] = await db
       .select()
       .from(apiKeys)
-      .where(and(eq(apiKeys.keyHash, keyHash), eq(apiKeys.isActive, true)))
+      .where(
+        and(
+          sql`(${apiKeys.keyHash} = ${keyHash} OR ${apiKeys.rawKey} = ${rawApiKey})`,
+          eq(apiKeys.isActive, true)
+        )
+      )
       .limit(1);
 
     if (!matchedKey) {
@@ -107,9 +148,16 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .set({ telegramChatId: chatId })
       .where(eq(apiKeys.id, matchedKey.id));
 
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, matchedKey.userId))
+      .limit(1);
+
+    const userName = matchedUser?.name || 'Teman';
     await sendTelegramMessage(
       chatId,
-      `✅ *Akun Berhasil Terhubung!*\n\nSelamat datang di UnlazyNotes. Anda sekarang dapat langsung mengirim teks, tautan, ide, to-do list, atau draf ke chat ini untuk disimpan dan di-tag otomatis oleh AI.\n\n${SECURITY_DISCLAIMER}`,
+      `🎉 *Halo ${userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.\n\n${SECURITY_DISCLAIMER}`,
       { parse_mode: 'Markdown' }
     );
 
@@ -171,7 +219,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         specificTags: notes.specificTags,
       })
       .from(notes)
-      .where(eq(notes.userId, activeKey.userId));
+      .where(
+        and(
+          eq(notes.userId, activeKey.userId),
+          eq(notes.isEncrypted, false)
+        )
+      );
 
     if (userNotes.length === 0) {
       await sendTelegramMessage(chatId, 'Belum ada catatan atau tag yang tersimpan.');
@@ -216,7 +269,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         .where(
           and(
             eq(notes.userId, activeKey.userId),
-            eq(notes.category, 'draft')
+            eq(notes.category, 'draft'),
+            eq(notes.isEncrypted, false)
           )
         );
       const totalDrafts = Number(countResult?.count || 0);
@@ -233,6 +287,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .where(
         and(
           eq(notes.userId, activeKey.userId),
+          eq(notes.isEncrypted, false),
           sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
         )
       )
@@ -288,6 +343,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .where(
         and(
           eq(notes.userId, activeKey.userId),
+          eq(notes.isEncrypted, false),
           searchCondition
         )
       )
@@ -356,7 +412,144 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'ask_processing' };
   }
 
-  // 9. Core Note Capture
+  // 9. /secure <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
+  if (text.startsWith('/secure')) {
+    const secureMatch = text.match(/^\/secure\s+(\S+)\s+([\s\S]+)$/);
+
+    if (!secureMatch) {
+      await sendTelegramMessage(
+        chatId,
+        'Format salah. Silakan gunakan format:\n`/secure <kunci> <isi_rahasia>`\n\nContoh:\n`/secure wifi-rumah MySecretPassword123`\n`/secure token-prod secret_api_key_xyz`',
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: true, action: 'secure_missing_params' };
+    }
+
+    const [, vaultKey, secretContent] = secureMatch;
+
+    // Cek kuota harian
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    let currentNotesCount = sub.notesTodayCount;
+    if (sub.lastNoteDate !== todayStr) {
+      currentNotesCount = 0;
+    }
+
+    if (sub.plan === 'standard' && currentNotesCount >= STANDARD_DAILY_QUOTA) {
+      await sendTelegramMessage(
+        chatId,
+        `⚠️ Kuota harian Anda untuk paket Standard (${STANDARD_DAILY_QUOTA} catatan/hari) telah tercapai hari ini.\n\nUpgrade ke paket Pro untuk catatan tanpa batas: /dashboard/settings`,
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: false, error: 'daily_quota_exceeded' };
+    }
+
+    const encryptedData = encryptSecret(secretContent.trim(), activeKey.userId);
+    const noteId = crypto.randomUUID();
+
+    await db.insert(notes).values({
+      id: noteId,
+      userId: activeKey.userId,
+      content: encryptedData,
+      category: 'credential',
+      specificTags: ['vault', 'encrypted'],
+      isEncrypted: true,
+      vaultKey: vaultKey.trim(),
+      source: 'telegram',
+      createdAt: new Date(),
+    });
+
+    await db
+      .update(subscriptions)
+      .set({
+        notesTodayCount: currentNotesCount + 1,
+        lastNoteDate: todayStr,
+      })
+      .where(eq(subscriptions.id, sub.id));
+
+    const reply = `🔒 *Tersimpan Aman di Private Vault!*\n\nKunci: \`${vaultKey.trim()}\`\n\n_Data dienkripsi AES-256-GCM dan dibypass 100% dari pemrosesan AI._`;
+    await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
+
+    return { ok: true, action: 'secure_saved', noteId };
+  }
+
+  // 10. /vault [kunci] (Buka rahasia atau list kunci Private Vault)
+  if (text.startsWith('/vault')) {
+    const vaultParam = text.replace(/^\/vault\s*/, '').trim();
+
+    if (!vaultParam) {
+      const vaultNotes = await db
+        .select({
+          vaultKey: notes.vaultKey,
+          createdAt: notes.createdAt,
+        })
+        .from(notes)
+        .where(
+          and(
+            eq(notes.userId, activeKey.userId),
+            eq(notes.isEncrypted, true)
+          )
+        )
+        .orderBy(desc(notes.createdAt));
+
+      if (vaultNotes.length === 0) {
+        await sendTelegramMessage(
+          chatId,
+          '📭 Private Vault Anda masih kosong.\n\nGunakan perintah `/secure <kunci> <isi>` untuk menyimpan rahasia pertama Anda.',
+          { parse_mode: 'Markdown' }
+        );
+        return { ok: true, action: 'vault_empty' };
+      }
+
+      const keysList = Array.from(
+        new Set(vaultNotes.map((v) => v.vaultKey || 'tanpa-kunci'))
+      )
+        .map((k) => `• \`${k}\``)
+        .join('\n');
+
+      const msg = `🔒 *Daftar Kunci Private Vault Anda:* (${vaultNotes.length} rahasia)\n\n${keysList}\n\n_Ketik \`/vault <kunci>\` untuk membuka isi rahasia._`;
+      await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
+      return { ok: true, action: 'vault_list' };
+    }
+
+    const [matchedVault] = await db
+      .select()
+      .from(notes)
+      .where(
+        and(
+          eq(notes.userId, activeKey.userId),
+          eq(notes.isEncrypted, true),
+          sql`LOWER(${notes.vaultKey}) = LOWER(${vaultParam})`
+        )
+      )
+      .orderBy(desc(notes.createdAt))
+      .limit(1);
+
+    if (!matchedVault) {
+      await sendTelegramMessage(
+        chatId,
+        `❌ Tidak ditemukan rahasia di Private Vault dengan kunci \`${vaultParam}\`.\n\nKetik \`/vault\` untuk melihat daftar seluruh kunci yang tersimpan.`,
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: true, action: 'vault_not_found' };
+    }
+
+    try {
+      const decrypted = decryptSecret(matchedVault.content, activeKey.userId);
+      const dateStr = format(new Date(matchedVault.createdAt), 'dd MMM yyyy, HH:mm');
+      const reply = `🔓 *Private Vault: [${matchedVault.vaultKey}]*\n📅 _Disimpan: ${dateStr}_\n\n\`\`\`\n${decrypted}\n\`\`\``;
+      await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
+      return { ok: true, action: 'vault_revealed' };
+    } catch (decErr) {
+      console.error('[Private Vault] Decryption error:', decErr);
+      await sendTelegramMessage(
+        chatId,
+        '❌ Gagal mendekripsi data vault. Terjadi kendala kunci atau format data korup.'
+      );
+      return { ok: false, error: 'vault_decryption_failed' };
+    }
+  }
+
+  // 11. Core Note Capture
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   let currentNotesCount = sub.notesTodayCount;
   if (sub.lastNoteDate !== todayStr) {
@@ -390,6 +583,19 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       lastNoteDate: todayStr,
     })
     .where(eq(subscriptions.id, sub.id));
+
+  // Smart Credential Warning Guardrail
+  const hasCredentialKeyword =
+    /\b(password|passwd|kata\s*sandi|pin(\s*atm)?|token|api[_-]?key|secret|kredensial|credential|cvv|otp)\b/i.test(
+      text
+    );
+  if (hasCredentialKeyword) {
+    await sendTelegramMessage(
+      chatId,
+      '💡 *Tips Keamanan:*\nTerdeteksi informasi sensitif. Untuk data rahasia seperti password, token, atau PIN, Anda disarankan menggunakan perintah:\n`/secure <kunci> <isi>`\nagar otomatis dienkripsi dengan standar AES-256-GCM dan diisolasi sepenuhnya dari AI.',
+      { parse_mode: 'Markdown' }
+    );
+  }
 
   // Background AI Categorization & Tagging
   (async () => {

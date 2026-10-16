@@ -10,6 +10,8 @@ interface NoteItem {
   category: string;
   specificTags?: string[] | null;
   source?: string | null;
+  isEncrypted?: boolean;
+  vaultKey?: string | null;
   createdAt: string;
 }
 
@@ -151,10 +153,11 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
       // 1. Keyword search (case-insensitive)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const contentMatch = n.content.toLowerCase().includes(query);
+        const contentMatch = !n.isEncrypted && n.content.toLowerCase().includes(query);
+        const vaultMatch = Boolean(n.isEncrypted && n.vaultKey?.toLowerCase().includes(query));
         const tagMatch = n.specificTags?.some((t) => t.toLowerCase().includes(query));
         const catMatch = n.category.toLowerCase().includes(query);
-        if (!contentMatch && !tagMatch && !catMatch) return false;
+        if (!contentMatch && !vaultMatch && !tagMatch && !catMatch) return false;
       }
 
       // 2. Category filter

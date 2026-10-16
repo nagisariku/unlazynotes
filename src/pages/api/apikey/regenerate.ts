@@ -30,6 +30,7 @@ export const POST: APIRoute = async ({ request }) => {
       .update(apiKeys)
       .set({
         keyHash,
+        rawKey,
         telegramChatId: null, // Reset koneksi bot sebelumnya demi keamanan
         isActive: true,
       })
@@ -39,6 +40,7 @@ export const POST: APIRoute = async ({ request }) => {
       id: `key_${crypto.randomUUID()}`,
       userId: user.id,
       keyHash,
+      rawKey,
       telegramChatId: null,
       isActive: true,
       createdAt: new Date(),

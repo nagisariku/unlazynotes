@@ -66,7 +66,13 @@ export async function answerNoteQuestion(
       createdAt: notes.createdAt,
     })
     .from(notes)
-    .where(and(eq(notes.userId, userId), gte(notes.createdAt, sixMonthsAgo)))
+    .where(
+      and(
+        eq(notes.userId, userId),
+        gte(notes.createdAt, sixMonthsAgo),
+        eq(notes.isEncrypted, false)
+      )
+    )
     .orderBy(desc(notes.createdAt))
     .limit(100);
 

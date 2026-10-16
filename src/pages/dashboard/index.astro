@@ -32,6 +32,8 @@ const serializedNotes = userNotes.map((n) => ({
   category: n.category,
   specificTags: n.specificTags,
   source: n.source,
+  isEncrypted: n.isEncrypted,
+  vaultKey: n.vaultKey,
   createdAt: n.createdAt.toISOString(),
 }));
 ---

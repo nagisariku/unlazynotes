@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Check, Trash2, ExternalLink, Calendar, Tag, Pencil } from 'lucide-react';
+import { Copy, Check, Trash2, ExternalLink, Calendar, Tag, Pencil, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface NoteCardProps {
@@ -9,6 +9,8 @@ interface NoteCardProps {
     category: string;
     specificTags?: string[] | null;
     source?: string | null;
+    isEncrypted?: boolean;
+    vaultKey?: string | null;
     createdAt: string | Date;
   };
   onDelete: (id: string) => void;
@@ -35,14 +37,57 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Private Vault On-demand Decryption States
+  const [isRevealed, setIsRevealed] = useState(false);
+  const [decryptedText, setDecryptedText] = useState<string | null>(null);
+  const [isDecrypting, setIsDecrypting] = useState(false);
+
   const colors = CATEGORY_COLORS[note.category] || CATEGORY_COLORS.others;
   const isLong = note.content.length > 200 || note.content.split('\n').length > 4;
 
+  const handleToggleReveal = async () => {
+    if (isRevealed) {
+      setIsRevealed(false);
+      return;
+    }
+    if (decryptedText !== null) {
+      setIsRevealed(true);
+      return;
+    }
+    setIsDecrypting(true);
+    try {
+      const res = await fetch(`/api/notes/${note.id}/decrypt`);
+      const data = await res.json();
+      if (res.ok && data.content) {
+        setDecryptedText(data.content);
+        setIsRevealed(true);
+      }
+    } catch (e) {
+      console.error('Failed to decrypt note', e);
+    } finally {
+      setIsDecrypting(false);
+    }
+  };
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(note.content);
+      let textToCopy = note.content;
+      if (note.isEncrypted) {
+        if (decryptedText) {
+          textToCopy = decryptedText;
+        } else {
+          const res = await fetch(`/api/notes/${note.id}/decrypt`);
+          const data = await res.json();
+          if (res.ok && data.content) {
+            textToCopy = data.content;
+            setDecryptedText(data.content);
+          }
+        }
+      }
+
+      await navigator.clipboard.writeText(textToCopy);
       setCopied(true);
-      if (onCopySuccess) onCopySuccess(note.content);
+      if (onCopySuccess) onCopySuccess(textToCopy);
       setTimeout(() => setCopied(false), 2000);
     } catch {}
   };
@@ -64,14 +109,14 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
     }
   };
 
-  // Detect URLs inside content
+  // Detect URLs inside content (only if not encrypted)
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
-  const detectedUrls = Array.from(note.content.matchAll(urlRegex), (m) => m[0]);
+  const detectedUrls = note.isEncrypted ? [] : Array.from(note.content.matchAll(urlRegex), (m) => m[0]);
 
   return (
     <div className="p-3.5 sm:p-5 rounded-2xl border border-zinc-800/80 bg-zinc-900/40 hover:border-zinc-700/80 transition-all flex flex-col justify-between group">
       <div>
-        {/* Header: Date & Category Chip */}
+        {/* Header: Date & Category Chip & Vault Badge */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 mb-2.5">
           <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-zinc-500">
             <Calendar className="w-3.5 h-3.5" />
@@ -79,6 +124,12 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
           </div>
 
           <div className="flex items-center gap-1.5">
+            {note.isEncrypted && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300 text-[10px] sm:text-xs font-semibold tracking-wider">
+                <Lock className="w-3 h-3 text-rose-400" />
+                <span>Private Vault{note.vaultKey ? `: ${note.vaultKey}` : ''}</span>
+              </span>
+            )}
             {note.source && (
               <span className="px-2 py-0.5 rounded-full border border-zinc-700 bg-zinc-800 text-zinc-300 text-[10px] sm:text-[11px] font-medium uppercase tracking-wider">
                 {note.source}
@@ -92,19 +143,65 @@ export default function NoteCard({ note, onDelete, onCopySuccess, onTagClick, on
           </div>
         </div>
 
-        {/* Content Body */}
-        <div className="text-zinc-200 text-sm leading-relaxed mb-4 whitespace-pre-wrap break-words font-normal">
-          {isLong && !isExpanded ? `${note.content.substring(0, 200)}...` : note.content}
+        {/* Content Body: Masked for Encrypted Vault */}
+        {note.isEncrypted ? (
+          <div className="mb-4">
+            <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-950/20 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                  <span className="text-xs font-medium text-rose-300">
+                    {note.vaultKey ? `Kunci: ${note.vaultKey}` : 'Private Encrypted Secret'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleReveal}
+                  disabled={isDecrypting}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-medium transition-colors cursor-pointer shrink-0 border border-zinc-700/60"
+                  title={isRevealed ? 'Sembunyikan Rahasia' : 'Buka Rahasia Vault'}
+                >
+                  {isDecrypting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+                  ) : isRevealed ? (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5 text-zinc-400" />
+                      <span>Tutup</span>
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Intip Rahasia</span>
+                    </>
+                  )}
+                </button>
+              </div>
 
-          {isLong && (
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="ml-2 text-indigo-400 hover:text-indigo-300 font-medium text-xs underline cursor-pointer"
-            >
-              {isExpanded ? 'Tutup' : 'Selengkapnya'}
-            </button>
-          )}
-        </div>
+              {isRevealed ? (
+                <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800 text-xs font-mono text-rose-200 leading-relaxed whitespace-pre-wrap break-all select-all">
+                  {decryptedText || 'Memuat...'}
+                </div>
+              ) : (
+                <div className="text-zinc-500 font-mono text-xs tracking-widest select-none py-1">
+                  ••••••••••••••••••••••••••••••••••••
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="text-zinc-200 text-sm leading-relaxed mb-4 whitespace-pre-wrap break-words font-normal">
+            {isLong && !isExpanded ? `${note.content.substring(0, 200)}...` : note.content}
+
+            {isLong && (
+              <button
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="ml-2 text-indigo-400 hover:text-indigo-300 font-medium text-xs underline cursor-pointer"
+              >
+                {isExpanded ? 'Tutup' : 'Selengkapnya'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Open Direct Links if URL detected */}
         {detectedUrls.length > 0 && (
