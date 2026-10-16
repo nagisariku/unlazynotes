@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Filter, X, Sparkles, FileText } from 'lucide-react';
+import { Search, Filter, X, Sparkles, FileText, Send, Loader2 } from 'lucide-react';
 import NoteCard from './NoteCard';
 import { Toaster, toast } from 'sonner';
 
@@ -35,6 +35,11 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
   const [dateRange, setDateRange] = useState<'all' | 'today' | 'this_week' | 'this_month'>('all');
   const [showFilterPanel, setShowFilterPanel] = useState(false);
 
+  // Quick Web Note Composer States
+  const [composerContent, setComposerContent] = useState('');
+  const [isComposerFocused, setIsComposerFocused] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Initialize filters from URL search params on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -66,6 +71,68 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
 
   const handleCopySuccess = () => {
     toast.success('Teks catatan disalin ke clipboard');
+  };
+
+  const handleTagClick = (tag: string) => {
+    setSearchQuery(tag);
+    toast.info(`Memfilter catatan dengan #${tag}`);
+  };
+
+  const handleCreateNote = async () => {
+    const text = composerContent.trim();
+    if (!text || isSubmitting) return;
+
+    setIsSubmitting(true);
+    const tempId = `temp-${Date.now()}`;
+    const now = new Date();
+
+    // Optimistic Note Item
+    const optimisticNote: NoteItem = {
+      id: tempId,
+      content: text,
+      category: 'others',
+      specificTags: ['merapikan...'],
+      source: 'web',
+      createdAt: now.toISOString(),
+    };
+
+    // Prepend immediately to notes
+    setNotes((prev) => [optimisticNote, ...prev]);
+    setComposerContent('');
+    setIsComposerFocused(false);
+
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success || !data.note) {
+        setNotes((prev) => prev.filter((n) => n.id !== tempId));
+        toast.error(data.error || 'Gagal menyimpan catatan');
+        setComposerContent(text);
+        return;
+      }
+
+      setNotes((prev) => prev.map((n) => (n.id === tempId ? data.note : n)));
+      toast.success(`Catatan tersimpan • Kategori: ${data.note.category}`);
+    } catch (err) {
+      setNotes((prev) => prev.filter((n) => n.id !== tempId));
+      toast.error('Gagal terhubung ke server');
+      setComposerContent(text);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleCreateNote();
+    }
   };
 
   // Filter notes in memory for instant reactivity
@@ -124,14 +191,14 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
               </span>
             </h1>
             <p className="text-zinc-400 text-xs mt-0.5">
-              Catatan yang ditangkap otomatis via bot Telegram.
+              Catatan yang ditangkap otomatis via bot Telegram dan web composer.
             </p>
           </div>
 
           {/* Mobile Filter Button */}
           <button
             onClick={() => setShowFilterPanel(!showFilterPanel)}
-            className={`sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all ${
+            className={`sm:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
               showFilterPanel || selectedCategory || dateRange !== 'all'
                 ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
                 : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
@@ -148,7 +215,7 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
         {/* Desktop Filter Trigger */}
         <button
           onClick={() => setShowFilterPanel(!showFilterPanel)}
-          className={`hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-all ${
+          className={`hidden sm:inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
             showFilterPanel || selectedCategory || dateRange !== 'all'
               ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-300'
               : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
@@ -160,6 +227,66 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
             <span className="w-2 h-2 rounded-full bg-indigo-500" />
           )}
         </button>
+      </div>
+
+      {/* 1. Quick Web Note Composer */}
+      <div className="mb-6 p-3 sm:p-4 rounded-2xl border border-zinc-800/90 bg-zinc-900/50 shadow-sm focus-within:border-indigo-500/50 focus-within:ring-1 focus-within:ring-indigo-500/30 transition-all">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <textarea
+              value={composerContent}
+              onChange={(e) => setComposerContent(e.target.value)}
+              onKeyDown={handleComposerKeyDown}
+              onFocus={() => setIsComposerFocused(true)}
+              placeholder="Tulis ide, to-do, atau catatan kotor di sini... (AI otomatis merapikan)"
+              rows={isComposerFocused || composerContent.includes('\n') ? 3 : 1}
+              className="w-full bg-transparent text-zinc-100 placeholder-zinc-500 text-xs sm:text-sm resize-none focus:outline-none leading-relaxed transition-all"
+            />
+
+            {(isComposerFocused || composerContent.trim()) && (
+              <div className="flex items-center justify-between pt-2.5 mt-2 border-t border-zinc-800/80 animate-in fade-in">
+                <span className="text-[11px] text-zinc-500 hidden sm:inline">
+                  Tekan <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono text-[10px]">Enter</kbd> untuk simpan, <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono text-[10px]">Shift + Enter</kbd> untuk baris baru.
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  {composerContent.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setComposerContent('');
+                        setIsComposerFocused(false);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCreateNote}
+                    disabled={isSubmitting || !composerContent.trim()}
+                    className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Merapikan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Simpan</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Search Input */}
@@ -175,7 +302,7 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
         {searchQuery && (
           <button
             onClick={() => setSearchQuery('')}
-            className="absolute right-3.5 top-3.5 text-zinc-500 hover:text-zinc-300"
+            className="absolute right-3.5 top-3.5 text-zinc-500 hover:text-zinc-300 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -267,6 +394,7 @@ export default function NotesTimeline({ initialNotes }: NotesTimelineProps) {
               note={note}
               onDelete={handleDeleteNote}
               onCopySuccess={handleCopySuccess}
+              onTagClick={handleTagClick}
             />
           ))}
         </div>

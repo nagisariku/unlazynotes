@@ -82,7 +82,18 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
 4. **Pemahaman Semantik Inklusif**: Mengutamakan makna kontekstual di dunia nyata dibanding pencocokan kata harfiah (*literal string matching*), sehingga kategori otomatis mencakup turunan atau jenisnya (misal: popcorn $\rightarrow$ konsumsi/makanan, tuweb/karil $\rightarrow$ tugas kuliah, topup valo $\rightarrow$ game).
 5. **Pembedahan Catatan Campuran (*Multi-Item Dissection*)**: Membedah catatan multi-item secara independen per baris untuk memilah item relevan vs tidak relevan tanpa membuang seluruh isi catatan.
 6. **Integritas Metadata Tingkat Catatan**: Menghilangkan halusinasi bahwa tag adalah filter rigid per-kata; tag diperlakukan sebagai konteks payung tingkat catatan.
-7. **Mata Uang Campuran & Slang Multibahasa**: Memahami singkatan kasual internasional dan lokal (`k`, `rb`, `ewu`, `rebu`, `goceng`, `cepek`), serta memisahkan perhitungan mata uang yang berbeda (`$ USD` vs `Rp IDR`) tanpa mencampurnya sembarangan.
+8. **Mata Uang Campuran & Slang Multibahasa**: Memahami singkatan kasual internasional dan lokal (`k`, `rb`, `ewu`, `rebu`, `goceng`, `cepek`), serta memisahkan perhitungan mata uang yang berbeda (`$ USD` vs `Rp IDR`) tanpa mencampurnya sembarangan.
+
+### G. Dashboard Interactive UX: Quick Web Composer, Interactive Checklists, & Clickable Tags
+1. **Quick Web Note Composer ([`NotesTimeline.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NotesTimeline.tsx) & [`POST /api/notes`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/index.ts))**:
+   - Input composer box di atas feed catatan dengan shortcut keyboard (`Enter` untuk simpan, `Shift + Enter` untuk baris baru).
+   - Optimistic UI: Catatan langsung dimunculkan di paling atas feed secara instan dengan tag `merapikan...`, lalu di-update begitu AI tagging selesai.
+   - Endpoint `POST /api/notes` memvalidasi kuota harian Standard/Pro, memanggil AI tagging (`generateNoteTags`), dan menyimpan catatan ke PostgreSQL dengan `source: 'web'`.
+2. **Clickable Specific Tags**:
+   - Tag pills `#tag` pada [`NoteCard.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NoteCard.tsx) kini interaktif. Mengklik tag langsung memicu filtering feed ke tag tersebut via callback ke `NotesTimeline`.
+3. **Interactive To-Do Checklists**:
+   - Catatan bertipe `todo` multi-baris dirender sebagai checklist interaktif dengan checkbox native.
+   - Mengklik checkbox menerapkan efek coret (*strikethrough*) halus pada baris terkait secara visual di UI.
 
 ---
 
