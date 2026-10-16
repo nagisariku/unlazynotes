@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { paymentLogs, subscriptions } from '@/db/schema';
+import { paymentLogs, subscriptions, users } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifyDokuWebhookSignature } from '@/lib/doku';
 import { addDays } from 'date-fns';
@@ -122,6 +122,16 @@ export const POST: APIRoute = async ({ request }) => {
       createdAt: new Date(),
     });
   }
+
+  // Update atribut model User (tier = 'pro', proExpiresAt = newExpiresAt)
+  await db
+    .update(users)
+    .set({
+      tier: 'pro',
+      proExpiresAt: newExpiresAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, log.userId));
 
   console.log(
     `[DOKU Webhook] Successfully activated ${log.plan} plan for user ${log.userId} until ${newExpiresAt.toISOString()}`

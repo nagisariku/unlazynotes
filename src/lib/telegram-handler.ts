@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { users, subscriptions, apiKeys, notes, type NoteCategory } from '@/db/schema';
+import { users, apiKeys, notes } from '@/db/schema';
 import { eq, and, desc, sql, ilike } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
@@ -7,8 +7,6 @@ import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import {
   HELP_MESSAGE,
   SECURITY_DISCLAIMER,
-  STANDARD_DAILY_QUOTA,
-  CATEGORIES,
 } from '@/lib/constants';
 import {
   hashApiKey,
@@ -16,9 +14,18 @@ import {
   editTelegramMessage,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
-import { generateNoteTags, normalizeTag } from '@/lib/ai';
+import { normalizeTag } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
+import {
+  checkUserQuotaAndTier,
+  incrementUserMonthlyNotes,
+  getTelegramQuotaExceededMessage,
+  getTelegramVaultGatedMessage,
+  getTelegramAskGatedMessage,
+  FREE_MONTHLY_QUOTA,
+} from '@/lib/quota-service';
+import { taggingQueue } from '@/lib/tagging-queue';
 
 export const PAGE_SIZE = 5;
 export const DEBOUNCE_DELAY_MS = 3000;
@@ -40,10 +47,10 @@ interface DebounceBufferItem {
   timer: NodeJS.Timeout;
   messages: string[];
   activeKey: typeof apiKeys.$inferSelect;
-  sub: typeof subscriptions.$inferSelect;
   chatId: string;
   noteId: string;
   createdAt: Date;
+  tier: 'free' | 'pro';
 }
 
 // In-memory buffer map indexed by chatId
@@ -74,19 +81,8 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
       createdAt: item.createdAt,
     });
 
-    // 2. Update subscription notes usage
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    let currentNotesCount = item.sub.notesTodayCount;
-    if (item.sub.lastNoteDate !== todayStr) {
-      currentNotesCount = 0;
-    }
-    await db
-      .update(subscriptions)
-      .set({
-        notesTodayCount: currentNotesCount + 1,
-        lastNoteDate: todayStr,
-      })
-      .where(eq(subscriptions.id, item.sub.id));
+    // 2. Update monthly notes usage (+1)
+    await incrementUserMonthlyNotes(item.activeKey.userId);
 
     // 3. Smart Credential Warning Guardrail
     const hasCredentialKeyword =
@@ -101,28 +97,12 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
       );
     }
 
-    // 4. Background AI Categorization & Tagging
-    (async () => {
-      try {
-        const tagResult = await generateNoteTags(mergedText);
-        const validCategory: NoteCategory = CATEGORIES.includes(
-          tagResult.category as NoteCategory
-        )
-          ? (tagResult.category as NoteCategory)
-          : 'others';
-
-        await db
-          .update(notes)
-          .set({
-            category: validCategory,
-            specificTags: tagResult.specific_tags,
-            source: tagResult.source || 'telegram',
-          })
-          .where(eq(notes.id, noteId));
-      } catch (bgError) {
-        console.error(`[Background AI Worker] Error processing note ${noteId}:`, bgError);
-      }
-    })();
+    // 4. Background AI Categorization & Tagging via Priority Queue (Fast-lane Pro)
+    taggingQueue.enqueue({
+      noteId,
+      content: mergedText,
+      tier: item.tier,
+    });
 
     return noteId;
   } catch (err) {
@@ -403,20 +383,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'unauthenticated' };
   }
 
-  const [sub] = await db
-    .select()
-    .from(subscriptions)
-    .where(eq(subscriptions.userId, activeKey.userId))
-    .limit(1);
-
-  if (!sub || sub.status !== 'active') {
-    await sendTelegramMessage(
-      chatId,
-      '⚠️ Paket langganan Anda tidak aktif atau telah kedaluwarsa.\n\nSilakan perpanjang langganan Anda di web dashboard untuk terus menggunakan bot pencatat UnlazyNotes: /dashboard/settings',
-      { parse_mode: 'Markdown' }
-    );
-    return { ok: true, action: 'subscription_inactive' };
-  }
+  const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
 
   // 5. /tags (tanpa argumen)
   if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text)) {
@@ -464,7 +431,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         .map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`))
         .join(', ') || '-';
 
-    const msg = `🏷 *Daftar Kategori & Tag Aktif Anda*\n\n📂 *Kategori Utama:*\n${catList}\n\n🏷 *Specific Tags:*\n${tagList}\n\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`;
+    const quotaStatus = quotaInfo.isPro
+      ? '⭐️ *Paket:* Pro Tier (Catatan Unlimited & Fast-Lane AI)'
+      : `📊 *Status Kuota Bulan Ini:* ${quotaInfo.currentCount}/${FREE_MONTHLY_QUOTA} catatan (Reset tiap tgl 1)`;
+
+    const msg = `🏷 *Daftar Kategori & Tag Aktif Anda*\n\n📂 *Kategori Utama:*\n${catList}\n\n🏷 *Specific Tags:*\n${tagList}\n\n${quotaStatus}\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`;
     await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
 
     return { ok: true, action: 'tags_list' };
@@ -621,10 +592,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'ask_missing_question' };
     }
 
-    if (sub.plan !== 'pro') {
+    if (!quotaInfo.isPro) {
       await sendTelegramMessage(
         chatId,
-        '⭐️ *Fitur Eksklusif Paket Pro*\n\nFitur tanya jawab cerdas AI (`/ask`) hanya tersedia untuk pengguna paket Pro.\n\nSilakan upgrade paket Anda untuk menikmati akses AI tanpa batas:\n/dashboard/settings',
+        getTelegramAskGatedMessage(process.env.BETTER_AUTH_URL),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'ask_requires_pro' };
@@ -648,6 +619,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 9. /secure <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
   if (text.startsWith('/secure')) {
+    if (!quotaInfo.isPro) {
+      await sendTelegramMessage(
+        chatId,
+        getTelegramVaultGatedMessage(process.env.BETTER_AUTH_URL),
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: true, action: 'secure_requires_pro' };
+    }
+
     const secureMatch = text.match(/^\/secure\s+(\S+)\s+([\s\S]+)$/);
 
     if (!secureMatch) {
@@ -660,22 +640,6 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
 
     const [, vaultKey, secretContent] = secureMatch;
-
-    // Cek kuota harian
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    let currentNotesCount = sub.notesTodayCount;
-    if (sub.lastNoteDate !== todayStr) {
-      currentNotesCount = 0;
-    }
-
-    if (sub.plan === 'standard' && currentNotesCount >= STANDARD_DAILY_QUOTA) {
-      await sendTelegramMessage(
-        chatId,
-        `⚠️ Kuota harian Anda untuk paket Standard (${STANDARD_DAILY_QUOTA} catatan/hari) telah tercapai hari ini.\n\nUpgrade ke paket Pro untuk catatan tanpa batas: /dashboard/settings`,
-        { parse_mode: 'Markdown' }
-      );
-      return { ok: false, error: 'daily_quota_exceeded' };
-    }
 
     const encryptedData = encryptSecret(secretContent.trim(), activeKey.userId);
     const noteId = crypto.randomUUID();
@@ -692,13 +656,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       createdAt: new Date(),
     });
 
-    await db
-      .update(subscriptions)
-      .set({
-        notesTodayCount: currentNotesCount + 1,
-        lastNoteDate: todayStr,
-      })
-      .where(eq(subscriptions.id, sub.id));
+    await incrementUserMonthlyNotes(activeKey.userId);
 
     const reply = `🔒 *Tersimpan Aman di Private Vault!*\n\nKunci: \`${vaultKey.trim()}\`\n\n_Data dienkripsi AES-256-GCM dan dibypass 100% dari pemrosesan AI._`;
     await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
@@ -708,6 +666,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 10. /vault [kunci] (Buka rahasia atau list kunci Private Vault)
   if (text.startsWith('/vault')) {
+    if (!quotaInfo.isPro) {
+      await sendTelegramMessage(
+        chatId,
+        getTelegramVaultGatedMessage(process.env.BETTER_AUTH_URL),
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: true, action: 'vault_requires_pro' };
+    }
+
     const vaultParam = text.replace(/^\/vault\s*/, '').trim();
 
     if (!vaultParam) {
@@ -804,20 +771,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'vault_revealed_multiple' };
   }
 
-  // 11. Core Note Capture (dengan Smart Debouncing 3 Detik)
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
-  let currentNotesCount = sub.notesTodayCount;
-  if (sub.lastNoteDate !== todayStr) {
-    currentNotesCount = 0;
-  }
-
-  if (sub.plan === 'standard' && currentNotesCount >= STANDARD_DAILY_QUOTA) {
+  // 11. Core Note Capture Quota Enforcement
+  if (!quotaInfo.allowed) {
     await sendTelegramMessage(
       chatId,
-      `⚠️ Kuota harian Anda untuk paket Standard (${STANDARD_DAILY_QUOTA} catatan/hari) telah tercapai hari ini.\n\nUpgrade ke paket Pro untuk catatan tanpa batas: /dashboard/settings`,
+      getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL),
       { parse_mode: 'Markdown' }
     );
-    return { ok: false, error: 'daily_quota_exceeded' };
+    return { ok: false, error: 'monthly_quota_exceeded' };
   }
 
   // Jika buffer untuk chatId ini sudah ada, tampung pesan baru dan reset timer 3.0 detik
@@ -850,10 +811,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }, DEBOUNCE_DELAY_MS),
     messages: [text],
     activeKey,
-    sub,
     chatId,
     noteId,
     createdAt: new Date(),
+    tier: quotaInfo.tier,
   };
   debounceMap.set(chatId, item);
 

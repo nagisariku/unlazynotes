@@ -1,13 +1,14 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { notes, subscriptions, type NoteCategory } from '@/db/schema';
+import { notes, type NoteCategory } from '@/db/schema';
 import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
-import { startOfDay, startOfWeek, startOfMonth, format } from 'date-fns';
+import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
-import { CATEGORIES, STANDARD_DAILY_QUOTA } from '@/lib/constants';
+import { CATEGORIES } from '@/lib/constants';
 import { generateNoteTags } from '@/lib/ai';
 import { ensureUserInitialResources } from '@/lib/auth';
+import { checkUserQuotaAndTier, incrementUserMonthlyNotes } from '@/lib/quota-service';
 import crypto from 'node:crypto';
 
 export const prerender = false;
@@ -101,22 +102,12 @@ export const POST: APIRoute = async ({ request }) => {
     // Pastikan user memiliki record subscription & resources
     await ensureUserInitialResources(user.id, user.preferredLocale);
 
-    const [sub] = await db
-      .select()
-      .from(subscriptions)
-      .where(eq(subscriptions.userId, user.id))
-      .limit(1);
-
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    let currentNotesCount = sub?.notesTodayCount || 0;
-    if (sub && sub.lastNoteDate !== todayStr) {
-      currentNotesCount = 0;
-    }
-
-    if (sub?.plan === 'standard' && currentNotesCount >= STANDARD_DAILY_QUOTA) {
+    const quotaInfo = await checkUserQuotaAndTier(user.id);
+    if (!quotaInfo.allowed) {
       return new Response(
         JSON.stringify({
-          error: `Kuota harian Anda untuk paket Standard (${STANDARD_DAILY_QUOTA} catatan/hari) telah tercapai hari ini. Silakan upgrade ke Pro.`,
+          error: `Batas kuota bulanan Free Tier (30 catatan/bulan) telah tercapai. Kuota akan direset otomatis pada tanggal 1 awal bulan depan. Silakan upgrade ke Pro untuk catatan tanpa batas.`,
+          quotaExceeded: true,
         }),
         {
           status: 403,
@@ -149,15 +140,7 @@ export const POST: APIRoute = async ({ request }) => {
       })
       .returning();
 
-    if (sub) {
-      await db
-        .update(subscriptions)
-        .set({
-          notesTodayCount: currentNotesCount + 1,
-          lastNoteDate: todayStr,
-        })
-        .where(eq(subscriptions.id, sub.id));
-    }
+    await incrementUserMonthlyNotes(user.id);
 
     return new Response(
       JSON.stringify({

@@ -10,12 +10,12 @@ interface UpgradeModalProps {
 
 const PRICING = {
   IDR: {
-    monthly: { amount: 49000, label: 'Rp 49.000', periodLabel: '/bulan' },
-    yearly: { amount: 490000, label: 'Rp 490.000', periodLabel: '/tahun (Hemat 17%)' },
+    monthly: { amount: 15000, label: 'Rp 15.000', periodLabel: '/bulan' },
+    yearly: { amount: 150000, label: 'Rp 150.000', periodLabel: '/tahun (Hemat 17%)' },
   },
   USD: {
-    monthly: { amount: 3, label: '$3', periodLabel: '/month' },
-    yearly: { amount: 30, label: '$30', periodLabel: '/year (Save 17%)' },
+    monthly: { amount: 1, label: '$1', periodLabel: '/month' },
+    yearly: { amount: 10, label: '$10', periodLabel: '/year (Save 17%)' },
   },
 };
 
@@ -152,25 +152,25 @@ export default function UpgradeModal({
               <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                 <Check className="w-3 h-3" />
               </div>
-              <span><strong>Unlimited Catatan Harian</strong> (Bebas dari limit 25 catatan/hari)</span>
+              <span><strong>UNLIMITED Notes</strong> (Bebas dari batas 30 catatan/bulan Free Tier)</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-5 h-5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                <Shield className="w-3 h-3" />
+              </div>
+              <span><strong>Private Encrypted Vault (<code className="text-indigo-300">/secure</code>)</strong> enkripsi AES-256-GCM</span>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-5 h-5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
                 <Zap className="w-3 h-3" />
               </div>
-              <span><strong>AI Smart Q&A (<code className="text-indigo-300">/ask</code>)</strong> di Telegram bot</span>
+              <span><strong>AI Otak Kedua (<code className="text-indigo-300">/ask</code>)</strong> temporal RAG di Telegram</span>
             </div>
             <div className="flex items-center gap-2.5">
               <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
                 <Check className="w-3 h-3" />
               </div>
-              <span>Prioritas AI categorization &amp; auto-tagging kecepatan tinggi</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="w-3 h-3" />
-              </div>
-              <span>Export Bookmarks Netscape HTML &amp; Search tanpa batas</span>
+              <span><strong>Prioritas Fast-Lane Tagging</strong> pemrosesan AI prioritas tinggi</span>
             </div>
           </div>
         </div>

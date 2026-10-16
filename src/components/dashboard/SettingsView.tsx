@@ -295,13 +295,13 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950">
             <span className="text-[11px] text-zinc-500 block uppercase font-medium">Paket Aktif</span>
-            <span className="text-lg font-bold text-zinc-100 capitalize">{plan} Plan</span>
+            <span className="text-lg font-bold text-zinc-100 capitalize">{plan === 'pro' ? 'Pro Tier' : 'Free Tier'}</span>
           </div>
 
           <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950">
-            <span className="text-[11px] text-zinc-500 block uppercase font-medium">Kuota Catatan Hari Ini</span>
+            <span className="text-[11px] text-zinc-500 block uppercase font-medium">Kuota Catatan Bulan Ini</span>
             <span className="text-lg font-bold text-zinc-100">
-              {plan === 'pro' ? 'Unlimited' : `${notesCount} / 25 notes`}
+              {plan === 'pro' ? 'Unlimited' : `${notesCount} / 30 catatan`}
             </span>
           </div>
 
@@ -314,12 +314,12 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
                     month: 'short',
                     year: 'numeric',
                   })
-                : 'Lifetime / Free'}
+                : 'Free Lifetime'}
             </span>
           </div>
         </div>
 
-        {/* Upgrade Callout Card for Standard Plan */}
+        {/* Upgrade Callout Card for Free Plan */}
         {plan !== 'pro' && (
           <div className="p-4 sm:p-5 rounded-2xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950/40 via-zinc-950 to-zinc-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="space-y-1">
@@ -328,14 +328,14 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
                 <h3 className="text-sm font-bold text-zinc-100">Upgrade ke UnlazyNotes Pro</h3>
               </div>
               <p className="text-xs text-zinc-400 leading-relaxed max-w-lg">
-                Dapatkan kuota catatan tanpa batas (unlimited), akses fitur AI Smart Q&A (<code className="text-indigo-300">/ask</code>) langsung di Telegram, dan pemrosesan prioritas.
+                Dapatkan catatan <strong>UNLIMITED</strong> tanpa batas kuota bulanan, Private Encrypted Vault (<code className="text-indigo-300">/secure</code>), AI Otak Kedua (<code className="text-indigo-300">/ask</code>), dan prioritas fast-lane tagging.
               </p>
             </div>
             <button
               onClick={() => setIsUpgradeModalOpen(true)}
               className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-all shrink-0 shadow-lg shadow-indigo-600/25 text-center"
             >
-              Mulai Rp 49.000 / bln
+              Mulai Rp 15.000 / bln
             </button>
           </div>
         )}

@@ -25,7 +25,7 @@ export async function ensureUserInitialResources(userId: string, preferredLocale
     await db.insert(subscriptions).values({
       id: subId,
       userId,
-      plan: 'standard',
+      plan: 'free',
       currency,
       status: 'active',
       notesTodayCount: 0,
@@ -89,6 +89,22 @@ export const auth = betterAuth({
       preferredLocale: {
         type: 'string',
         defaultValue: 'id',
+      },
+      tier: {
+        type: 'string',
+        defaultValue: 'free',
+      },
+      monthlyNotesCount: {
+        type: 'number',
+        defaultValue: 0,
+      },
+      currentBillingPeriod: {
+        type: 'string',
+        required: false,
+      },
+      proExpiresAt: {
+        type: 'date',
+        required: false,
       },
     },
   },

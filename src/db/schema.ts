@@ -24,6 +24,10 @@ export const users = pgTable('users', {
   image: text('image'),
   role: varchar('role', { length: 50 }).default('user').notNull(),
   preferredLocale: varchar('preferred_locale', { length: 10 }).default('id').notNull(),
+  tier: varchar('tier', { length: 20 }).default('free').notNull(), // 'free' | 'pro'
+  monthlyNotesCount: integer('monthly_notes_count').default(0).notNull(),
+  currentBillingPeriod: varchar('current_billing_period', { length: 20 }), // e.g. '2026-10'
+  proExpiresAt: timestamp('pro_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

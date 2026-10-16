@@ -4,7 +4,7 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import NotesTimeline from '../../components/dashboard/NotesTimeline';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { notes, subscriptions } from '../../db/schema';
+import { notes, users } from '../../db/schema';
 import { eq, desc } from 'drizzle-orm';
 
 export const prerender = false;
@@ -14,10 +14,10 @@ if (!user) {
   return Astro.redirect('/login');
 }
 
-const [sub] = await db
-  .select({ plan: subscriptions.plan })
-  .from(subscriptions)
-  .where(eq(subscriptions.userId, user.id))
+const [userRecord] = await db
+  .select({ tier: users.tier })
+  .from(users)
+  .where(eq(users.id, user.id))
   .limit(1);
 
 const userNotes = await db
@@ -40,7 +40,7 @@ const serializedNotes = userNotes.map((n) => ({
 
 <Layout title="Notes – UnlazyNotes">
   <div class="flex flex-col md:flex-row min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard" user={user} subscriptionPlan={sub?.plan || 'standard'} />
+    <Sidebar client:load currentPath="/dashboard" user={user} subscriptionPlan={userRecord?.tier || 'free'} />
     <main class="flex-1 min-w-0 pb-24 md:pb-8 overflow-y-auto">
       <NotesTimeline client:load initialNotes={serializedNotes} />
     </main>

@@ -4,9 +4,10 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import SettingsView from '../../components/dashboard/SettingsView';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { subscriptions, apiKeys } from '../../db/schema';
+import { subscriptions, apiKeys, users } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 import { ensureUserInitialResources } from '../../lib/auth';
+import { checkUserQuotaAndTier } from '../../lib/quota-service';
 
 export const prerender = false;
 
@@ -17,6 +18,13 @@ if (!user) {
 
 // Pastikan user memiliki subscription dan API Key
 await ensureUserInitialResources(user.id, user.preferredLocale);
+const quotaInfo = await checkUserQuotaAndTier(user.id);
+
+const [userRecord] = await db
+  .select()
+  .from(users)
+  .where(eq(users.id, user.id))
+  .limit(1);
 
 const [sub] = await db
   .select()
@@ -30,15 +38,17 @@ const [keyRecord] = await db
   .where(eq(apiKeys.userId, user.id))
   .limit(1);
 
-const serializedSub = sub
-  ? {
-      plan: sub.plan,
-      status: sub.status,
-      currency: sub.currency,
-      notesTodayCount: sub.notesTodayCount,
-      expiresAt: sub.expiresAt ? sub.expiresAt.toISOString() : null,
-    }
-  : null;
+const serializedSub = {
+  plan: quotaInfo.tier,
+  status: quotaInfo.isPro ? 'active' : 'free',
+  currency: sub?.currency || 'IDR',
+  notesTodayCount: quotaInfo.currentCount,
+  expiresAt: userRecord?.proExpiresAt
+    ? userRecord.proExpiresAt.toISOString()
+    : sub?.expiresAt
+    ? sub.expiresAt.toISOString()
+    : null,
+};
 
 const apiKeyInfo = {
   rawKey: keyRecord?.rawKey || null,
@@ -49,7 +59,7 @@ const apiKeyInfo = {
 
 <Layout title="Settings – UnlazyNotes">
   <div class="flex flex-col md:flex-row min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard/settings" user={user} subscriptionPlan={serializedSub?.plan || 'standard'} />
+    <Sidebar client:load currentPath="/dashboard/settings" user={user} subscriptionPlan={serializedSub.plan} />
     <main class="flex-1 min-w-0 pb-24 md:pb-8 overflow-y-auto">
       <SettingsView
         client:load

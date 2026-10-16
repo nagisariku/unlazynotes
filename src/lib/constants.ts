@@ -32,16 +32,17 @@ export const HELP_MESSAGE = `🤖 *UnlazyNotes Bot* – Tangkap ide kilat langsu
 • \`/start\` atau \`/help\` - Tampilkan bantuan ini
 • \`/login <api_key>\` - Tautkan akun Telegram secara manual
 • \`/logout\` - Putus tautan akun Telegram ini
-• \`/tags\` - Tampilkan seluruh tag aktif Anda
+• \`/tags\` - Tampilkan seluruh tag aktif & sisa kuota Anda
 • \`/tags <nama_tag>\` - Cari catatan berdasarkan tag tertentu
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
-• \`/ask <pertanyaan>\` - [Paket Pro] Tanya jawab pintar AI berbasis catatan Anda (<6 bulan)
-• \`/secure <kunci> <isi>\` - Simpan rahasia terenkripsi AES-256-GCM ke Private Vault (Bypass AI)
-• \`/vault [kunci]\` - Buka rahasia atau lihat daftar kunci Private Vault Anda
+• \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
+• \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
+• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia atau lihat daftar kunci Private Vault Anda
 
 *Cara Penggunaan:*
 Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami akan otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
 
 ${SECURITY_DISCLAIMER}`;
 
-export const STANDARD_DAILY_QUOTA = 25;
+export const FREE_MONTHLY_QUOTA = 30;
+export const STANDARD_DAILY_QUOTA = 30; // Backward-compatibility alias

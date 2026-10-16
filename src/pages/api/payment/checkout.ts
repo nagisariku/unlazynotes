@@ -10,11 +10,11 @@ export const prerender = false;
 const PRICING = {
   IDR: {
     standard: { monthly: 15000, yearly: 150000 },
-    pro: { monthly: 49000, yearly: 490000 },
+    pro: { monthly: 15000, yearly: 150000 },
   },
   USD: {
     standard: { monthly: 1, yearly: 10 },
-    pro: { monthly: 3, yearly: 30 },
+    pro: { monthly: 1, yearly: 10 },
   },
 };
 

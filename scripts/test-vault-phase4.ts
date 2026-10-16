@@ -14,6 +14,9 @@ async function runTest() {
     throw new Error('No user found in DB');
   }
 
+  // Pastikan akun tester memiliki tier pro untuk mengakses vault
+  await db.update(users).set({ tier: 'pro' }).where(eq(users.id, testUser.id));
+
   let [keyRecord] = await db
     .select()
     .from(apiKeys)
