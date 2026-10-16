@@ -56,10 +56,14 @@ export const BANNED_TAGS = new Set([
   'purchases',
   'payment',
   'payments',
+  'subscription',
+  'subscriptions',
   'phrase',
   'word',
   'sentence',
   'term',
+  'unclear',
+  'ambiguous',
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -110,11 +114,14 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
       // is already present in the incoming tags or result, or if t is an entity keyword
       const isSpecificEntity = [
         'seblak', 'ayam', 'bakso', 'mie', 'sate', 'cireng', 'rendang', 'batagor',
+        'tequila', 'matcha', 'kopi', 'beer', 'boba', 'wine',
         'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
         'indihome', 'biznet', 'wifi', 'kuota', 'pulsa',
         'panadol', 'bodrex', 'obat', 'vitamin',
         'uniqlo', 'zara', 'kemeja',
-        'dieng', 'bali', 'jogja'
+        'dieng', 'bali', 'jogja',
+        'vps', 'hosting', 'domain',
+        'bioskop', 'cinema', 'spotify', 'netflix'
       ].includes(t);
 
       const hasCanonicalInTags = tags.some(rawTag => normalizeTag(rawTag) === canonical);

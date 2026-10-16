@@ -83,51 +83,72 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
 
   const umbrellaDomains: string[] = [];
 
-  // 1. Food Domain
+  // 1. Drink Domain
+  const isDrink =
+    rawLlmCat === 'drink' ||
+    /\b(tequila|matcha|kopi|coffee|beer|bir|boba|wine|jus|juice|teh|tea|latte|espresso|americano|cocktail|liquor|gin|vodka|soju|minuman|minum|es-teh|boba-tea)\b/i.test(lower);
+  if (isDrink) umbrellaDomains.push('drink');
+
+  // 2. Food Domain
   const isFood =
     rawLlmCat === 'food' ||
-    /\b(rendang|cireng|batagor|seblak|nasgor|nasi|ayam|bakso|mie|sate|makan|snack|kopi|coffee|roti|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|minum|makanan|minuman|jus|boba|gorengan)\b/i.test(lower);
+    (/\b(rendang|cireng|batagor|seblak|nasgor|nasi|ayam|bakso|mie|sate|makan|snack|roti|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza)\b/i.test(lower) && !isDrink);
   if (isFood) umbrellaDomains.push('food');
 
-  // 2. Transport Domain
+  // 3. Transport Domain
   const isTransport =
-    /\b(bensin|pertalite|pertamax|bbm|solar|gojek|grab|maxim|ojol|tol|parkir|kereta|krl|mrt|busway|bus|angkot|tiket|ongkir|flight|pesawat)\b/i.test(lower);
+    /\b(bensin|pertalite|pertamax|bbm|solar|gojek|grab|maxim|ojol|tol|parkir|kereta|krl|mrt|busway|bus|angkot|ongkir|flight|pesawat)\b/i.test(lower) ||
+    (/\btiket\b/i.test(lower) && /\b(kereta|pesawat|bus|krl|mrt|flight|kapal|travel)\b/i.test(lower));
   if (isTransport) umbrellaDomains.push('transport');
 
-  // 3. Health Domain
+  // 4. Health Domain
   const isHealth =
     /\b(panadol|paracetamol|obat|bodrex|tolak\s*angin|vitamin|apotek|dokter|klinik|puskesmas|hospital|dentist|gigi|medis|salep|betadine)\b/i.test(lower);
   if (isHealth) umbrellaDomains.push('health');
 
-  // 4. Internet Domain
+  // 5. Internet Domain
   const isInternet =
     /\b(indihome|wifi|biznet|myrepublic|firstmedia|kuota|pulsa|telkomsel|xl|indosat|tri|smartfren|modem|router|hotspot)\b/i.test(lower);
   if (isInternet) umbrellaDomains.push('internet');
 
-  // 5. Fashion Domain
+  // 6. Tech Domain
+  const isTech =
+    /\b(vps|hosting|server|domain|cloud|aws|gcp|github|api|software|saas|digitalocean|database|devops|docker|k8s)\b/i.test(lower);
+  if (isTech) umbrellaDomains.push('tech');
+
+  // 7. Entertainment Domain
+  const isEntertainment =
+    /\b(bioskop|cinema|xxi|cgv|cinepolis|nonton|konser|concert|netflix|spotify|movie|film|teater|theater)\b/i.test(lower) ||
+    (/\btiket\b/i.test(lower) && /\b(bioskop|konser|concert|xxi|cgv|film|movie|nonton)\b/i.test(lower));
+  if (isEntertainment) umbrellaDomains.push('entertainment');
+
+  // 8. Fashion Domain
   const isFashion =
     rawLlmCat === 'fashion' ||
     /\b(uniqlo|zara|h&m|erigo|kemeja|baju|celana|kaos|jaket|sepatu|sandal|tas|outfit|hoodie|rok|dress)\b/i.test(lower);
   if (isFashion) umbrellaDomains.push('fashion');
 
-  // 6. Travel Domain
+  // 9. Travel Domain
   const isTravel =
     /\b(dieng|bali|jogja|bandung|bromo|labuan\s*bajo|hiling|healing|liburan|trip|wisata|pantai|gunung|hotel|villa|resort|tour)\b/i.test(lower);
   if (isTravel) umbrellaDomains.push('travel');
 
-  // 7. Gaming Domain
+  // 10. Gaming Domain
   const isGaming =
     /\b(steam|topup|diamond|mlbb|valorant|genshin|playstation|ps5|game|gaming|skin)\b/i.test(lower);
   if (isGaming) umbrellaDomains.push('gaming');
 
   // Extract specific entity candidates
   const entityCandidateWords = [
-    'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'bakso', 'mie', 'sate', 'kopi',
+    'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'bakso', 'mie', 'sate',
+    'tequila', 'matcha', 'kopi', 'beer', 'boba', 'wine',
     'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
     'panadol', 'paracetamol', 'bodrex', 'obat', 'vitamin',
     'indihome', 'biznet', 'myrepublic', 'firstmedia', 'wifi', 'kuota', 'pulsa',
     'uniqlo', 'zara', 'erigo', 'kemeja', 'sepatu', 'tas',
-    'dieng', 'bali', 'jogja', 'bromo'
+    'dieng', 'bali', 'jogja', 'bromo',
+    'vps', 'hosting', 'domain',
+    'bioskop', 'cinema', 'spotify', 'netflix'
   ];
 
   const detectedEntities: string[] = [];
@@ -232,22 +253,23 @@ The "category" MUST be one of these 9 exact values:
 DO NOT output 'food', 'expense', 'expenses', 'task', 'money', or 'shopping' as "category"! Always use "finance" or "todo".
 
 SPECIFIC TAG RULES (Extract 1 to 3 tags per note):
-1. Always strive to combine [Specific Entity] + [Broad Concept/Domain] whenever applicable:
-   - Specific Entity: brand, store, item, dish, person, place, or tool (e.g. 'rendang', 'batagor', 'cireng', 'uniqlo', 'indihome', 'panadol', 'dieng').
-   - Broad Concept: the underlying semantic domain (e.g. 'food', 'fashion', 'internet', 'health', 'travel', 'transport', 'gaming').
-   - Examples of ideal pairing:
-     • "rendang 30k" -> ["rendang", "food"]
-     • "batagor 15k" -> ["batagor", "food"]
+1. Always combine [Specific Entity] + [Broad Concept/Domain] whenever applicable:
+   - Specific Entity: brand, item, dish, drink, tool, store, person, place (e.g. 'rendang', 'tequila', 'uniqlo', 'indihome', 'panadol', 'dieng', 'spotify').
+   - Broad Concept: underlying semantic domain (e.g. 'food', 'drink', 'transport', 'internet', 'health', 'travel', 'fashion', 'gaming', 'tech', 'entertainment').
+   - Ideal Examples:
+     • "rendang 50k" -> ["rendang", "food"]
+     • "cireng 5k" -> ["cireng", "food"]
+     • "tequila 120rb" -> ["tequila", "drink"]
+     • "kopi susu 20k" -> ["kopi", "drink"]
      • "bensin 20k" -> ["bensin", "transport"]
-     • "beli panadol 10k" -> ["panadol", "health"]
-     • "bayar wifi indihome 300k" -> ["indihome", "internet"]
-     • "kemeja putih uniqlo" -> ["uniqlo", "fashion"]
-     • "hiling dieng" -> ["dieng", "travel"]
+     • "tiket bioskop 50k" -> ["bioskop", "entertainment"]
+     • "langganan vps 100k" -> ["vps", "tech"]
+     • "panadol 10k" -> ["panadol", "health"]
 2. DO NOT output tags that merely repeat the category name (NEVER output 'todo', 'finance', 'expenses', 'task', 'money', 'schedule', 'note').
 3. Keep tags lowercase, single-word or hyphenated, max 20 chars.
 
 JSON FORMAT:
-{"category": "finance", "specific_tags": ["rendang", "food"], "source": null}`,
+{"category": "finance", "specific_tags": ["tequila", "drink"], "source": null}`,
       prompt: `Classify and extract 1-3 tags as JSON {"category": "finance" | "todo" | ..., "specific_tags": ["entity", "umbrella"], "source": null}:\n"""${content}"""`,
     });
 

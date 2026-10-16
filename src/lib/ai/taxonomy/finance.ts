@@ -31,10 +31,19 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
   {
     canonical: 'food',
     category: 'finance',
-    description: 'Food, dining, groceries, and beverages',
+    description: 'Food, dining, groceries, and meals',
     aliases: {
-      id: ['rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'kopi', 'coffee', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang', 'minum'],
-      en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'coffee', 'cafe', 'restaurant', 'groceries', 'snack', 'burger', 'pizza', 'drink'],
+      id: ['rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang'],
+      en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'restaurant', 'groceries', 'snack', 'burger', 'pizza'],
+    },
+  },
+  {
+    canonical: 'drink',
+    category: 'finance',
+    description: 'Beverages, coffee, tea, alcohol, and drinks',
+    aliases: {
+      id: ['minum', 'minuman', 'tequila', 'kopi', 'coffee', 'matcha', 'boba', 'jus', 'juice', 'teh', 'tea', 'latte', 'es-teh', 'susu', 'bir', 'beer', 'wine', 'alkohol', 'soju', 'vodka', 'cocktail', 'liquor'],
+      en: ['drink', 'beverage', 'drinks', 'coffee', 'tea', 'matcha', 'boba', 'juice', 'beer', 'wine', 'liquor', 'cocktail', 'alcohol'],
     },
   },
   {
@@ -42,8 +51,26 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Transit, commute, fuel, and travel costs',
     aliases: {
-      id: ['bensin', 'pertalite', 'pertamax', 'bbm', 'parkir', 'gojek', 'grab', 'tol', 'tiket', 'kereta', 'ojol', 'ongkir'],
+      id: ['bensin', 'pertalite', 'pertamax', 'bbm', 'parkir', 'gojek', 'grab', 'tol', 'kereta', 'krl', 'mrt', 'ojol', 'ongkir', 'pesawat'],
       en: ['transport', 'fuel', 'gas', 'gasoline', 'parking', 'uber', 'lyft', 'taxi', 'toll', 'train', 'flight', 'bus', 'fare'],
+    },
+  },
+  {
+    canonical: 'tech',
+    category: 'finance',
+    description: 'Servers, cloud, hosting, and tech infrastructure',
+    aliases: {
+      id: ['vps', 'server', 'hosting', 'domain', 'cloud', 'software'],
+      en: ['tech', 'technology', 'vps', 'server', 'hosting', 'domain', 'cloud', 'software', 'saas'],
+    },
+  },
+  {
+    canonical: 'entertainment',
+    category: 'finance',
+    description: 'Cinemas, movies, concerts, shows, and streaming entertainment',
+    aliases: {
+      id: ['bioskop', 'cinema', 'nonton', 'xxi', 'cgv', 'cinepolis', 'konser', 'hiburan', 'film', 'movie'],
+      en: ['entertainment', 'cinema', 'movie', 'concert', 'show', 'theater'],
     },
   },
   {
