@@ -92,9 +92,65 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
 2. **Clickable Specific Tags**:
    - Tag pills `#tag` pada [`NoteCard.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NoteCard.tsx) interaktif. Mengklik tag langsung memicu filtering feed ke tag tersebut via callback ke `NotesTimeline`.
 3. **Modal Dialog Note & Tag Editor ([`EditNoteModal.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/EditNoteModal.tsx) & [`PATCH /api/notes/[id]`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/%5Bid%5D.ts))**:
-   - Ikon pensil di toolbar NoteCard membuka dialog modal bertema zinc dark.
-   - Pengguna dapat mengedit konten teks catatan, mengubah kategori dari 9 pilihan resmi, serta menambah/menghapus specific tags secara dinamis.
-   - Endpoint `PATCH /api/notes/[id]` memvalidasi hak milik user, membersihkan tag, menyimpan perubahan ke database, dan mengembalikan data terbaru ke UI secara instan.
+    - Ikon pensil di toolbar NoteCard membuka dialog modal bertema zinc dark.
+    - Pengguna dapat mengedit konten teks catatan, mengubah kategori dari 9 pilihan resmi, serta menambah/menghapus specific tags secara dinamis.
+    - Endpoint `PATCH /api/notes/[id]` memvalidasi hak milik user, membersihkan tag, menyimpan perubahan ke database, dan mengembalikan data terbaru ke UI secara instan.
+
+### H. Zero-Friction Telegram Onboarding (1-Click Connect)
+- **Deep Link Onboarding**: Dukungan parameter payload Telegram `/start <apiKey>` pada [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts).
+- Pengguna yang mengklik tombol *[📱 Hubungkan ke Telegram]* di Web Settings (`/dashboard/settings.astro`) atau banner onboarding langsung terhubung secara otomatis ke akun mereka tanpa perlu mengetik manual `/login <api_key>`.
+
+### I. Universal Data Export (Data Portability)
+- **Endpoint Multi-Format ([`GET /api/notes/export`](file:///home/rikushiro/projects/unlazynotes/src/pages/api/notes/export.ts))**:
+  - `?format=json`: Mengekspor seluruh database catatan milik pengguna dalam format JSON terstruktur lengkap beserta metadata, timestamp, kategori, dan tag.
+  - `?format=markdown`: Mengekspor catatan ke berkas Markdown (`.md`) yang siap diimpor ke Obsidian, Notion, Logseq, atau arsip lokal.
+  - Dukungan filter export terisolasi hanya untuk catatan milik pengguna aktif, serta modul download instan di Web Settings dan modal dashboard.
+
+### J. Flexible Partial Matching & Smart Multi-Token Search
+1. **Telegram Private Vault Substring Matching**:
+   - Perintah `/vault <query>` di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts) menggunakan `ilike(notes.vaultKey, %${cleanQuery}%)` sehingga mencari `bca` otomatis menemukan `bank_bca`, `bca_card`, dsb.
+2. **Dashboard Smart Multi-Token Search**:
+   - Filter pencarian client-side di [`NotesTimeline.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NotesTimeline.tsx) memecah query menjadi token kata terpisah (`query.split(/\s+/)`). Catatan dianggap cocok jika setiap token ditemukan di salah satu dari: isi teks, kategori, specific tags, atau kunci vault.
+
+### K. High-Conversion Landing Page & Interactive Showcase
+- Perombakan total landing page di [`src/pages/index.astro`](file:///home/rikushiro/projects/unlazynotes/src/pages/index.astro) dan [`src/components/landing/LandingPage.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/landing/LandingPage.tsx):
+  - Hero section dengan copywriting high-conversion ("Berhenti Biarkan Ide & Catatanmu Jadi 'Kuburan' di Saved Messages").
+  - Dual CTA: *[📱 Mulai Gratis di Telegram]* & *[🖥 Buka Web Dashboard]*.
+  - Visual perbandingan interaktif *Before vs After*: Menampilkan transformasi chat mentah Telegram menjadi kartu terkurasi rapi di UnlazyNotes.
+  - Komponen FAQ Accordion interaktif bertema zinc dark.
+
+### L. Smart Message Debouncing (Buffer 3 Detik Multi-Bubble)
+- Mengatasi kebiasaan pengguna mengirim teks panjang/curhat yang terpecah menjadi 2–3 bubble chat berturut-turut.
+- Menggunakan in-memory buffer timer 3.0 detik berbasis `chat_id` di [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts).
+- Pesan-pesan berturut-turut digabungkan menjadi SATU catatan utuh (`\n\n`) sebelum disimpan ke database dan diproses AI tagging, menghemat kuota LLM dan mencegah fragmentasi catatan.
+- Perintah bot (`/start`, `/tags`, `/search`, dll.) otomatis mem-bypass debounce dan langsung melakukan pre-flush.
+- Ditambahkan graceful shutdown `flushAllDebounceBuffers()` pada `SIGINT`/`SIGTERM` di [`scripts/bot-polling.ts`](file:///home/rikushiro/projects/unlazynotes/scripts/bot-polling.ts).
+
+### M. Inline Keyboard Pagination & Snippet Truncation (`/tags` & `/search`)
+- Mencegah fenomena *wall of text* saat query menghasilkan banyak catatan di chat Telegram:
+  - Batas 5 catatan per halaman (`PAGE_SIZE = 5`).
+  - Baris pertama dijadikan judul tebal `📌 *Judul*`, teks konten dipotong maksimal 120 karakter diikuti ellipsis `...`, disertai tanggal dan badge tags.
+  - Navigasi Inline Keyboard interaktif: `[ ◀️ Prev ] [ Hal X / Y ] [ Next ▶️ ]` dengan callback payload `page:tags:<tag>:<page>` dan `page:search:<query>:<page>`.
+  - Penanganan `callback_query` menggunakan `editTelegramMessage` (in-place update) dan `answerTelegramCallbackQuery` untuk performa mulus tanpa spam pesan baru.
+
+### N. Horizontal Compact Output for `/tags`
+- Format output `/tags` (tanpa argumen) diubah dari bullet vertikal panjang menjadi teks horizontal menyamping yang dipisahkan koma:
+  - `📂 *Kategori Utama:*` (daftar kategori yang dimiliki user).
+  - `🏷 *Specific Tags:*` (daftar tag spesifik diawali `#`, misal `#s2-ugm, #macbook-m, #ubed, #food`).
+  - Dilengkapi tips navigasi ringkas di bagian bawah footer.
+
+### O. Universal Dual-Layer Tagging Engine ([Specific Entity] + [Broad Concept])
+- **System Prompt**: Mengarahkan LLM untuk selalu memadukan `[Entitas Spesifik]` + `[Domain/Konsep Payung]` (misal: `"rendang 50k" -> ["rendang", "food"]`, `"tequila 120rb" -> ["tequila", "drink"]`, `"bensin 20k" -> ["bensin", "transport"]`, `"tiket bioskop 50k" -> ["bioskop", "entertainment"]`, `"langganan vps 100k" -> ["vps", "tech"]`, `"panadol 10k" -> ["panadol", "health"]`, `"kemeja putih uniqlo" -> ["uniqlo", "fashion"]`, `"hiling dieng" -> ["dieng", "travel"]`).
+- **Normalisasi Kategori**: Fungsi `normalizeCategory()` memetakan sinonim (`food`, `expense`, `spending` $\rightarrow$ `finance`), serta menjamin setiap catatan berharga/bernominal selalu masuk kategori `finance`.
+- **Enricher Domain**: Fungsi `enrichDualLayerTags()` menjamin entitas spesifik tetap berpasangan dengan domain payungnya (`food`, `drink`, `transport`, `health`, `internet`, `tech`, `entertainment`, `fashion`, `travel`, `gaming`).
+- **Sanitizer & Taksonomi**:
+  - Menambahkan kanonikal baru `drink`, `tech`, dan `entertainment` pada [`src/lib/ai/taxonomy/finance.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/taxonomy/finance.ts).
+  - Memasukkan kata sampah generik non-entitas (`price`, `prices`, `cost`, `fee`, `expense`, `purchase`, `payment`, `phrase`, `word`, `subscription`, `unclear`, `ambiguous`) ke `BANNED_TAGS`.
+  - Melindungi entitas lokal dan konsep payung agar tidak ter-replace atau di-collapse secara prematur.
+
+### P. NoteCard UI Cleanup (Telegram Indicator)
+- Menghapus badge teks `"TELEGRAM"` yang sebelumnya bersanding membingungkan dengan badge Kategori di toolbar kanan atas pada [`NoteCard.tsx`](file:///home/rikushiro/projects/unlazynotes/src/components/dashboard/NoteCard.tsx).
+- Menggantikannya dengan icon pesawat kertas Telegram (`Send`) kecil berwarna sky di samping waktu catatan (`createdAt`), sehingga toolbar kanan atas hanya fokus menampilkan badge Kategori utama yang bersih.
 
 ---
 
