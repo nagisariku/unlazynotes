@@ -185,31 +185,7 @@ Evaluasi teknis arsitektur saat menangani beban 1.000 hingga 10.000 pengguna:
 
 ---
 
-## 4. Roadmap Fitur Berikutnya (The 5 Pillars Blueprint)
-
-Rencana pengembangan lanjutan yang tersimpan di backlog:
-
-### Fase 1: Core AI & Entity Extraction
-- **Pilar 1 (URL OpenGraph / Metadata Scraper)**:
-  - Background fetcher 15 KB pertama untuk membaca `<title>` dan `<meta description>` URL umum non-sosmed agar tagging bookmark otomatis kontekstual.
-- **Pilar 4 (Structured Entity Extractor)**:
-  - Menambahkan kolom `metadata: jsonb('metadata')` pada tabel `notes`.
-  - Ekstraksi nominal angka & currency (`kopi 12k bensin 20k` $\rightarrow$ `amount: 32000 IDR`).
-  - Ekstraksi waktu jadwal (`besok jam 14.00` $\rightarrow$ ISO 8601 UTC timestamp).
-
-### Fase 2: Telegram UX & Personalisasi
-- **Pilar 2 (User Tag Memory)**:
-  - Mengingat frekuensi tag yang sering dipakai user dari database dan memprioritaskannya dibanding sinonim baru.
-
-### Fase 3: Web Dashboard Enhancements
-- **Pilar 5 (Tag Manager & 1-Click Merge Tool)**:
-  - Halaman manajemen tag di web dashboard untuk audit tag dan menggabungkan tag secara massal (misal merge `makan` ke `food`).
-- **Peningkatan UI/UX**:
-  - Peningkatan styling timeline, visual card, dan mobile responsiveness.
-
----
-
-## 5. Konteks Migrasi ke VPS Production (Singapore)
+## 4. Konteks Migrasi ke VPS Production (Singapore)
 
 - Server Tencent saat ini adalah **Sandbox / Dev VPS**.
 - Semua credential real (Google OAuth Production & Akun DOKU Merchant Production) akan diintegrasikan saat persiapan pindah ke VPS Singapore.
