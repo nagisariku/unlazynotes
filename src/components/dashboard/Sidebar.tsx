@@ -60,17 +60,23 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
         </a>
 
         <div className="flex items-center gap-2">
-          {isPro ? (
-            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase tracking-wider">
-              PRO
-            </span>
-          ) : (
+          <span
+            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+              isPro
+                ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+            }`}
+          >
+            {isPro ? 'Pro' : 'Free'}
+          </span>
+
+          {!isPro && (
             <a
               href="/dashboard/settings#upgrade"
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-[11px] font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors"
             >
               <Sparkles className="w-3 h-3" />
-              <span>Upgrade</span>
+              <span>Upgrade to Pro</span>
             </a>
           )}
 
@@ -185,7 +191,28 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-zinc-200 truncate">{user.name || 'User'}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-xs font-semibold text-zinc-200 truncate">{user.name || 'User'}</p>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                        isPro
+                          ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                      }`}
+                    >
+                      {isPro ? 'Pro' : 'Free'}
+                    </span>
+                    {!isPro && (
+                      <a
+                        href="/dashboard/settings#upgrade"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-semibold"
+                      >
+                        <Sparkles className="w-2.5 h-2.5" />
+                        <span>Upgrade to Pro</span>
+                      </a>
+                    )}
+                  </div>
                   <p className="text-[11px] text-zinc-500 truncate">{user.email}</p>
                 </div>
               </div>
@@ -262,24 +289,6 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
           })}
         </nav>
 
-        {/* Pro Upgrade CTA Banner if not Pro */}
-        {!isPro && (
-          <div className="px-3 mb-2">
-            <a
-              href="/dashboard/settings#upgrade"
-              className="block p-3 rounded-xl border border-indigo-500/20 bg-indigo-950/20 hover:bg-indigo-950/40 text-xs transition-colors group"
-            >
-              <div className="flex items-center gap-1.5 text-indigo-400 font-semibold mb-1">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Upgrade ke Pro</span>
-              </div>
-              <p className="text-[11px] text-zinc-400 leading-tight">
-                Unlimited catatan &amp; AI <code className="text-indigo-300">/ask</code> bot.
-              </p>
-            </a>
-          </div>
-        )}
-
         {/* Telegram Bot Link Quick Banner */}
         <div className="px-4 py-3 mx-3 mb-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs">
           <p className="text-zinc-400 mb-1.5 font-medium">Quick Capture Bot:</p>
@@ -295,8 +304,8 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
         </div>
 
         {/* User Footer */}
-        <div className="p-3 border-t border-zinc-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="p-3 border-t border-zinc-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300 shrink-0 uppercase overflow-hidden">
               {user.image ? (
                 <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
@@ -305,17 +314,38 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold text-zinc-200 truncate">
-                {user.name || 'User'}
-              </p>
-              <p className="text-[11px] text-zinc-500 truncate">{user.email}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-semibold text-zinc-200 truncate max-w-[95px]">
+                  {user.name || 'User'}
+                </p>
+                <span
+                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                    isPro
+                      ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
+                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                  }`}
+                >
+                  {isPro ? 'Pro' : 'Free'}
+                </span>
+              </div>
+              {!isPro ? (
+                <a
+                  href="/dashboard/settings#upgrade"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 mt-0.5 rounded-md bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-semibold transition-all"
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  <span>Upgrade to Pro</span>
+                </a>
+              ) : (
+                <p className="text-[11px] text-zinc-500 truncate">{user.email}</p>
+              )}
             </div>
           </div>
 
           <button
             onClick={handleLogout}
             title="Sign Out"
-            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-900 transition-colors"
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-900 transition-colors shrink-0"
           >
             <LogOut className="w-4 h-4" />
           </button>

@@ -21,8 +21,7 @@ import {
   checkUserQuotaAndTier,
   incrementUserMonthlyNotes,
   getTelegramQuotaExceededMessage,
-  getTelegramVaultGatedMessage,
-  getTelegramAskGatedMessage,
+  getTelegramProGatedMessage,
   FREE_MONTHLY_QUOTA,
 } from '@/lib/quota-service';
 import { taggingQueue } from '@/lib/tagging-queue';
@@ -82,7 +81,17 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
     });
 
     // 2. Update monthly notes usage (+1)
-    await incrementUserMonthlyNotes(item.activeKey.userId);
+    const newCount = await incrementUserMonthlyNotes(item.activeKey.userId);
+
+    // Peringatan Mendekati Limit (Note ke-25 s.d. ke-29 untuk Free Tier)
+    if (item.tier === 'free' && newCount >= 25 && newCount < 30) {
+      const remaining = 30 - newCount;
+      await sendTelegramMessage(
+        chatId,
+        `*(Sisa kuota Free bulan ini: ${remaining}/30)*`,
+        { parse_mode: 'Markdown' }
+      );
+    }
 
     // 3. Smart Credential Warning Guardrail
     const hasCredentialKeyword =
@@ -593,11 +602,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
 
     if (!quotaInfo.isPro) {
-      await sendTelegramMessage(
-        chatId,
-        getTelegramAskGatedMessage(process.env.BETTER_AUTH_URL),
-        { parse_mode: 'Markdown' }
-      );
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      await sendTelegramMessage(chatId, gated.text, {
+        parse_mode: 'Markdown',
+        reply_markup: gated.replyMarkup,
+      });
       return { ok: true, action: 'ask_requires_pro' };
     }
 
@@ -620,11 +629,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 9. /secure <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
   if (text.startsWith('/secure')) {
     if (!quotaInfo.isPro) {
-      await sendTelegramMessage(
-        chatId,
-        getTelegramVaultGatedMessage(process.env.BETTER_AUTH_URL),
-        { parse_mode: 'Markdown' }
-      );
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      await sendTelegramMessage(chatId, gated.text, {
+        parse_mode: 'Markdown',
+        reply_markup: gated.replyMarkup,
+      });
       return { ok: true, action: 'secure_requires_pro' };
     }
 
@@ -667,11 +676,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 10. /vault [kunci] (Buka rahasia atau list kunci Private Vault)
   if (text.startsWith('/vault')) {
     if (!quotaInfo.isPro) {
-      await sendTelegramMessage(
-        chatId,
-        getTelegramVaultGatedMessage(process.env.BETTER_AUTH_URL),
-        { parse_mode: 'Markdown' }
-      );
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      await sendTelegramMessage(chatId, gated.text, {
+        parse_mode: 'Markdown',
+        reply_markup: gated.replyMarkup,
+      });
       return { ok: true, action: 'vault_requires_pro' };
     }
 
@@ -773,10 +782,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 11. Core Note Capture Quota Enforcement
   if (!quotaInfo.allowed) {
+    const quotaMsg = getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL);
     await sendTelegramMessage(
       chatId,
-      getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL),
-      { parse_mode: 'Markdown' }
+      quotaMsg.text,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: quotaMsg.replyMarkup,
+      }
     );
     return { ok: false, error: 'monthly_quota_exceeded' };
   }

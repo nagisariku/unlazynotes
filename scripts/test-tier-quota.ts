@@ -338,24 +338,26 @@ async function runTierQuotaTests() {
 
     const quotaMsg = getTelegramQuotaExceededMessage();
     assert(
-      quotaMsg.includes('Batas Kuota Bulanan Free Tier') &&
-        quotaMsg.includes('30/30 catatan') &&
-        quotaMsg.includes('Rp 15.000/bulan'),
-      'Pesan kuota bulanan memuat batas 30 catatan dan harga resmi Rp 15.000/bulan ($1/mo)'
+      quotaMsg.text.includes('30 catatan Free kamu bulan ini sudah terpakai') &&
+        quotaMsg.text.includes('catatan lamamu tetap aman tersimpan') &&
+        quotaMsg.text.includes('$1 (~Rp 15rb)/bulan') &&
+        quotaMsg.replyMarkup.inline_keyboard[0][0].url.includes('/dashboard/settings#upgrade'),
+      'Pesan kuota bulanan memuat batas 30 catatan, jaminan catatan lama aman, dan tombol upgrade $1 (~Rp 15rb)/bulan'
     );
 
     const vaultMsg = getTelegramVaultGatedMessage();
     assert(
-      vaultMsg.includes('Private Encrypted Vault') &&
-        vaultMsg.includes('AES-256-GCM') &&
-        vaultMsg.includes('/dashboard/settings'),
-      'Pesan gatekeeping Vault memuat penjelasan keamanan AES-256-GCM dan link upgrade'
+      vaultMsg.text.includes('Fitur ini khusus untuk pengguna UnlazyNotes Pro') &&
+        vaultMsg.text.includes('Private Encrypted Vault') &&
+        vaultMsg.replyMarkup.inline_keyboard[0][0].url.includes('/dashboard/settings#upgrade'),
+      'Pesan gatekeeping Vault memuat penjelasan fitur eksklusif Pro dan CTA Upgrade'
     );
 
     const askMsg = getTelegramAskGatedMessage();
     assert(
-      askMsg.includes('AI Otak Kedua (/ask)') &&
-        askMsg.includes('Pro Tier'),
+      askMsg.text.includes('Fitur ini khusus untuk pengguna UnlazyNotes Pro') &&
+        askMsg.text.includes('AI Q&A cerdas') &&
+        askMsg.text.includes('cuma $1/bulan'),
       'Pesan gatekeeping AI /ask memuat penegasan fitur eksklusif Pro Tier'
     );
 

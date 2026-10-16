@@ -300,9 +300,14 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
           <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950">
             <span className="text-[11px] text-zinc-500 block uppercase font-medium">Kuota Catatan Bulan Ini</span>
-            <span className="text-lg font-bold text-zinc-100">
-              {plan === 'pro' ? 'Unlimited' : `${notesCount} / 30 catatan`}
-            </span>
+            {plan === 'pro' ? (
+              <span className="text-lg font-bold text-zinc-100">Unlimited</span>
+            ) : (
+              <div>
+                <span className="text-lg font-bold text-zinc-100">{notesCount}/30</span>
+                <span className="text-xs text-zinc-400 block mt-0.5">catatan terpakai bulan ini • reset tiap awal bulan</span>
+              </div>
+            )}
           </div>
 
           <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-950">

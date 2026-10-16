@@ -151,51 +151,48 @@ export async function incrementUserMonthlyNotes(userId: string): Promise<number>
 }
 
 /**
- * Template Pesan Paywall / Upgrade untuk Batas Kuota Bulanan di Telegram
+ * Template Pesan Paywall / Upgrade untuk Batas Kuota Bulanan di Telegram (30/30)
  */
-export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321'): string {
-  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings`;
-  return (
-    `⚠️ *Batas Kuota Bulanan Free Tier Tercapai*\n\n` +
-    `Anda telah menggunakan seluruh kuota gratis bulan ini (*${FREE_MONTHLY_QUOTA}/${FREE_MONTHLY_QUOTA} catatan*). Kuota akan direset otomatis pada tanggal 1 awal bulan depan.\n\n` +
-    `🚀 *Beralih ke Pro Tier untuk Akses Tanpa Batas:*\n` +
-    `• *UNLIMITED Notes* tanpa batas kuota bulanan\n` +
-    `• *Private Encrypted Vault* (\`/secure\` & \`/vault\`) dengan AES-256-GCM\n` +
-    `• *AI Tanya Jawab Cerdas* (\`/ask\`) eksplorasi memori catatan\n` +
-    `• *Fast-Lane Prioritas* pemrosesan AI tagging kilat\n\n` +
-    `Mulai dari *Rp 15.000/bulan* ($1/mo) atau *Rp 150.000/tahun*:\n` +
-    `👉 ${settingsUrl}`
-  );
+export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321'): {
+  text: string;
+  replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+} {
+  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const text =
+    `Yah, jatah 30 catatan Free kamu bulan ini sudah terpakai semua! 🥺 Kuota catatan barumu akan direset otomatis tanggal 1 bulan depan (catatan lamamu tetap aman tersimpan).\n\n` +
+    `Mau bebas catat tanpa batas & buka fitur rahasia (/secure & /ask)?\n` +
+    `✨ Upgrade ke Pro cuma $1 (~Rp 15rb)/bulan!\n` +
+    `👉 ${settingsUrl}`;
+
+  return {
+    text,
+    replyMarkup: {
+      inline_keyboard: [[{ text: '✨ Upgrade ke Pro ($1 / Rp 15rb)', url: settingsUrl }]],
+    },
+  };
 }
 
 /**
- * Template Pesan Gatekeeping untuk Fitur Private Encrypted Vault (/secure & /vault)
+ * Template Pesan Gatekeeping untuk Fitur Eksklusif Pro (/secure, /vault, atau /ask)
  */
-export function getTelegramVaultGatedMessage(webUrl = 'http://localhost:4321'): string {
-  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings`;
-  return (
-    `🔒 *Fitur Eksklusif: Private Encrypted Vault*\n\n` +
-    `Fitur Private Encrypted Vault (\`/secure\` & \`/vault\`) memungkinkan Anda menyimpan password, API key, token, PIN, dan rahasia sensitif dengan enkripsi berstandar militer AES-256-GCM yang diisolasi 100% dari AI.\n\n` +
-    `Fitur ini eksklusif untuk pengguna *Pro Tier*.\n\n` +
-    `✨ *Keuntungan Pro Tier:*\n` +
-    `• *Unlimited Notes* (Bebas limit 30 catatan/bulan)\n` +
-    `• *Private Encrypted Vault* aman & terenkripsi\n` +
-    `• *AI Otak Kedua (\`/ask\`)* untuk analisis catatan\n` +
-    `• *Fast-Lane Prioritas* AI Tagging\n\n` +
-    `Upgrade mulai dari *Rp 15.000/bulan* ($1/mo):\n` +
-    `👉 ${settingsUrl}`
-  );
+export function getTelegramProGatedMessage(webUrl = 'http://localhost:4321'): {
+  text: string;
+  replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+} {
+  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const text =
+    `Fitur ini khusus untuk pengguna UnlazyNotes Pro ✨\n` +
+    `Buka akses Private Encrypted Vault, AI Q&A cerdas, dan unlimited notes cuma $1/bulan.\n\n` +
+    `👉 ${settingsUrl}`;
+
+  return {
+    text,
+    replyMarkup: {
+      inline_keyboard: [[{ text: '⚡️ Upgrade ke Pro ($1/bulan)', url: settingsUrl }]],
+    },
+  };
 }
 
-/**
- * Template Pesan Gatekeeping untuk Fitur AI Q&A (/ask)
- */
-export function getTelegramAskGatedMessage(webUrl = 'http://localhost:4321'): string {
-  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings`;
-  return (
-    `⭐️ *Fitur Eksklusif: AI Otak Kedua (/ask)*\n\n` +
-    `Fitur tanya jawab cerdas AI (\`/ask\`) dengan kesadaran temporal & pencarian semantik universal hanya tersedia untuk pengguna *Pro Tier*.\n\n` +
-    `Upgrade ke paket Pro untuk menikmati eksplorasi otak kedua dan catatan tanpa batas:\n` +
-    `👉 ${settingsUrl}`
-  );
-}
+// Aliases untuk backward compatibility
+export const getTelegramVaultGatedMessage = getTelegramProGatedMessage;
+export const getTelegramAskGatedMessage = getTelegramProGatedMessage;
