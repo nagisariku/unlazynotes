@@ -17,8 +17,9 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `npm run test:tagging`: 31/31 unit test lolos (100% PASS)
-  - `npm run test:webhook`: 10/10 integrasi end-to-end lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 23/23 unit test lolos (100% PASS)
+  - `scripts/test-intent-classifier.ts`: 31/31 unit test lolos (100% PASS)
+  - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
   - `npm run typecheck`: 0 TypeScript error
 
 ---
@@ -209,6 +210,25 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
 3. **Catatan Curhat / Shower Thoughts $\rightarrow$ WAJIB `random-yap`**: Opini santai, uneg-uneg, dan renungan hidup tanpa aksi (misal: `"kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja"`) WAJIB dikategorikan sebagai `random-yap`, BUKAN `others`.
 4. **Tugas Riset / Perbandingan adalah TODO**: Catatan yang memuat kata kerja riset atau komparasi harga tanpa pembayaran nominal (misal: `"cari info biaya kuliah s2 itb"`, `"bandingin harga macbook m3 vs m4"`) WAJIB masuk `todo`.
 5. **Verifikasi Test Suite**: `scripts/test-intent-classifier.ts` memverifikasi 31/31 skenario uji lolos 100% PASS pada Live AI Pipeline dan Deterministic Heuristic Fallback.
+
+### V. Tagging Pipeline Refinements & Telegram `/tags` Clustered Overhaul
+1. **Pemisahan Entitas Hiburan & Guard `#meeting` pada Schedule ([`src/lib/ai/modules/general.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/modules/general.ts))**:
+   - Jadwal hiburan/nonton bioskop (misal `"nonton avatar di cgv sabtu malam jam 21.15 seat f12"`) tetap berkategori `schedule`, namun tidak lagi disusupi tag `#meeting`.
+   - Tag payung `entertainment` ditambahkan ke taksonomi kanonikal (`src/lib/ai/taxonomy/general.ts`), menghasilkan tag spesifik entitas (`avatar`, `cgv`) dan payung `entertainment`.
+2. **Ekspansi Kapasitas Tag Spesifik (Max 5 Tags)**:
+   - Meningkatkan hardcap pemotongan specific tags dari 3 menjadi 5 pada sanitizer ([`src/lib/ai/sanitizer.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/sanitizer.ts)) dan modul domain (`general.ts`, `finance.ts`, `credential.ts`, `todo.ts`, `src/lib/ai.ts`).
+   - Mencegah terpotongnya entitas penting seperti entitas perusahaan (`pt-karya-maju`) dan platform/objek (`website`) pada transaksi multi-entitas yang kaya informasi.
+3. **Preservasi Nomor Kriptografi/Teknis & Whitelist Short Tags**:
+   - Mencegah sanitizer memotong digit trailing pada istilah kripto/teknis (`ed25519`, `sha256`, `rsa4096`).
+   - Melarang pemotongan tag yang menghasilkan singkatan tanpa makna (seperti `#ed`), memasukkan `ed` ke `BANNED_TAGS`.
+   - Membatasi tag < 3 karakter kecuali yang terdaftar di whitelist resmi (`ai`, `db`, `ui`, `ux`, `qa`, `ip`, `os`, `id`, `ml`).
+4. **Overhaul Perintah `/tags` Telegram (Jendela 30 Hari & Kluster Dinamis)**:
+   - Query catatan dibatasi pada 30 hari terakhir (`createdAt >= NOW() - INTERVAL '30 days'`) pada [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts).
+   - Tag dikelompokkan secara dinamis via root kanonikal payung ke dalam 8 kluster semantik (`culinary`, `work`, `tech`, `shopping`, `mobility`, `wellness`, `thoughts`, `others`) di [`src/lib/ai/taxonomy/clusters.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/taxonomy/clusters.ts).
+   - Tag dalam setiap kluster diurutkan secara alfabetis (A-Z) dan kluster kosong disembunyikan.
+5. **Fix IPv6 Happy Eyeballs ETIMEDOUT pada Node.js 22**:
+   - Mengatasi `ETIMEDOUT` saat bot memanggil API Telegram pada VPS tanpa rute IPv6 keluar dengan memaksa `dns.setDefaultResultOrder('ipv4first')` dan `https.Agent({ family: 4 })` pada [`src/lib/telegram.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram.ts) dan [`scripts/bot-polling.ts`](file:///home/rikushiro/projects/unlazynotes/scripts/bot-polling.ts).
+6. **Verifikasi Suite**: `scripts/test-enhancements.ts` (23/23 PASS) dan `scripts/test-intent-classifier.ts` (31/31 PASS).
 
 ---
 

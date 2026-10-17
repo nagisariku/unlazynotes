@@ -157,13 +157,13 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_empty: {
-    id: `Belum ada catatan atau tag yang tersimpan.`,
-    en: `No saved notes or tags found yet.`,
+    id: `Belum ada catatan atau tag yang tersimpan dalam 30 hari terakhir.`,
+    en: `No saved notes or tags found in the last 30 days.`,
   },
 
   tags_header: {
-    id: `🏷 *Daftar Kategori & Tag Aktif Anda*\n\n📂 *Kategori Utama:*\n{catList}\n\n🏷 *Specific Tags:*\n{tagList}\n\n{quotaStatus}\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`,
-    en: `🏷 *Your Active Categories & Tags*\n\n📂 *Main Categories:*\n{catList}\n\n🏷 *Specific Tags:*\n{tagList}\n\n{quotaStatus}\n_💡 Tip: Type /tags <tag_name> to view notes under a specific tag._`,
+    id: `🏷 *Tag Aktif Anda (30 Hari Terakhir)*\n\n📂 *Kategori Utama:*\n{catList}\n\n{clustersText}\n\n{quotaStatus}\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`,
+    en: `🏷 *Your Active Tags (Last 30 Days)*\n\n📂 *Main Categories:*\n{catList}\n\n{clustersText}\n\n{quotaStatus}\n_💡 Tip: Type /tags <tag_name> to view notes under a specific tag._`,
   },
 
   tags_filter_missing: {

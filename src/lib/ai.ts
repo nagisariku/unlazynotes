@@ -1,5 +1,5 @@
 import { NoteTagResultSchema, type NoteTagResult } from './ai/types';
-import { BANNED_TAGS, normalizeTag, sanitizeTags } from './ai/sanitizer';
+import { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST } from './ai/sanitizer';
 import { routeNoteIntent, type DetectedModule } from './ai/router';
 import { processBookmarkNote } from './ai/modules/bookmark';
 import { processFinanceNote } from './ai/modules/finance';
@@ -9,7 +9,7 @@ import { processGeneralNote, enrichDualLayerTags } from './ai/modules/general';
 
 // Export core types and schemas for backward compatibility
 export { NoteTagResultSchema, type NoteTagResult };
-export { BANNED_TAGS, normalizeTag, sanitizeTags };
+export { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST };
 export { routeNoteIntent, type DetectedModule };
 export * from './ai/taxonomy';
 
@@ -47,7 +47,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
 
       return {
         category: 'schedule',
-        specific_tags: sanitizeTags(tags, 'schedule', text, 3, existingUserTags),
+        specific_tags: sanitizeTags(tags, 'schedule', text, 5, existingUserTags),
         source: null,
       };
     }
@@ -64,7 +64,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         const enriched = enrichDualLayerTags([], cat, text);
         return {
           category: cat,
-          specific_tags: sanitizeTags(enriched, cat, text, 3, existingUserTags),
+          specific_tags: sanitizeTags(enriched, cat, text, 5, existingUserTags),
           source: null,
         };
       }
@@ -79,7 +79,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
       ) {
         return {
           category: 'draft',
-          specific_tags: sanitizeTags(['writing'], 'draft', text, 3, existingUserTags),
+          specific_tags: sanitizeTags(['writing'], 'draft', text, 5, existingUserTags),
           source: null,
         };
       }
@@ -91,7 +91,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         const enriched = enrichDualLayerTags([], 'random-yap', text);
         return {
           category: 'random-yap',
-          specific_tags: sanitizeTags(enriched, 'random-yap', text, 3, existingUserTags),
+          specific_tags: sanitizeTags(enriched, 'random-yap', text, 5, existingUserTags),
           source: null,
         };
       }
@@ -100,7 +100,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
       const enriched = enrichDualLayerTags([], 'others', text);
       return {
         category: 'others',
-        specific_tags: sanitizeTags(enriched, 'others', text, 3, existingUserTags),
+        specific_tags: sanitizeTags(enriched, 'others', text, 5, existingUserTags),
         source: null,
       };
     }
@@ -141,7 +141,7 @@ export async function generateNoteTags(
         [...bm.specific_tags, ...result.specific_tags],
         'bookmark',
         content,
-        3,
+        5,
         existingUserTags
       ),
     };

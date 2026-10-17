@@ -244,7 +244,7 @@ async function runClassifierTests() {
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
-    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
+    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 5;
     const hyphenPass = res.specific_tags.every((t) => !t.startsWith('-') && !t.endsWith('-'));
     const isPass = catPass && tagsPass && forbiddenPass && countPass && hyphenPass;
 
@@ -258,7 +258,7 @@ async function runClassifierTests() {
       if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
       if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
       if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs/currencies leaked: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
-      if (!countPass) console.log(`      ⚠️ Tag count discipline violated: ${res.specific_tags.length} tags (expected max 3)`);
+      if (!countPass) console.log(`      ⚠️ Tag count discipline violated: ${res.specific_tags.length} tags (expected max 5)`);
       if (!hyphenPass) console.log(`      ⚠️ Trailing/leading hyphens detected in tags: ${JSON.stringify(res.specific_tags.filter((t) => t.startsWith('-') || t.endsWith('-')))}`);
     }
   }
@@ -270,7 +270,7 @@ async function runClassifierTests() {
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
-    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
+    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 5;
     const hyphenPass = res.specific_tags.every((t) => !t.startsWith('-') && !t.endsWith('-'));
     const isPass = catPass && tagsPass && forbiddenPass && countPass && hyphenPass;
 

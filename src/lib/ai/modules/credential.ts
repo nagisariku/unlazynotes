@@ -31,10 +31,14 @@ export function processCredentialNote(content: string): NoteTagResult {
   if (/\b(nik|ktp)\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('ktp');
   if (/\bsim\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('sim');
   if (/\bpaspor\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('paspor');
+  if (/\b(ssh-ed25519|ed25519)\b/i.test(lower)) tags.push('ed25519');
+  if (/\b(ssh-rsa|rsa4096|rsa2048)\b/i.test(lower)) tags.push('rsa');
+  if (/\b(ssh|ssh-key)\b/i.test(lower)) tags.push('ssh');
+  if (/\b(vps|server|root)\b/i.test(lower)) tags.push('server');
 
   // 3. Fallback to taxonomy extraction
   if (tags.length < 2) {
-    const fromTax = extractTagsFromContent(text, 'credential', 3);
+    const fromTax = extractTagsFromContent(text, 'credential', 5);
     for (const t of fromTax) {
       if (!tags.includes(t)) tags.push(t);
     }
@@ -42,7 +46,7 @@ export function processCredentialNote(content: string): NoteTagResult {
 
   return {
     category: 'credential',
-    specific_tags: sanitizeTags(tags, 'credential', text, 3),
+    specific_tags: sanitizeTags(tags, 'credential', text, 5),
     source: null,
   };
 }

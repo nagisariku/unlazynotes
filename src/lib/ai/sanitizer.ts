@@ -64,6 +64,7 @@ export const BANNED_TAGS = new Set([
   'loans',
   'unclear',
   'ambiguous',
+  'ed',
   // Currency and tax terms forbidden as tags
   'usd',
   'idr',
@@ -148,6 +149,10 @@ export const BANNED_TAGS = new Set([
   'besok',
   'kemarin',
   'lusa',
+]);
+
+export const SHORT_TAG_WHITELIST = new Set([
+  'ai', 'db', 'ui', 'ux', 'qa', 'ip', 'os', 'id', 'ml'
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -298,7 +303,7 @@ export function sanitizeTags(
   tags: string[],
   category: string,
   noteContent?: string,
-  maxTags: number = 3,
+  maxTags: number = 5,
   existingUserTags?: string[]
 ): string[] {
   let result: string[] = [];
@@ -341,7 +346,7 @@ export function sanitizeTags(
           'panadol', 'paracetamol', 'bodrex', 'obat', 'vitamin', 'migrain',
           'uniqlo', 'zara', 'kemeja',
           'dieng', 'bali', 'jogja',
-          'vps', 'hosting', 'domain',
+          'vps', 'hosting', 'domain', 'ed25519', 'avatar', 'cgv', 'xxi', 'website',
           'bioskop', 'cinema', 'spotify', 'netflix',
           'ubed', 'fajar', 'rizky', 'bca', 'rekening', 'tiktok', 'devops', 'medium',
           'cursor', 'demo', 'q4-roadmap', 'client'
@@ -360,9 +365,25 @@ export function sanitizeTags(
       .replace(/^-+|-+$/g, '');
     if (!t) continue;
 
-    // Strip trailing digits only if pure word ending in digits and clean trailing hyphens
-    t = t.replace(/\d+$/, '').replace(/^-+|-+$/g, '');
+    // Technical / encryption / version terms where numbers are integral: do NOT strip trailing digits
+    const isTechCrypto =
+      /^(ed\d+|sha\d+|rsa\d+|aes\d+|ipv4|ipv6|oauth2|http2|mp3|mp4|h264|h265|utf8|web3)$/i.test(t) ||
+      /^(ssh-ed\d+|ssh-rsa)$/i.test(t);
+
+    if (!isTechCrypto) {
+      // Only strip trailing digits if base word remains >= 3 chars and is not technical
+      const withoutDigits = t.replace(/\d+$/, '').replace(/^-+|-+$/g, '');
+      if (withoutDigits.length >= 3 && !/^(ed|sha|rsa|aes|mp|ipv|utf)$/i.test(withoutDigits)) {
+        t = withoutDigits;
+      }
+    }
+
     if (!t) continue;
+
+    // Reject tags shorter than 3 chars unless in short tag whitelist
+    if (t.length < 3 && !SHORT_TAG_WHITELIST.has(t)) {
+      continue;
+    }
 
     if (t === catNormalized) continue;
     if (BANNED_TAGS.has(t)) continue;
@@ -425,6 +446,6 @@ export function sanitizeTags(
 
   return result
     .map((tag) => tag.replace(/^-+|-+$/g, ''))
-    .filter(Boolean)
+    .filter((tag) => Boolean(tag) && (tag.length >= 3 || SHORT_TAG_WHITELIST.has(tag)))
     .slice(0, maxTags);
 }

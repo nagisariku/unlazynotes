@@ -6,6 +6,11 @@ delete process.env.HTTP_PROXY;
 delete process.env.HTTPS_PROXY;
 delete process.env.ALL_PROXY;
 
+import dns from 'node:dns';
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
+
 import * as dotenv from 'dotenv';
 dotenv.config({ override: true });
 

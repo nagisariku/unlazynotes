@@ -314,11 +314,35 @@ export function enrichDualLayerTags(
   if (/\b(client|klien)\b/i.test(lower)) {
     domainContexts.push('client');
   }
-  if (
-    category === 'schedule' ||
-    /\b(meeting|rapat|sync|call|discuss|coffee\s*break|demo)\b/i.test(lower)
-  ) {
+  // Meeting Domain: HANYA jika teks memuat keyword rapat/diskusi eksplisit (BUKAN otomatis untuk seluruh schedule)
+  if (/\b(meeting|rapat|sync|call|sprint|discuss|coffee\s*break|demo)\b/i.test(lower)) {
     domainUmbrellas.push('meeting');
+  }
+
+  // Entertainment / Cinema Domain (e.g. nonton avatar di cgv sabtu malam jam 21.15 seat f12)
+  if (/\b(nonton|bioskop|cgv|xxi|cinepolis|film|movie|avatar|konser|cinema)\b/i.test(lower)) {
+    domainUmbrellas.push('entertainment');
+    if (/\bavatar\b/i.test(lower)) domainEntities.push('avatar');
+    if (/\bcgv\b/i.test(lower)) domainEntities.push('cgv');
+    if (/\bxxi\b/i.test(lower)) domainEntities.push('xxi');
+    if (/\bcinepolis\b/i.test(lower)) domainEntities.push('cinepolis');
+    if (/\bfilm\b/i.test(lower)) domainEntities.push('film');
+    if (/\bmovie\b/i.test(lower)) domainEntities.push('movie');
+    if (/\bkonser\b/i.test(lower)) domainEntities.push('konser');
+  }
+
+  // Multi-Entity Business & Income Extraction (e.g. "dapet transferan dp website klien 2.5jt pt karya maju")
+  if (/\b(transferan|transfer\s*masuk|dp|gaji|salary|pemasukan|invoice)\b/i.test(lower)) {
+    domainUmbrellas.push('income');
+  }
+  if (/\b(website|web)\b/i.test(lower)) {
+    domainEntities.push('website');
+    if (!domainUmbrellas.includes('tech')) domainUmbrellas.push('tech');
+  }
+  const ptMatch = lower.match(/\bpt\s+([a-z0-9_-]+(\s+[a-z0-9_-]+)*)/i);
+  if (ptMatch) {
+    const company = ptMatch[1].trim().replace(/\s+/g, '-');
+    domainEntities.push(`pt-${company}`);
   }
 
   // 6. Communication & Task Domain
@@ -444,7 +468,7 @@ export function enrichDualLayerTags(
       if (!combined.includes(ent)) combined.push(ent);
     }
     if (!combined.includes(direction)) combined.push(direction);
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 2: Workout & Gym
@@ -454,7 +478,7 @@ export function enrichDualLayerTags(
     for (const ent of domainEntities) {
       if (!combined.includes(ent)) combined.push(ent);
     }
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 3: Ideas & Concepts
@@ -466,7 +490,7 @@ export function enrichDualLayerTags(
     for (const t of baseTags) {
       if (t !== 'ide' && t !== 'idea' && !combined.includes(t)) combined.push(t);
     }
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 4: Health & Wellness
@@ -478,7 +502,7 @@ export function enrichDualLayerTags(
     for (const t of baseTags) {
       if (t !== 'kesehatan' && t !== 'health' && !combined.includes(t)) combined.push(t);
     }
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 5: Scripture & Quotes
@@ -492,7 +516,7 @@ export function enrichDualLayerTags(
     for (const t of baseTags) {
       if (!combined.includes(t) && !BANNED_TAGS.has(t)) combined.push(t);
     }
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 6: Multi-line Shopping List
@@ -500,9 +524,9 @@ export function enrichDualLayerTags(
     if (!combined.includes('shopping')) combined.push('shopping');
     for (const ent of domainEntities) {
       if (!combined.includes(ent)) combined.push(ent);
-      if (combined.length >= 3) break;
+      if (combined.length >= 5) break;
     }
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
   // Specialized Domain Priority 7: Curhat / Shower Thoughts (random-yap)
@@ -517,34 +541,34 @@ export function enrichDualLayerTags(
       if (!combined.includes(t) && !BANNED_TAGS.has(t)) combined.push(t);
     }
     if (combined.length === 0) combined.push('renungan');
-    return combined.slice(0, 3);
+    return combined.slice(0, 5);
   }
 
-  // STRICT 3-TIER ALLOCATION ORDER:
-  // Tier 1: Specific Entity (martabak, cursor, q4-roadmap, demo, cilok, tahu-gejrot, nasgor)
+  // STRICT MULTI-TIER ALLOCATION ORDER (Max 5 Tags):
+  // Tier 1: Specific Entity (martabak, cursor, q4-roadmap, demo, cilok, tahu-gejrot, nasgor, website, pt-karya-maju)
   for (const ent of domainEntities) {
     if (!combined.includes(ent)) combined.push(ent);
-    if (combined.length >= 3) break;
+    if (combined.length >= 5) break;
   }
 
-  // Tier 2: Domain Umbrella (food, drink, tech, meeting, subscription, etc.)
-  if (combined.length < 3) {
+  // Tier 2: Domain Umbrella (food, drink, tech, meeting, entertainment, subscription, etc.)
+  if (combined.length < 5) {
     for (const umb of domainUmbrellas) {
       if (!combined.includes(umb)) combined.push(umb);
-      if (combined.length >= 3) break;
+      if (combined.length >= 5) break;
     }
   }
 
   // Tier 3: Context / Brand / Person (gojek, client, bca, etc.)
-  if (combined.length < 3) {
+  if (combined.length < 5) {
     for (const ctx of domainContexts) {
       if (!combined.includes(ctx)) combined.push(ctx);
-      if (combined.length >= 3) break;
+      if (combined.length >= 5) break;
     }
   }
 
   // Tier 4: Incorporate valid candidate baseTags from LLM if room remains
-  if (combined.length < 3) {
+  if (combined.length < 5) {
     for (const t of baseTags) {
       if (
         !combined.includes(t) &&
@@ -553,7 +577,7 @@ export function enrichDualLayerTags(
         !BANNED_TAGS.has(t)
       ) {
         combined.push(t);
-        if (combined.length >= 3) break;
+        if (combined.length >= 5) break;
       }
     }
   }
@@ -573,7 +597,7 @@ export function enrichDualLayerTags(
     }
   }
 
-  return combined.slice(0, 3);
+  return combined.slice(0, 5);
 }
 
 /**
@@ -613,7 +637,7 @@ export async function processGeneralNote(
       system: `You are an intelligent semantic classifier and tagging engine for UnlazyNotes.
 Analyze the user's note and return a strict JSON object with:
 1. "category": exactly 1 primary intent category.
-2. "specific_tags": 2 to 3 domain-aware tags (lowercase-with-hyphens).
+2. "specific_tags": 2 to 5 domain-aware tags (lowercase-with-hyphens).
 3. "source": detected platform source string or null.
 
 PRIMARY INTENT CATEGORIES:
@@ -621,7 +645,7 @@ PRIMARY INTENT CATEGORIES:
 - credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), Token/API Key.
   CRITICAL ID CARD GUARD: Words like "ktp", "sim", "paspor", "passport", "nik" ONLY trigger "credential" if accompanied by actual identity numbers/digits. Administrative tasks or procedures (e.g. "perpanjang sim a... bawa fotokopi ktp", "urus paspor") are actionable tasks and MUST be classified as "todo", NOT "credential"!
 - finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price. MUST ALWAYS retain the specific entity as Tag 1 (e.g. "cimin 12k" -> ["cimin", "food"]).
-- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "demo produk client selasa jam 10 pagi", "flight jumat 20 okt").
+- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "demo produk client selasa jam 10 pagi", "flight jumat 20 okt", "nonton avatar di cgv sabtu malam jam 21.15"). Note: Non-meeting schedules like cinema/movies MUST NOT be tagged as 'meeting'; use 'entertainment'!
 - todo: Action tasks, commands, chores, food orders, multi-line shopping lists, or research/comparison tasks (e.g. "cari info...", "bandingin harga...", "survei...", "perpanjang sim...", "urus berkas...").
 - random-yap: Casual thoughts, uneg-uneg, venting, shower thoughts, and life musings without action (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...", "kenapa ya tiap senin rasanya...", "curhat capek banget..."). WAJIB use "random-yap" (NOT "others") for personal reflections, curhat, and shower thoughts!
 - reference: Religious scriptures, Quranic verses, hadith, prayers (doa), quotes, recipes, code snippets. SCRIPTURES & QUOTES ARE NEVER TODO!
@@ -631,14 +655,15 @@ PRIMARY INTENT CATEGORIES:
 CORE TAGGING PRINCIPLES:
 1. High-Level Universal Root Umbrella:
    - Tag payung (Domain Umbrella) HARUS selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (Single universal English root word):
-     food, drink, tech, work, meeting, pet, music, gaming, health, travel, finance, subscription, shopping, quran, quote.
+     food, drink, tech, work, meeting, entertainment, pet, music, gaming, health, travel, finance, subscription, shopping, quran, quote.
    - DILARANG membuat tag turunan/spesifik yang merupakan pecahan domain utama (gunakan "food" BUKAN "food-order"/"street-food"/"jajan"; gunakan "drink" BUKAN "beverage"/"minuman").
 2. Prioritize Tag Reuse (User Tag Memory):
    - Prioritaskan untuk MEMAKAI ULANG tag yang sudah sering digunakan user pada catatan-catatan sebelumnya agar tag dashboard rapi.
-3. Strict Tag Allocation Discipline (Maksimal 2 - 3 Tag per Catatan):
-   - Tag 1 (WAJIB - Specific Entity): Subjek/kata benda konkret dari teks user (contoh: cilok, tahu-gejrot, martabak, cursor, q4-roadmap, demo, nasgor, cimin, uniqlo, biore, admin).
-   - Tag 2 (WAJIB - Domain Umbrella): 1 kata dasar payung universal (contoh: food, drink, tech, meeting, pet, gaming, subscription, shopping, quran).
+3. Tag Allocation Discipline (Maksimal 3 - 5 Tag per Catatan jika banyak entitas konkret):
+   - Tag 1 (WAJIB - Specific Entity): Subjek/kata benda konkret dari teks user (contoh: cilok, tahu-gejrot, martabak, cursor, q4-roadmap, demo, nasgor, cimin, uniqlo, biore, admin, website, pt-karya-maju).
+   - Tag 2 (WAJIB - Domain Umbrella): 1 kata dasar payung universal (contoh: food, drink, tech, meeting, entertainment, pet, gaming, subscription, shopping, quran).
    - Tag 3 (OPSIONAL - Context/Brand/Person): Brand, payment, atau nama orang jika relevan (contoh: gojek, bca, qris, client).
+   - Tag 4 & 5 (OPSIONAL - Multi-Entity): Entitas konkret pendamping (contoh: website, pt-karya-maju, dll.).
 4. Negative Constraints:
    - DILARANG Tag Terpotong: Gunakan kata dasar yang utuh (gunakan demo atau presentation, JANGAN potong jadi product-demonstratio).
    - DILARANG Tag Redundan: Jangan keluarkan dua tag yang sinonim / semakna dalam satu catatan (misal: jangan pasang demo bersamaan dengan product-demo, jangan pasang kopi bersamaan dengan coffee).
@@ -671,13 +696,15 @@ Examples:
    - "Maka sesungguhnya bersama kesulitan ada kemudahan. (QS. Asy-Syarh: 5-6)" -> {"category": "reference", "specific_tags": ["surah-asy-syarh", "quran"]}
 7. Subscription & Tech:
    - "subscription cursor 20 usd kena tax 20 dollar" -> {"category": "finance", "specific_tags": ["cursor", "subscription", "tech"]}
-8. Schedule & Meetings:
+8. Schedule & Entertainment:
    - "demo produk client selasa jam 10 pagi" -> {"category": "schedule", "specific_tags": ["demo", "meeting", "client"]}
    - "coffee break with client discuss Q4 roadmap jam 4 sore" -> {"category": "schedule", "specific_tags": ["q4-roadmap", "meeting", "client"]}
    - "meeting desain jam 3 sore" -> {"category": "schedule", "specific_tags": ["desain", "meeting"]}
-9. Debt & Loans (Finance):
+   - "nonton avatar di cgv sabtu malam jam 21.15 seat f12" -> {"category": "schedule", "specific_tags": ["avatar", "cgv", "entertainment"]}
+9. Debt & Multi-Entity Business Income (Finance):
    - "ubed minjem 100k" -> {"category": "finance", "specific_tags": ["ubed", "piutang"]}
    - "aku minjem 50k ke fajar" -> {"category": "finance", "specific_tags": ["fajar", "utang"]}
+   - "dapet transferan dp website klien 2.5jt pt karya maju" -> {"category": "finance", "specific_tags": ["pt-karya-maju", "website", "client", "income"]}
 10. Communication & Tasks (Todo):
    - "chat rizky tanya proposal" -> {"category": "todo", "specific_tags": ["rizky", "proposal"]}
 11. Bookmarks:
@@ -720,7 +747,7 @@ Formatting:
     else if (typeof parsed.item === 'string') rawTags = [parsed.item];
 
     const enriched = enrichDualLayerTags(rawTags, category, content, rawCategory);
-    const cleanTags = sanitizeTags(enriched, category, content, 3, existingUserTags);
+    const cleanTags = sanitizeTags(enriched, category, content, 5, existingUserTags);
 
     let cleanSource: Source | null = null;
     if (parsed.source) {

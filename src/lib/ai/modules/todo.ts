@@ -29,7 +29,7 @@ export function processTodoNote(content: string, existingUserTags?: string[]): N
     if (enriched.length > 0) {
       return {
         category: 'todo',
-        specific_tags: sanitizeTags(enriched, 'todo', text, 3, existingUserTags),
+        specific_tags: sanitizeTags(enriched, 'todo', text, 5, existingUserTags),
         source: null,
       };
     }
@@ -92,7 +92,7 @@ export function processTodoNote(content: string, existingUserTags?: string[]): N
 
   return {
     category: 'todo',
-    specific_tags: sanitizeTags(tags, 'todo', text, 3, existingUserTags),
+    specific_tags: sanitizeTags(tags, 'todo', text, 5, existingUserTags),
     source: null,
   };
 }

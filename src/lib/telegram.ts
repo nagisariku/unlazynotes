@@ -10,6 +10,9 @@ const envPath = path.resolve(__dirname, '../../.env');
 dotenv.config({ path: envPath, override: true });
 dotenv.config({ override: true });
 
+import https from 'node:https';
+import dns from 'node:dns';
+
 // Hindari bentrok proxy lokal untuk request langsung ke api.telegram.org
 delete process.env.http_proxy;
 delete process.env.https_proxy;
@@ -18,9 +21,28 @@ delete process.env.HTTP_PROXY;
 delete process.env.HTTPS_PROXY;
 delete process.env.ALL_PROXY;
 
+// Paksa resolusi IPv4 terlebih dahulu untuk mencegah issue timeout rute IPv6 unreachable pada VPS
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {
+  // Abaikan jika tidak didukung runtime tertentu
+}
+
+// Gunakan HTTPS agent dengan family IPv4 eksplisit untuk koneksi andal ke api.telegram.org
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  family: 4,
+});
+
 const token = process.env.TELEGRAM_BOT_TOKEN || 'mock-token';
 
-export const bot = new Bot(token);
+export const bot = new Bot(token, {
+  client: {
+    baseFetchConfig: {
+      agent: httpsAgent,
+    },
+  },
+});
 
 /**
  * Hash raw API key using SHA-256 to compare with keyHash in api_keys table.

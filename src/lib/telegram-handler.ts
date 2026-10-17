@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { users, apiKeys, notes } from '@/db/schema';
-import { eq, and, desc, sql, ilike } from 'drizzle-orm';
+import { eq, and, desc, sql, ilike, gte } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
@@ -10,7 +10,7 @@ import {
   editTelegramMessage,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
-import { normalizeTag } from '@/lib/ai';
+import { normalizeTag, clusterTags, formatTagClustersMarkdown } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import {
@@ -477,7 +477,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .where(
         and(
           eq(notes.userId, activeKey.userId),
-          eq(notes.isEncrypted, false)
+          eq(notes.isEncrypted, false),
+          gte(notes.createdAt, sql`NOW() - INTERVAL '30 days'`)
         )
       );
 
@@ -487,14 +488,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
 
     const categoriesSet = new Set<string>();
-    const specificTagsSet = new Set<string>();
+    const rawSpecificTags: string[] = [];
 
     for (const n of userNotes) {
       if (n.category) categoriesSet.add(n.category);
       if (Array.isArray(n.specificTags)) {
         for (const t of n.specificTags) {
           if (t && typeof t === 'string' && t.trim()) {
-            specificTagsSet.add(t.trim());
+            rawSpecificTags.push(t.trim());
           }
         }
       }
@@ -504,13 +505,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     const catList =
       Array.from(categoriesSet)
+        .sort((a, b) => a.localeCompare(b))
         .map(escapeMd)
         .join(', ') || '-';
 
-    const tagList =
-      Array.from(specificTagsSet)
-        .map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`))
-        .join(', ') || '-';
+    const clusters = clusterTags(rawSpecificTags);
+    const clustersText = formatTagClustersMarkdown(clusters, activeLocale);
 
     const quotaStatus = quotaInfo.isPro
       ? getTelegramMsg('quota_status_pro', activeLocale)
@@ -519,9 +519,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
           maxQuota: FREE_MONTHLY_QUOTA,
         });
 
+    const emptyClustersText =
+      activeLocale === 'en'
+        ? '_No specific tags recorded in the last 30 days._'
+        : '_Belum ada tag spesifik dalam 30 hari terakhir._';
+
     const msg = getTelegramMsg('tags_header', activeLocale, {
       catList,
-      tagList,
+      clustersText: clustersText || emptyClustersText,
       quotaStatus,
     });
     await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });

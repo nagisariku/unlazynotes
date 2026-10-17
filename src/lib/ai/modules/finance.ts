@@ -9,12 +9,12 @@ import type { NoteTagResult } from '../types';
  */
 export function processFinanceNote(content: string, existingUserTags?: string[]): NoteTagResult {
   const text = content.trim();
-  const matchedCanonical = extractTagsFromContent(text, 'finance', 3);
+  const matchedCanonical = extractTagsFromContent(text, 'finance', 5);
   const enriched = enrichDualLayerTags(matchedCanonical, 'finance', text);
 
   return {
     category: 'finance',
-    specific_tags: sanitizeTags(enriched, 'finance', text, 3, existingUserTags),
+    specific_tags: sanitizeTags(enriched, 'finance', text, 5, existingUserTags),
     source: null,
   };
 }

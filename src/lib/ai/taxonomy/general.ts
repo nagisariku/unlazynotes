@@ -15,8 +15,17 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
     category: 'schedule',
     description: 'Meetings, syncs, appointments, product demos, and discussions',
     aliases: {
-      id: ['meeting', 'rapat', 'sprint', 'sync', 'kumpul', 'demo', 'diskusi'],
-      en: ['meeting', 'sync', 'call', 'appointment', 'demo', 'presentation', 'discuss', 'coffee-break'],
+      id: ['meeting', 'rapat', 'sprint', 'sync', 'kumpul', 'demo', 'diskusi', 'roadmap', 'q4-roadmap'],
+      en: ['meeting', 'sync', 'call', 'appointment', 'demo', 'presentation', 'discuss', 'coffee-break', 'roadmap', 'q4-roadmap'],
+    },
+  },
+  {
+    canonical: 'entertainment',
+    category: 'schedule',
+    description: 'Cinemas, movies, concerts, shows, and streaming entertainment',
+    aliases: {
+      id: ['bioskop', 'cinema', 'nonton', 'cgv', 'xxi', 'cinepolis', 'film', 'movie', 'avatar', 'konser', 'hiburan'],
+      en: ['entertainment', 'cinema', 'movie', 'concert', 'show', 'theater', 'avatar'],
     },
   },
   {
@@ -78,8 +87,17 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
     category: 'others',
     description: 'Health symptoms, medications, and wellness notes',
     aliases: {
-      id: ['kesehatan', 'medis', 'gejala', 'obat'],
-      en: ['health', 'medical', 'symptom'],
+      id: ['kesehatan', 'medis', 'gejala', 'obat', 'paracetamol', 'panadol', 'bodrex', 'migrain', 'pusing', 'demam', 'flu', 'batuk', 'vitamin', 'apotek', 'dokter', 'klinik'],
+      en: ['health', 'medical', 'symptom', 'medicine', 'paracetamol', 'panadol', 'vitamin', 'clinic', 'doctor'],
+    },
+  },
+  {
+    canonical: 'workout',
+    category: 'others',
+    description: 'Gym, fitness, and workout exercises',
+    aliases: {
+      id: ['fitness', 'gym', 'workout', 'squat', 'bench-press', 'deadlift', 'pushup', 'pullup', 'cardio', 'leg-day'],
+      en: ['fitness', 'gym', 'workout', 'squat', 'bench-press', 'deadlift', 'pushup', 'pullup', 'cardio', 'exercise'],
     },
   },
   {
@@ -96,8 +114,8 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
     category: 'others',
     description: 'Creative ideas, content brainstorms, and raw concepts',
     aliases: {
-      id: ['ide', 'konsep', 'inovasi', 'kepikiran'],
-      en: ['idea', 'concept', 'brainstorm'],
+      id: ['ide', 'konsep', 'inovasi', 'kepikiran', 'ide-fitur', 'fitur', 'konten'],
+      en: ['idea', 'concept', 'brainstorm', 'feature-idea'],
     },
   },
 ];

@@ -7,6 +7,7 @@ import { BOOKMARK_TAXONOMY } from './bookmark';
 import { GENERAL_TAXONOMY } from './general';
 
 export * from './types';
+export * from './clusters';
 export { FINANCE_TAXONOMY, TODO_TAXONOMY, CREDENTIAL_TAXONOMY, BOOKMARK_TAXONOMY, GENERAL_TAXONOMY };
 
 const ALL_TAXONOMIES: CanonicalTagDef[] = [
