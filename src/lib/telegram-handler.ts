@@ -5,10 +5,6 @@ import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import {
-  HELP_MESSAGE,
-  SECURITY_DISCLAIMER,
-} from '@/lib/constants';
-import {
   hashApiKey,
   sendTelegramMessage,
   editTelegramMessage,
@@ -25,6 +21,7 @@ import {
   FREE_MONTHLY_QUOTA,
 } from '@/lib/quota-service';
 import { taggingQueue } from '@/lib/tagging-queue';
+import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/lib/i18n/telegram';
 
 export const PAGE_SIZE = 5;
 export const DEBOUNCE_DELAY_MS = 3000;
@@ -50,6 +47,7 @@ interface DebounceBufferItem {
   noteId: string;
   createdAt: Date;
   tier: 'free' | 'pro';
+  locale: SupportedLocale;
 }
 
 // In-memory buffer map indexed by chatId
@@ -88,7 +86,7 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
       const remaining = 30 - newCount;
       await sendTelegramMessage(
         chatId,
-        `*(Sisa kuota Free bulan ini: ${remaining}/30)*`,
+        getTelegramMsg('quota_warning_footer', item.locale, { remaining }),
         { parse_mode: 'Markdown' }
       );
     }
@@ -101,7 +99,7 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
     if (hasCredentialKeyword) {
       await sendTelegramMessage(
         chatId,
-        '💡 *Tips Keamanan:*\nTerdeteksi informasi sensitif. Untuk data rahasia seperti password, token, atau PIN, Anda disarankan menggunakan perintah:\n`/secure <kunci> <isi>`\nagar otomatis dienkripsi dengan standar AES-256-GCM dan diisolasi sepenuhnya dari AI.',
+        getTelegramMsg('security_tip', item.locale),
         { parse_mode: 'Markdown' }
       );
     }
@@ -145,18 +143,21 @@ export function formatSnippetPage(
   totalCount: number,
   page: number,
   pageSize: number,
-  headerTitle: string
+  headerTitle: string,
+  locale: SupportedLocale = 'id'
 ): string {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  let text = `${headerTitle} (Hal. ${page}/${totalPages} • Total: ${totalCount})\n\n`;
+  const pageInfo = getTelegramMsg('snippet_page_info', locale, { page, totalPages, totalCount });
+  let text = `${headerTitle} ${pageInfo}\n\n`;
 
+  const defaultTitle = getTelegramMsg('default_note_title', locale);
   for (let i = 0; i < items.length; i++) {
     const n = items[i];
     const itemIndex = (page - 1) * pageSize + (i + 1);
 
     // Ambil baris pertama sebagai judul bold (bersihkan karakter markdown formatting mentah)
     const rawLines = n.content.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-    const firstLine = rawLines[0] || 'Catatan';
+    const firstLine = rawLines[0] || defaultTitle;
     const cleanTitle = firstLine.replace(/[*_`[\]]/g, '');
     const title = cleanTitle.length > 50 ? `${cleanTitle.slice(0, 50)}...` : cleanTitle;
 
@@ -241,9 +242,21 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   );
 
   if (isMedia) {
+    const [existingKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    let activeLocale = detectTelegramLocale(message, null);
+    if (existingKey) {
+      const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, existingKey.userId)).limit(1);
+      activeLocale = detectTelegramLocale(message, u?.preferredLocale);
+    }
+
     await sendTelegramMessage(
       chatId,
-      'UnlazyNotes belum mendukung format catatan ini, file/gambar anda tetap tersimpan aman disini.'
+      getTelegramMsg('unsupported_media', activeLocale)
     );
     return { ok: true, action: 'unsupported_media' };
   }
@@ -293,14 +306,39 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
           .where(eq(users.id, matchedKey.userId))
           .limit(1);
 
-        const userName = matchedUser?.name || 'Teman';
-        const welcomeMsg = `🎉 *Halo ${userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.`;
+        const senderLocale = detectTelegramLocale(message, null);
+        // Sinkronkan preferredLocale jika user baru menautkan akun
+        if (matchedUser && (!matchedUser.preferredLocale || (matchedUser.preferredLocale === 'id' && senderLocale === 'en'))) {
+          await db
+            .update(users)
+            .set({ preferredLocale: senderLocale })
+            .where(eq(users.id, matchedUser.id));
+          matchedUser.preferredLocale = senderLocale;
+        }
+
+        const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
+        const userName = matchedUser?.name || (activeLocale === 'id' ? 'Teman' : 'Friend');
+        const welcomeMsg = getTelegramMsg('welcome_connected_brief', activeLocale, { userName });
         await sendTelegramMessage(chatId, welcomeMsg, { parse_mode: 'Markdown' });
         return { ok: true, action: 'start_auto_connected' };
       }
     }
 
-    await sendTelegramMessage(chatId, HELP_MESSAGE, { parse_mode: 'Markdown' });
+    const [existingKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    let activeLocale = detectTelegramLocale(message, null);
+    if (existingKey) {
+      const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, existingKey.userId)).limit(1);
+      activeLocale = detectTelegramLocale(message, u?.preferredLocale);
+    }
+
+    const secDisc = getTelegramMsg('security_disclaimer', activeLocale);
+    const helpMsg = getTelegramMsg('help', activeLocale, { securityDisclaimer: secDisc });
+    await sendTelegramMessage(chatId, helpMsg, { parse_mode: 'Markdown' });
     return { ok: true, action: 'help' };
   }
 
@@ -308,11 +346,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   if (text.startsWith('/login')) {
     const parts = text.split(/\s+/);
     const rawApiKey = parts[1];
+    const senderLocale = detectTelegramLocale(message, null);
 
     if (!rawApiKey) {
       await sendTelegramMessage(
         chatId,
-        'Format salah. Silakan gunakan format:\n`/login <api_key>`\n\nContoh:\n`/login unz_1234567890abcdef`',
+        getTelegramMsg('login_missing_key', senderLocale),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'login_missing_key' };
@@ -333,7 +372,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (!matchedKey) {
       await sendTelegramMessage(
         chatId,
-        '❌ API Key tidak valid atau dinonaktifkan. Pastikan Anda menyalin API Key yang benar dari halaman Settings di web dashboard.',
+        getTelegramMsg('login_invalid_key', senderLocale),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'login_invalid_key' };
@@ -350,10 +389,21 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .where(eq(users.id, matchedKey.userId))
       .limit(1);
 
-    const userName = matchedUser?.name || 'Teman';
+    // Sinkronkan preferredLocale jika user baru menautkan akun
+    if (matchedUser && (!matchedUser.preferredLocale || (matchedUser.preferredLocale === 'id' && senderLocale === 'en'))) {
+      await db
+        .update(users)
+        .set({ preferredLocale: senderLocale })
+        .where(eq(users.id, matchedUser.id));
+      matchedUser.preferredLocale = senderLocale;
+    }
+
+    const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
+    const userName = matchedUser?.name || (activeLocale === 'id' ? 'Teman' : 'Friend');
+    const secDisc = getTelegramMsg('security_disclaimer', activeLocale);
     await sendTelegramMessage(
       chatId,
-      `🎉 *Halo ${userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.\n\n${SECURITY_DISCLAIMER}`,
+      getTelegramMsg('welcome_connected', activeLocale, { userName, securityDisclaimer: secDisc }),
       { parse_mode: 'Markdown' }
     );
 
@@ -362,6 +412,18 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 3. /logout
   if (text.startsWith('/logout')) {
+    const [existingKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    let activeLocale = detectTelegramLocale(message, null);
+    if (existingKey) {
+      const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, existingKey.userId)).limit(1);
+      activeLocale = detectTelegramLocale(message, u?.preferredLocale);
+    }
+
     await db
       .update(apiKeys)
       .set({ telegramChatId: null })
@@ -369,7 +431,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     await sendTelegramMessage(
       chatId,
-      '🔌 Akun Telegram Anda telah berhasil diputus dari UnlazyNotes. Untuk menyambungkannya kembali, gunakan `/login <api_key>`.',
+      getTelegramMsg('logout_success', activeLocale),
       { parse_mode: 'Markdown' }
     );
 
@@ -384,13 +446,22 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     .limit(1);
 
   if (!activeKey) {
+    const activeLocale = detectTelegramLocale(message, null);
     await sendTelegramMessage(
       chatId,
-      '🔒 Akun Telegram Anda belum terhubung ke UnlazyNotes.\n\nSilakan buka dashboard unlazynotes -> Settings -> Salin API Key Anda, lalu kirim ke sini:\n`/login <api_key>`',
+      getTelegramMsg('unauthenticated', activeLocale),
       { parse_mode: 'Markdown' }
     );
     return { ok: true, action: 'unauthenticated' };
   }
+
+  const [matchedUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.id, activeKey.userId))
+    .limit(1);
+
+  const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
 
   const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
 
@@ -410,7 +481,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       );
 
     if (userNotes.length === 0) {
-      await sendTelegramMessage(chatId, 'Belum ada catatan atau tag yang tersimpan.');
+      await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale));
       return { ok: true, action: 'tags_empty' };
     }
 
@@ -441,10 +512,17 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         .join(', ') || '-';
 
     const quotaStatus = quotaInfo.isPro
-      ? '⭐️ *Paket:* Pro Tier (Catatan Unlimited & Fast-Lane AI)'
-      : `📊 *Status Kuota Bulan Ini:* ${quotaInfo.currentCount}/${FREE_MONTHLY_QUOTA} catatan (Reset tiap tgl 1)`;
+      ? getTelegramMsg('quota_status_pro', activeLocale)
+      : getTelegramMsg('quota_status_free', activeLocale, {
+          currentCount: quotaInfo.currentCount,
+          maxQuota: FREE_MONTHLY_QUOTA,
+        });
 
-    const msg = `🏷 *Daftar Kategori & Tag Aktif Anda*\n\n📂 *Kategori Utama:*\n${catList}\n\n🏷 *Specific Tags:*\n${tagList}\n\n${quotaStatus}\n_💡 Tips: Ketik /tags <nama_tag> untuk melihat catatan pada tag tertentu._`;
+    const msg = getTelegramMsg('tags_header', activeLocale, {
+      catList,
+      tagList,
+      quotaStatus,
+    });
     await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
 
     return { ok: true, action: 'tags_list' };
@@ -456,7 +534,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const targetTag = normalizeTag(targetTagRaw);
 
     if (!targetTag) {
-      await sendTelegramMessage(chatId, 'Gunakan format: `/tags <nama_tag>`', { parse_mode: 'Markdown' });
+      await sendTelegramMessage(chatId, getTelegramMsg('tags_filter_missing', activeLocale), { parse_mode: 'Markdown' });
       return { ok: true, action: 'tags_filter_missing' };
     }
 
@@ -473,7 +551,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         );
       const totalDrafts = Number(countResult?.count || 0);
 
-      const draftMsg = `📝 Ditemukan ${totalDrafts} catatan berlabel *draft*.\n\nUntuk draf atau teks panjang, lihat selengkapnya di web dashboard demi kenyamanan membaca:\n/dashboard?tag=draft`;
+      const draftMsg = getTelegramMsg('tags_draft_redirect', activeLocale, { totalDrafts });
       await sendTelegramMessage(chatId, draftMsg, { parse_mode: 'Markdown' });
 
       return { ok: true, action: 'tags_draft_redirect' };
@@ -493,7 +571,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const totalCount = Number(countResult?.count || 0);
 
     if (totalCount === 0) {
-      await sendTelegramMessage(chatId, `Tidak ditemukan catatan dengan label \`${targetTag}\`.`, {
+      await sendTelegramMessage(chatId, getTelegramMsg('tags_none_found', activeLocale, { tag: targetTag }), {
         parse_mode: 'Markdown',
       });
       return { ok: true, action: 'tags_none_found' };
@@ -513,8 +591,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .limit(PAGE_SIZE)
       .offset(0);
 
-    const headerTitle = `🏷️ *Catatan dengan label [${targetTag}]*`;
-    const reply = formatSnippetPage(matchedNotes, totalCount, 1, PAGE_SIZE, headerTitle);
+    const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
+    const reply = formatSnippetPage(matchedNotes, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
     const totalPages = Math.ceil(totalCount / PAGE_SIZE);
     const keyboard = buildPaginationKeyboard('tags', targetTag, 1, totalPages);
 
@@ -531,7 +609,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const keyword = text.replace(/^\/search\s*/, '').trim();
 
     if (!keyword) {
-      await sendTelegramMessage(chatId, 'Gunakan format: `/search <kata_kunci>`', {
+      await sendTelegramMessage(chatId, getTelegramMsg('search_missing_keyword', activeLocale), {
         parse_mode: 'Markdown',
       });
       return { ok: true, action: 'search_missing_keyword' };
@@ -555,7 +633,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (totalCount === 0) {
       await sendTelegramMessage(
         chatId,
-        `🔍 Tidak ditemukan catatan dengan kata kunci "*${keyword}*".`,
+        getTelegramMsg('search_empty', activeLocale, { keyword }),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'search_empty' };
@@ -575,8 +653,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       .limit(PAGE_SIZE)
       .offset(0);
 
-    const headerTitle = `🔍 *Hasil Pencarian untuk:* "${keyword}"`;
-    const searchReply = formatSnippetPage(searchResults, totalCount, 1, PAGE_SIZE, headerTitle);
+    const headerTitle = getTelegramMsg('search_header', activeLocale, { keyword });
+    const searchReply = formatSnippetPage(searchResults, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
     const totalPages = Math.ceil(totalCount / PAGE_SIZE);
     const keyboard = buildPaginationKeyboard('search', keyword, 1, totalPages);
 
@@ -595,14 +673,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (!question) {
       await sendTelegramMessage(
         chatId,
-        'Gunakan format: `/ask <pertanyaan Anda>`\n\nContoh:\n`/ask Kapan meeting sprint selanjutnya?`',
+        getTelegramMsg('ask_missing_question', activeLocale),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'ask_missing_question' };
     }
 
     if (!quotaInfo.isPro) {
-      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL, activeLocale);
       await sendTelegramMessage(chatId, gated.text, {
         parse_mode: 'Markdown',
         reply_markup: gated.replyMarkup,
@@ -610,12 +688,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'ask_requires_pro' };
     }
 
-    await sendTelegramMessage(chatId, '🤖 Sedang menganalisis catatan Anda...');
+    await sendTelegramMessage(chatId, getTelegramMsg('ask_analyzing', activeLocale));
 
     (async () => {
       try {
         const answer = await answerNoteQuestion(activeKey.userId, question);
-        await sendTelegramMessage(chatId, `💡 *Jawaban AI:*\n\n${answer}`, {
+        await sendTelegramMessage(chatId, getTelegramMsg('ask_answer_header', activeLocale, { answer }), {
           parse_mode: 'Markdown',
         });
       } catch (err) {
@@ -629,7 +707,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 9. /secure <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
   if (text.startsWith('/secure')) {
     if (!quotaInfo.isPro) {
-      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL, activeLocale);
       await sendTelegramMessage(chatId, gated.text, {
         parse_mode: 'Markdown',
         reply_markup: gated.replyMarkup,
@@ -642,7 +720,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (!secureMatch) {
       await sendTelegramMessage(
         chatId,
-        'Format salah. Silakan gunakan format:\n`/secure <kunci> <isi_rahasia>`\n\nContoh:\n`/secure wifi-rumah MySecretPassword123`\n`/secure token-prod secret_api_key_xyz`',
+        getTelegramMsg('secure_missing_params', activeLocale),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'secure_missing_params' };
@@ -667,7 +745,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     await incrementUserMonthlyNotes(activeKey.userId);
 
-    const reply = `🔒 *Tersimpan Aman di Private Vault!*\n\nKunci: \`${vaultKey.trim()}\`\n\n_Data dienkripsi AES-256-GCM dan dibypass 100% dari pemrosesan AI._`;
+    const reply = getTelegramMsg('secure_saved', activeLocale, { vaultKey: vaultKey.trim() });
     await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
 
     return { ok: true, action: 'secure_saved', noteId };
@@ -676,7 +754,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 10. /vault [kunci] (Buka rahasia atau list kunci Private Vault)
   if (text.startsWith('/vault')) {
     if (!quotaInfo.isPro) {
-      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL);
+      const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL, activeLocale);
       await sendTelegramMessage(chatId, gated.text, {
         parse_mode: 'Markdown',
         reply_markup: gated.replyMarkup,
@@ -704,19 +782,23 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       if (vaultNotes.length === 0) {
         await sendTelegramMessage(
           chatId,
-          '📭 Private Vault Anda masih kosong.\n\nGunakan perintah `/secure <kunci> <isi>` untuk menyimpan rahasia pertama Anda.',
+          getTelegramMsg('vault_empty', activeLocale),
           { parse_mode: 'Markdown' }
         );
         return { ok: true, action: 'vault_empty' };
       }
 
+      const noKeyLabel = activeLocale === 'id' ? 'tanpa-kunci' : 'no-key';
       const keysList = Array.from(
-        new Set(vaultNotes.map((v) => v.vaultKey || 'tanpa-kunci'))
+        new Set(vaultNotes.map((v) => v.vaultKey || noKeyLabel))
       )
         .map((k) => `• \`${k}\``)
         .join('\n');
 
-      const msg = `🔒 *Daftar Kunci Private Vault Anda:* (${vaultNotes.length} rahasia)\n\n${keysList}\n\n_Ketik \`/vault <kunci>\` untuk membuka isi rahasia._`;
+      const msg = getTelegramMsg('vault_list', activeLocale, {
+        totalCount: vaultNotes.length,
+        keysList,
+      });
       await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
       return { ok: true, action: 'vault_list' };
     }
@@ -738,7 +820,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (matchedVaults.length === 0) {
       await sendTelegramMessage(
         chatId,
-        `❌ Tidak ditemukan rahasia di Private Vault dengan kata kunci \`${cleanQuery}\`.\n\nKetik \`/vault\` untuk melihat daftar seluruh kunci yang tersimpan.`,
+        getTelegramMsg('vault_not_found', activeLocale, { keyword: cleanQuery }),
         { parse_mode: 'Markdown' }
       );
       return { ok: true, action: 'vault_not_found' };
@@ -749,21 +831,28 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       try {
         const decrypted = decryptSecret(matchedVault.content, activeKey.userId);
         const dateStr = format(new Date(matchedVault.createdAt), 'dd MMM yyyy, HH:mm');
-        const reply = `🔓 *Private Vault: [${matchedVault.vaultKey}]*\n📅 _Disimpan: ${dateStr}_\n\n\`\`\`\n${decrypted}\n\`\`\``;
+        const reply = getTelegramMsg('vault_revealed', activeLocale, {
+          vaultKey: matchedVault.vaultKey || '',
+          dateStr,
+          decrypted,
+        });
         await sendTelegramMessage(chatId, reply, { parse_mode: 'Markdown' });
         return { ok: true, action: 'vault_revealed' };
       } catch (decErr) {
         console.error('[Private Vault] Decryption error:', decErr);
         await sendTelegramMessage(
           chatId,
-          '❌ Gagal mendekripsi data vault. Terjadi kendala kunci atau format data korup.'
+          getTelegramMsg('vault_decryption_failed', activeLocale)
         );
         return { ok: false, error: 'vault_decryption_failed' };
       }
     }
 
     // Jika ditemukan lebih dari 1 catatan yang cocok
-    let reply = `🔓 *Ditemukan ${matchedVaults.length} Catatan Private Vault untuk "*${cleanQuery}*":*\n\n`;
+    let reply = getTelegramMsg('vault_revealed_multiple_header', activeLocale, {
+      totalCount: matchedVaults.length,
+      keyword: cleanQuery,
+    });
     for (let i = 0; i < matchedVaults.length; i++) {
       const item = matchedVaults[i];
       const dateStr = format(new Date(item.createdAt), 'dd MMM yyyy, HH:mm');
@@ -771,7 +860,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       try {
         decrypted = decryptSecret(item.content, activeKey.userId);
       } catch (err) {
-        decrypted = '[Gagal mendekripsi data vault]';
+        decrypted = activeLocale === 'id' ? '[Gagal mendekripsi data vault]' : '[Failed to decrypt vault data]';
       }
       reply += `*${i + 1}. 🔑 ${item.vaultKey}* (📅 _${dateStr}_)\n\`\`\`\n${decrypted}\n\`\`\`\n\n`;
     }
@@ -782,7 +871,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 11. Core Note Capture Quota Enforcement
   if (!quotaInfo.allowed) {
-    const quotaMsg = getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL);
+    const quotaMsg = getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL, activeLocale);
     await sendTelegramMessage(
       chatId,
       quotaMsg.text,
@@ -799,6 +888,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const existing = debounceMap.get(chatId)!;
     clearTimeout(existing.timer);
     existing.messages.push(text);
+    existing.locale = activeLocale;
     existing.timer = setTimeout(() => {
       flushDebounceBuffer(chatId).catch((err) =>
         console.error('[Debounce Auto Flush Error]:', err)
@@ -828,6 +918,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     noteId,
     createdAt: new Date(),
     tier: quotaInfo.tier,
+    locale: activeLocale,
   };
   debounceMap.set(chatId, item);
 
@@ -872,11 +963,20 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       .limit(1);
 
     if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
       await answerTelegramCallbackQuery(callbackId, {
-        text: 'Sesi akun Telegram belum terhubung.',
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
       });
       return { ok: false, error: 'unauthenticated' };
     }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
@@ -907,8 +1007,8 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       .limit(PAGE_SIZE)
       .offset(offset);
 
-    const headerTitle = `🏷️ *Catatan dengan label [${targetTag}]*`;
-    const newText = formatSnippetPage(matchedNotes, totalCount, validPage, PAGE_SIZE, headerTitle);
+    const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
+    const newText = formatSnippetPage(matchedNotes, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
     const keyboard = buildPaginationKeyboard('tags', targetTag, validPage, totalPages);
 
     if (messageId) {
@@ -937,11 +1037,20 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       .limit(1);
 
     if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
       await answerTelegramCallbackQuery(callbackId, {
-        text: 'Sesi akun Telegram belum terhubung.',
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
       });
       return { ok: false, error: 'unauthenticated' };
     }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
     const searchCondition = buildFlexibleSearchCondition(query);
     const orderConditions = buildSearchRelevanceOrder(query);
@@ -975,8 +1084,8 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       .limit(PAGE_SIZE)
       .offset(offset);
 
-    const headerTitle = `🔍 *Hasil Pencarian untuk:* "${query}"`;
-    const newText = formatSnippetPage(searchResults, totalCount, validPage, PAGE_SIZE, headerTitle);
+    const headerTitle = getTelegramMsg('search_header', activeLocale, { keyword: query });
+    const newText = formatSnippetPage(searchResults, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
     const keyboard = buildPaginationKeyboard('search', query, validPage, totalPages);
 
     if (messageId) {

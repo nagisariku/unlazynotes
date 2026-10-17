@@ -1,6 +1,7 @@
 import { db } from '@/db';
 import { users, subscriptions } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
+import { getTelegramMsg, type SupportedLocale } from '@/lib/i18n/telegram';
 
 export const FREE_MONTHLY_QUOTA = 30;
 
@@ -153,21 +154,18 @@ export async function incrementUserMonthlyNotes(userId: string): Promise<number>
 /**
  * Template Pesan Paywall / Upgrade untuk Batas Kuota Bulanan di Telegram (30/30)
  */
-export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321'): {
+export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321', locale: SupportedLocale = 'id'): {
   text: string;
   replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 } {
   const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
-  const text =
-    `Yah, jatah 30 catatan Free kamu bulan ini sudah terpakai semua! 🥺 Kuota catatan barumu akan direset otomatis tanggal 1 bulan depan (catatan lamamu tetap aman tersimpan).\n\n` +
-    `Mau bebas catat tanpa batas & buka fitur rahasia (/secure & /ask)?\n` +
-    `✨ Upgrade ke Pro cuma $1 (~Rp 15rb)/bulan!\n` +
-    `👉 ${settingsUrl}`;
+  const text = getTelegramMsg('quota_exceeded', locale, { upgradeUrl: settingsUrl });
+  const buttonText = getTelegramMsg('upgrade_button_pro', locale);
 
   return {
     text,
     replyMarkup: {
-      inline_keyboard: [[{ text: '✨ Upgrade ke Pro ($1 / Rp 15rb)', url: settingsUrl }]],
+      inline_keyboard: [[{ text: buttonText, url: settingsUrl }]],
     },
   };
 }
@@ -175,20 +173,18 @@ export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321'
 /**
  * Template Pesan Gatekeeping untuk Fitur Eksklusif Pro (/secure, /vault, atau /ask)
  */
-export function getTelegramProGatedMessage(webUrl = 'http://localhost:4321'): {
+export function getTelegramProGatedMessage(webUrl = 'http://localhost:4321', locale: SupportedLocale = 'id'): {
   text: string;
   replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 } {
   const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
-  const text =
-    `Fitur ini khusus untuk pengguna UnlazyNotes Pro ✨\n` +
-    `Buka akses Private Encrypted Vault, AI Q&A cerdas, dan unlimited notes cuma $1/bulan.\n\n` +
-    `👉 ${settingsUrl}`;
+  const text = getTelegramMsg('pro_gated', locale, { upgradeUrl: settingsUrl });
+  const buttonText = getTelegramMsg('pro_gated_button', locale);
 
   return {
     text,
     replyMarkup: {
-      inline_keyboard: [[{ text: '⚡️ Upgrade ke Pro ($1/bulan)', url: settingsUrl }]],
+      inline_keyboard: [[{ text: buttonText, url: settingsUrl }]],
     },
   };
 }
