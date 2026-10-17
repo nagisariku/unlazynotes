@@ -163,4 +163,40 @@ export const BOOKMARK_TAXONOMY: CanonicalTagDef[] = [
       en: ['entertainment', 'streaming', 'anime'],
     },
   },
+  {
+    canonical: 'medium',
+    category: 'bookmark',
+    description: 'Medium publication and technical articles',
+    aliases: {
+      id: ['medium'],
+      en: ['medium'],
+    },
+  },
+  {
+    canonical: 'devops',
+    category: 'bookmark',
+    description: 'DevOps, CI/CD, cloud operations, and infrastructure engineering',
+    aliases: {
+      id: ['devops', 'sre', 'ci-cd'],
+      en: ['devops', 'sre', 'ci-cd'],
+    },
+  },
+  {
+    canonical: 'animasi',
+    category: 'bookmark',
+    description: 'Web animation, motion graphics, and visual design assets',
+    aliases: {
+      id: ['animasi'],
+      en: ['animation', 'motion'],
+    },
+  },
+  {
+    canonical: 'referensi',
+    category: 'bookmark',
+    description: 'Reference material, bookmarks, and inspiration',
+    aliases: {
+      id: ['referensi'],
+      en: ['reference', 'inspiration'],
+    },
+  },
 ];

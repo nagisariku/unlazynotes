@@ -61,13 +61,15 @@ export const BANNED_TAGS = new Set([
   'phrase',
   'word',
   'sentence',
-  'term',
+  'debt',
+  'loan',
+  'loans',
   'unclear',
   'ambiguous',
 ]);
 
 export function normalizeTag(tag: string): string {
-  return tag
+  let t = tag
     .trim()
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .toLowerCase()
@@ -76,6 +78,11 @@ export function normalizeTag(tag: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 20);
+
+  if (t === 'idea' || t === 'ideas') t = 'ide';
+  if (t === 'feature-idea' || t === 'feature-ideas') t = 'fitur';
+  if (t === 'content-idea' || t === 'content-ideas') t = 'konten';
+  return t;
 }
 
 /**
@@ -110,19 +117,25 @@ export function sanitizeTags(tags: string[], category: string, noteContent?: str
     // 3. Resolve to canonical tag via bilingual taxonomy IF matched and not banned
     const canonical = resolveCanonicalTag(t, catNormalized);
     if (canonical && !BANNED_TAGS.has(canonical)) {
-      // Under Dual-Layer Tagging, preserve the specific entity if the canonical umbrella tag
-      // is already present in the incoming tags or result, or if t is an entity keyword
-      const isSpecificEntity = [
-        'seblak', 'ayam', 'bakso', 'mie', 'sate', 'cireng', 'rendang', 'batagor',
-        'tequila', 'matcha', 'kopi', 'beer', 'boba', 'wine',
-        'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
-        'indihome', 'biznet', 'wifi', 'kuota', 'pulsa',
-        'panadol', 'bodrex', 'obat', 'vitamin',
-        'uniqlo', 'zara', 'kemeja',
-        'dieng', 'bali', 'jogja',
-        'vps', 'hosting', 'domain',
-        'bioskop', 'cinema', 'spotify', 'netflix'
-      ].includes(t);
+      const normContent = (noteContent || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+      const tagTokens = t.split('-').filter(Boolean);
+      const isMentionedInContent = tagTokens.length > 0 && tagTokens.every(token => normContent.includes(token));
+
+      // Under Dual-Layer Tagging, preserve specific entities and domain terms
+      const isSpecificEntity =
+        isMentionedInContent ||
+        [
+          'cimin', 'seblak', 'ayam', 'bakso', 'mie', 'sate', 'cireng', 'rendang', 'batagor',
+          'kopi-kenangan', 'tequila', 'matcha', 'kopi', 'beer', 'boba', 'wine',
+          'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
+          'indihome', 'biznet', 'wifi', 'kuota', 'pulsa',
+          'panadol', 'paracetamol', 'bodrex', 'obat', 'vitamin', 'migrain',
+          'uniqlo', 'zara', 'kemeja',
+          'dieng', 'bali', 'jogja',
+          'vps', 'hosting', 'domain',
+          'bioskop', 'cinema', 'spotify', 'netflix',
+          'ubed', 'fajar', 'rizky', 'bca', 'rekening', 'tiktok', 'devops', 'medium'
+        ].includes(t);
 
       const hasCanonicalInTags = tags.some(rawTag => normalizeTag(rawTag) === canonical);
       if (!isSpecificEntity && !hasCanonicalInTags && !result.includes(canonical)) {

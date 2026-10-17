@@ -1,0 +1,170 @@
+import * as dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+
+import { generateNoteTags, heuristicTagNote } from '../src/lib/ai';
+
+interface TestCase {
+  input: string;
+  expectedCat: string;
+  expectedTags: string[];
+  description: string;
+}
+
+const TEST_MATRIX: TestCase[] = [
+  // --- 8 Core User Specification Test Cases ---
+  {
+    input: 'cimin 20k',
+    expectedCat: 'finance',
+    expectedTags: ['cimin', 'makanan'],
+    description: '1. Food / Snack with nominal price',
+  },
+  {
+    input: 'ubed minjem 100k',
+    expectedCat: 'finance',
+    expectedTags: ['ubed', 'piutang'],
+    description: '2. Money lent to someone (piutang)',
+  },
+  {
+    input: 'chat rizky tanya proposal',
+    expectedCat: 'todo',
+    expectedTags: ['rizky', 'proposal'],
+    description: '3. Communication task (person + topic)',
+  },
+  {
+    input: 'meeting desain jam 3 sore',
+    expectedCat: 'schedule',
+    expectedTags: ['desain', 'meeting'],
+    description: '4. Schedule with specific hour marker (jam 3 sore)',
+  },
+  {
+    input: 'https://medium.com/p/123 bacaan devops bagus',
+    expectedCat: 'bookmark',
+    expectedTags: ['medium', 'devops'],
+    description: '5. URL with commentary caption (platform + topic)',
+  },
+  {
+    input: 'nomor rekening bca riku 1234567890',
+    expectedCat: 'credential',
+    expectedTags: ['bca', 'rekening'],
+    description: '6. Bank account credential (bca + rekening)',
+  },
+  {
+    input: 'migrain minum paracetamol',
+    expectedCat: 'others',
+    expectedTags: ['kesehatan', 'migrain', 'paracetamol'],
+    description: '7. Health symptom and medication log',
+  },
+  {
+    input: 'ide konten tiktok soal app fatigue',
+    expectedCat: 'others',
+    expectedTags: ['ide', 'tiktok', 'app-fatigue'],
+    description: '8. Creative idea (ide + platform + topic)',
+  },
+
+  // --- Extended Domain Edge Cases ---
+  {
+    input: 'kopi kenangan 22k',
+    expectedCat: 'finance',
+    expectedTags: ['kopi-kenangan', 'kopi'],
+    description: 'Edge 1: Beverage brand with price',
+  },
+  {
+    input: 'aku minjem 50k ke fajar',
+    expectedCat: 'finance',
+    expectedTags: ['fajar', 'utang'],
+    description: 'Edge 2: Money borrowed by us (utang)',
+  },
+  {
+    input: 'https://youtu.be/xyz referensi animasi web',
+    expectedCat: 'bookmark',
+    expectedTags: ['youtube', 'animasi', 'referensi'],
+    description: 'Edge 3: Video URL with multi-topic caption',
+  },
+  {
+    input: 'leg day 4 set squat 60kg',
+    expectedCat: 'others',
+    expectedTags: ['workout', 'gym', 'squat'],
+    description: 'Edge 4: Workout session log (non-finance despite numbers)',
+  },
+  {
+    input: 'ide fitur: voice note transcription',
+    expectedCat: 'others',
+    expectedTags: ['ide', 'fitur', 'voice-note'],
+    description: 'Edge 5: Feature idea without empty tags',
+  },
+];
+
+async function runClassifierTests() {
+  console.log('================================================================');
+  console.log('🧪 TESTING SEMANTIC INTENT & DUAL-LAYER TAGGING CLASSIFIER');
+  console.log('================================================================');
+
+  let passedLive = 0;
+  let passedHeuristic = 0;
+
+  console.log('\n--- PHASE 1: Live AI Pipeline (generateNoteTags) ---');
+  for (const tc of TEST_MATRIX) {
+    const start = performance.now();
+    const res = await generateNoteTags(tc.input);
+    const dur = Math.round(performance.now() - start);
+
+    const catPass = res.category === tc.expectedCat;
+    const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
+    const isPass = catPass && tagsPass;
+
+    if (isPass) passedLive++;
+
+    const icon = isPass ? '✅ PASS' : '❌ FAIL';
+    console.log(`${icon} [${dur}ms] "${tc.input}"`);
+    console.log(`   -> Cat: ${res.category} (exp: ${tc.expectedCat}) | Tags: ${JSON.stringify(res.specific_tags)} (exp: ${JSON.stringify(tc.expectedTags)})`);
+
+    if (!isPass) {
+      if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
+      if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
+    }
+  }
+
+  console.log('\n--- PHASE 2: Deterministic Heuristic Fallback (heuristicTagNote) ---');
+  for (const tc of TEST_MATRIX) {
+    const res = heuristicTagNote(tc.input);
+
+    const catPass = res.category === tc.expectedCat;
+    const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
+    const isPass = catPass && tagsPass;
+
+    if (isPass) passedHeuristic++;
+
+    const icon = isPass ? '✅ PASS' : '❌ FAIL';
+    console.log(`${icon} [Heuristic] "${tc.input}"`);
+    console.log(`   -> Cat: ${res.category} | Tags: ${JSON.stringify(res.specific_tags)}`);
+
+    if (!isPass) {
+      if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
+      if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
+    }
+  }
+
+  console.log('\n================================================================');
+  console.log(`SUMMARY:`);
+  console.log(`- Live AI Pipeline: ${passedLive}/${TEST_MATRIX.length} PASSED`);
+  console.log(`- Heuristic Fallback: ${passedHeuristic}/${TEST_MATRIX.length} PASSED`);
+  console.log('================================================================');
+
+  if (passedLive === TEST_MATRIX.length && passedHeuristic === TEST_MATRIX.length) {
+    console.log('🎉 ALL TEST CASES PASSED WITH 100% ACCURACY!');
+    process.exit(0);
+  } else {
+    console.error('⚠️ Some test cases failed. Please review output above.');
+    process.exit(1);
+  }
+}
+
+runClassifierTests().catch((err) => {
+  console.error('Fatal test error:', err);
+  process.exit(1);
+});

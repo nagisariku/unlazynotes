@@ -40,10 +40,28 @@ export const TODO_TAXONOMY: CanonicalTagDef[] = [
   {
     canonical: 'health',
     category: 'todo',
-    description: 'Physical fitness, doctor visits, workout, and health habits',
+    description: 'Physical fitness, doctor visits, and health habits',
     aliases: {
-      id: ['gym', 'olahraga', 'lari', 'workout', 'dokter', 'obat', 'sehat', 'istirahat'],
-      en: ['health', 'gym', 'workout', 'fitness', 'doctor', 'medicine', 'dental', 'rest'],
+      id: ['lari', 'dokter', 'obat', 'sehat', 'istirahat'],
+      en: ['health', 'doctor', 'medicine', 'dental', 'rest'],
+    },
+  },
+  {
+    canonical: 'workout',
+    category: 'todo',
+    description: 'Strength training, workout sessions, and exercises',
+    aliases: {
+      id: ['workout', 'olahraga', 'latihan'],
+      en: ['workout', 'training', 'exercise'],
+    },
+  },
+  {
+    canonical: 'gym',
+    category: 'todo',
+    description: 'Gym fitness and weightlifting',
+    aliases: {
+      id: ['gym', 'fitness'],
+      en: ['gym', 'fitness'],
     },
   },
   {

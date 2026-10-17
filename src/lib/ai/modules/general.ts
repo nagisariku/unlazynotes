@@ -7,66 +7,144 @@ import type { NoteCategory } from '@/db/schema';
 
 /**
  * Normalizes raw category string from LLM into one of the 9 strict NoteCategory enum values.
+ * Enforces the 6 Primary Intent rules:
+ * 1. BOOKMARK: Any note with HTTP/HTTPS link(s) (unless explicit checkbox task).
+ * 2. CREDENTIAL: Passwords, ATM PINs, Bank Account Numbers, NIK KTP, Tokens/API Keys.
+ * 3. SCHEDULE: Notes with explicit time/clock or calendar date markers.
+ * 4. FINANCE: Financial transactions, spending, purchases, or debt/loans WITH nominal price/amount.
+ * 5. TODO: Actions, tasks, commands, or communications without specific calendar/clock times.
+ * 6. OTHERS / RANDOM-YAP: Non-action thoughts, opinions, raw ideas, health symptoms, and rants.
  */
 export function normalizeCategory(rawCat: string | undefined, content: string): NoteCategory {
   const lower = content.toLowerCase().trim();
-  const hasPrice = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|juta)?\b/i.test(lower) || /(\$|rp|idr)\s*\d+/i.test(lower);
 
-  // If there is an explicit price/currency and it's not a password/credential, it's ALWAYS finance
-  if (hasPrice && !lower.includes('pin:') && !lower.includes('password') && !lower.includes('pass ')) {
-    return 'finance';
-  }
-
-  if (!rawCat) return 'others';
-  const c = rawCat.toLowerCase().trim();
-
-  // If directly in valid CATEGORIES
-  if (CATEGORIES.includes(c as NoteCategory)) {
-    return c as NoteCategory;
-  }
-
-  // Finance synonyms
-  if (['food', 'expense', 'expenses', 'spending', 'purchase', 'bill', 'income', 'money', 'payment', 'transaksi'].includes(c)) {
-    return 'finance';
-  }
-
-  // Todo / Activity synonyms
-  if (['task', 'todo', 'checklist', 'action', 'plan', 'wishlist', 'shopping', 'travel', 'fashion', 'activity'].includes(c)) {
+  // 1. Explicit Todo Checkbox Prefix or strong task override (e.g. "- [ ] review: https://..." or "harus ... buat ujian: https://...")
+  if (
+    lower.startsWith('- [ ]') ||
+    lower.startsWith('[ ]') ||
+    lower.startsWith('todo:') ||
+    ((lower.startsWith('harus ') || lower.startsWith('jangan lupa ')) && /\b(ujian|exam|tugas|pr)\b/i.test(lower))
+  ) {
     return 'todo';
   }
 
-  if (/\b(hiling|healing|dieng|trip|liburan|pantai|gunung|jalan-jalan|wisata)\b/i.test(lower)) {
-    return 'todo';
-  }
-
-  // Schedule synonyms
-  if (['calendar', 'meeting', 'event', 'appointment', 'deadline', 'jadwal'].includes(c)) {
-    return 'schedule';
-  }
-
-  // Bookmark synonyms
-  if (['link', 'url', 'web', 'site'].includes(c)) {
+  // 2. URL -> Bookmark
+  const hasUrl = /(https?:\/\/[^\s]+)/i.test(content);
+  if (hasUrl) {
     return 'bookmark';
   }
 
-  // Credential synonyms
-  if (['password', 'pin', 'secret', 'auth', 'token', 'credential'].includes(c)) {
+  // 3. Sensitive Credentials (Password, ATM PIN, Bank Account Number, NIK, Token, API Key)
+  const isCredential =
+    /\b(password|pass|pin\s*atm|pin|no\s*rek|nomor\s*rekening|rekening|nik\s*ktp|nik|ktp|token|api_key|apikey|secret|sandi|ssid|wlan)\b/i.test(lower) ||
+    lower.startsWith('pass:') ||
+    lower.startsWith('pin:') ||
+    lower.startsWith('token:') ||
+    lower.startsWith('secret:') ||
+    lower.startsWith('sandi:');
+
+  if (isCredential) {
     return 'credential';
   }
 
-  // Draft synonyms
-  if (['draft', 'writing', 'article', 'document'].includes(c)) {
-    return 'draft';
+  // 4. Schedule (Specific date, hour, clock, or appointment)
+  const isSchedulePattern =
+    /\b(jam|pukul)\s*\d+([.:]\d+)?(\s*(pagi|siang|sore|malam|wib|wita|wit|am|pm))?\b/i.test(lower) ||
+    /\b\d+([.:]\d+)\s*(am|pm|wib|wita|wit)\b/i.test(lower) ||
+    /\b(besok|lusa|kemarin)\s+(pagi|siang|sore|malam|jam|pukul)\b/i.test(lower) ||
+    /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\s+\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)\b/i.test(lower) ||
+    (/\b(flight|terbang|berangkat)\s+(senin|selasa|rabu|kamis|jumat|sabtu|minggu|\d{1,2}\s+[a-z]+)\b/i.test(lower)) ||
+    (/\b(meeting|rapat|sync|call)\b/i.test(lower) && /\b(jam|pukul|\d+[:.]\d+|\d+\s*sore|\d+\s*pagi|\d+\s*siang|\d+\s*malam)\b/i.test(lower));
+
+  const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|juta|perak)\b/i.test(lower);
+  const hasCurrencyPrefix = /(\$|rp\.?|idr|usd|sgd|eur|gbp)\s*\d+/i.test(lower);
+
+  if (isSchedulePattern && !hasCurrencySuffix && !hasCurrencyPrefix) {
+    return 'schedule';
   }
 
-  // Reference synonyms
-  if (['recipe', 'quote', 'snippet', 'documentation'].includes(c)) {
-    return 'reference';
+  // 5. Finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH nominal price/amount
+  const isHealthMetric = /\b\d+\s*(mg|ml|tablet|kapsul|gram)\b/i.test(lower);
+  const isWorkoutMetric = /\b\d+\s*(kg|reps|set)\b/i.test(lower);
+  const isPostalCode = /\b(kodepos|kode\s*pos|pos\s*code|zip\s*code)\s*\d+\b/i.test(lower);
+
+  const hasDebtPattern =
+    /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
+    (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
+
+  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee)\b/i.test(lower);
+  const hasItemWithNumber = /\b(cimin|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting)\s+(\$|rp)?\d+/i.test(lower);
+
+  const isFinance =
+    !isHealthMetric &&
+    !isWorkoutMetric &&
+    !isPostalCode &&
+    (
+      hasCurrencySuffix ||
+      hasCurrencyPrefix ||
+      hasDebtPattern ||
+      hasItemWithNumber ||
+      (hasFinanceVerb && /\b\d+\b/.test(lower))
+    );
+
+  if (isFinance) {
+    return 'finance';
   }
 
-  // Random-yap synonyms
-  if (['idea', 'rant', 'thought', 'yap', 'shower-thought'].includes(c)) {
-    return 'random-yap';
+  // 6. Non-Action Health, Workout, and Raw Idea Guards -> others (NOT todo!)
+  const isHealthLog = /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|tolak\s*angin|obat|vitamin|apotek)\b/i.test(lower);
+  const isWorkoutLog = /\b(squat|bench-press|deadlift|workout|gym|leg\s*day|pushup|pullup)\b/i.test(lower);
+  const isRawIdea = /\b(ide\s+konten|ide\s+fitur|ide\s+aplikasi|ide\s+bisnis|ide\s+video|ide\s+tulisan|kepikiran)\b/i.test(lower) || lower.startsWith('ide: ') || lower.startsWith('ide :') || lower.startsWith('ide ');
+
+  if ((isHealthLog || isWorkoutLog || isRawIdea) && !lower.startsWith('- [ ]') && !lower.startsWith('todo:') && !/\b(harus|wajib|jangan lupa)\b/i.test(lower)) {
+    return 'others';
+  }
+
+  // 7. Todo Intent: Actions, tasks, commands, or communications without specific calendar/clock times
+  const isCommunicationTask = /\b(chat|telepon|telpon|wa|whatsapp|tanya|hubungi|dm|email|follow up|call)\s+[a-z0-9_-]+/i.test(lower);
+  const isActionTask =
+    lower.startsWith('todo') ||
+    lower.startsWith('task') ||
+    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan)\b/i.test(lower) ||
+    (/\b(belajar|study|kuliah|review|prepare)\b/i.test(lower) && /\b(ujian|exam|uts|uas|kuis|quiz|tes|besok|minggu depan|midterm|finals)\b/i.test(lower));
+
+  if (isCommunicationTask || isActionTask) {
+    return 'todo';
+  }
+
+  // If rawCat from LLM was provided, map synonyms or use it
+  if (rawCat) {
+    const c = rawCat.toLowerCase().trim();
+    if (c === 'bookmark' && !hasUrl) {
+      return lower.includes('kodepos') ? 'reference' : 'others';
+    }
+    if (CATEGORIES.includes(c as NoteCategory)) {
+      return c as NoteCategory;
+    }
+    if (['food', 'expense', 'expenses', 'spending', 'purchase', 'bill', 'income', 'money', 'payment', 'transaksi'].includes(c)) {
+      return 'finance';
+    }
+    if (['task', 'todo', 'checklist', 'action', 'plan', 'wishlist', 'shopping', 'activity'].includes(c)) {
+      return 'todo';
+    }
+    if (['calendar', 'meeting', 'event', 'appointment', 'deadline', 'jadwal'].includes(c)) {
+      return 'schedule';
+    }
+    if (['link', 'url', 'web', 'site'].includes(c)) {
+      return 'bookmark';
+    }
+    if (['password', 'pin', 'secret', 'auth', 'token', 'credential'].includes(c)) {
+      return 'credential';
+    }
+    if (['draft', 'writing', 'article', 'document'].includes(c)) {
+      return 'draft';
+    }
+    if (['recipe', 'quote', 'snippet', 'documentation'].includes(c)) {
+      return 'reference';
+    }
+    if (['idea', 'rant', 'thought', 'yap', 'shower-thought'].includes(c)) {
+      return 'others';
+    }
   }
 
   return 'others';
@@ -74,6 +152,7 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
 
 /**
  * Ensures universal Dual-Layer Tagging: [Specific Entity] + [Broad Concept/Domain].
+ * Strictly ensures: Dilarang menghasilkan tag kosong jika terdapat entitas nama orang, brand, tempat, gejala, atau subjek konkret!
  */
 export function enrichDualLayerTags(tags: string[], category: NoteCategory, content: string, rawLlmCat?: string): string[] {
   const lower = content.toLowerCase();
@@ -81,128 +160,201 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     .map(t => normalizeTag(t))
     .filter(t => t && !BANNED_TAGS.has(t));
 
-  const umbrellaDomains: string[] = [];
+  const domainUmbrellas: string[] = [];
+  const domainEntities: string[] = [];
 
-  // 1. Drink Domain
-  const isDrink =
-    rawLlmCat === 'drink' ||
-    /\b(tequila|matcha|kopi|coffee|beer|bir|boba|wine|jus|juice|teh|tea|latte|espresso|americano|cocktail|liquor|gin|vodka|soju|minuman|minum|es-teh|boba-tea)\b/i.test(lower);
-  if (isDrink) umbrellaDomains.push('drink');
+  // 1. Debt & Loans Domain (Utang vs Piutang)
+  if (/\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower)) {
+    const isOurDebt =
+      /\b(aku|saya|gue|gua)\s+(minjem|pinjam|ngutang)\b/i.test(lower) ||
+      /\b(minjem|pinjam|ngutang|utang)\s+(ke|sama|dari)\s+([a-z0-9_-]+)/i.test(lower);
 
-  // 2. Food Domain
-  const isFood =
-    rawLlmCat === 'food' ||
-    (/\b(rendang|cireng|batagor|seblak|nasgor|nasi|ayam|bakso|mie|sate|makan|snack|roti|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza)\b/i.test(lower) && !isDrink);
-  if (isFood) umbrellaDomains.push('food');
-
-  // 3. Transport Domain
-  const isTransport =
-    /\b(bensin|pertalite|pertamax|bbm|solar|gojek|grab|maxim|ojol|tol|parkir|kereta|krl|mrt|busway|bus|angkot|ongkir|flight|pesawat)\b/i.test(lower) ||
-    (/\btiket\b/i.test(lower) && /\b(kereta|pesawat|bus|krl|mrt|flight|kapal|travel)\b/i.test(lower));
-  if (isTransport) umbrellaDomains.push('transport');
-
-  // 4. Health Domain
-  const isHealth =
-    /\b(panadol|paracetamol|obat|bodrex|tolak\s*angin|vitamin|apotek|dokter|klinik|puskesmas|hospital|dentist|gigi|medis|salep|betadine)\b/i.test(lower);
-  if (isHealth) umbrellaDomains.push('health');
-
-  // 5. Internet Domain
-  const isInternet =
-    /\b(indihome|wifi|biznet|myrepublic|firstmedia|kuota|pulsa|telkomsel|xl|indosat|tri|smartfren|modem|router|hotspot)\b/i.test(lower);
-  if (isInternet) umbrellaDomains.push('internet');
-
-  // 6. Tech Domain
-  const isTech =
-    /\b(vps|hosting|server|domain|cloud|aws|gcp|github|api|software|saas|digitalocean|database|devops|docker|k8s)\b/i.test(lower);
-  if (isTech) umbrellaDomains.push('tech');
-
-  // 7. Entertainment Domain
-  const isEntertainment =
-    /\b(bioskop|cinema|xxi|cgv|cinepolis|nonton|konser|concert|netflix|spotify|movie|film|teater|theater)\b/i.test(lower) ||
-    (/\btiket\b/i.test(lower) && /\b(bioskop|konser|concert|xxi|cgv|film|movie|nonton)\b/i.test(lower));
-  if (isEntertainment) umbrellaDomains.push('entertainment');
-
-  // 8. Fashion Domain
-  const isFashion =
-    rawLlmCat === 'fashion' ||
-    /\b(uniqlo|zara|h&m|erigo|kemeja|baju|celana|kaos|jaket|sepatu|sandal|tas|outfit|hoodie|rok|dress)\b/i.test(lower);
-  if (isFashion) umbrellaDomains.push('fashion');
-
-  // 9. Travel Domain
-  const isTravel =
-    /\b(dieng|bali|jogja|bandung|bromo|labuan\s*bajo|hiling|healing|liburan|trip|wisata|pantai|gunung|hotel|villa|resort|tour)\b/i.test(lower);
-  if (isTravel) umbrellaDomains.push('travel');
-
-  // 10. Gaming Domain
-  const isGaming =
-    /\b(steam|topup|diamond|mlbb|valorant|genshin|playstation|ps5|game|gaming|skin)\b/i.test(lower);
-  if (isGaming) umbrellaDomains.push('gaming');
-
-  // Extract specific entity candidates
-  const entityCandidateWords = [
-    'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'bakso', 'mie', 'sate',
-    'tequila', 'matcha', 'kopi', 'beer', 'boba', 'wine',
-    'bensin', 'pertalite', 'pertamax', 'gojek', 'grab', 'ojol', 'parkir', 'tol',
-    'panadol', 'paracetamol', 'bodrex', 'obat', 'vitamin',
-    'indihome', 'biznet', 'myrepublic', 'firstmedia', 'wifi', 'kuota', 'pulsa',
-    'uniqlo', 'zara', 'erigo', 'kemeja', 'sepatu', 'tas',
-    'dieng', 'bali', 'jogja', 'bromo',
-    'vps', 'hosting', 'domain',
-    'bioskop', 'cinema', 'spotify', 'netflix'
-  ];
-
-  const detectedEntities: string[] = [];
-  for (const cand of entityCandidateWords) {
-    if (lower.includes(cand)) {
-      detectedEntities.push(cand);
-    }
-  }
-
-  // Combine entities from LLM baseTags and detectedEntities
-  const combinedEntities: string[] = [];
-  for (const t of [...detectedEntities, ...baseTags]) {
-    if (!umbrellaDomains.includes(t) && !combinedEntities.includes(t)) {
-      // Don't include multi-word phrases if entity is already included (e.g. drop 'hiling-dieng' if 'dieng' is present)
-      const isRedundant = combinedEntities.some(e => t.includes(e) && t !== e);
-      if (!isRedundant) {
-        combinedEntities.push(t);
+    if (isOurDebt) {
+      domainUmbrellas.push('utang');
+      const targetMatch = lower.match(/\b(ke|sama|dari)\s+([a-z0-9_-]+)/i);
+      if (targetMatch && targetMatch[2] && !['bank', 'atm', 'pinjol'].includes(targetMatch[2])) {
+        domainEntities.push(targetMatch[2]);
+      }
+    } else {
+      domainUmbrellas.push('piutang');
+      const borrowerMatch = lower.match(/([a-z0-9_-]+)\s+(minjem|pinjam|ngutang)/i);
+      const lentMatch = lower.match(/\b(pinjemin|talangin|kasih pinjam)\s+([a-z0-9_-]+)/i);
+      if (borrowerMatch && borrowerMatch[1] && !['aku', 'saya', 'gue', 'gua'].includes(borrowerMatch[1])) {
+        domainEntities.push(borrowerMatch[1]);
+      } else if (lentMatch && lentMatch[2]) {
+        domainEntities.push(lentMatch[2]);
       }
     }
   }
 
-  // Build final dual-layer list: [Specific Entity, Umbrella Concept]
-  const finalTags: string[] = [];
-
-  // Add up to 2 entities
-  for (const ent of combinedEntities) {
-    if (finalTags.length >= 2) break;
-    finalTags.push(ent);
+  // 2. Coffee & Beverage Domain
+  if (/\b(kopi\s*kenangan|fore|janji\s*jiwa|starbucks|tomoro|kopi|coffee|ngopi)\b/i.test(lower)) {
+    domainUmbrellas.push('kopi');
+    if (/\bkopi\s*kenangan\b/i.test(lower)) domainEntities.push('kopi-kenangan');
+    else if (/\bfore\b/i.test(lower)) domainEntities.push('fore');
+    else if (/\bjanji\s*jiwa\b/i.test(lower)) domainEntities.push('janji-jiwa');
+    else if (/\bstarbucks\b/i.test(lower)) domainEntities.push('starbucks');
+    else if (/\btomoro\b/i.test(lower)) domainEntities.push('tomoro');
+  } else if (/\b(tequila|matcha|beer|bir|boba|wine|jus|juice|teh|tea|latte|espresso|americano|cocktail|vodka|soju)\b/i.test(lower)) {
+    domainUmbrellas.push('minuman');
   }
 
-  // Add umbrella concept(s)
-  for (const umb of umbrellaDomains) {
-    if (finalTags.length >= 3) break;
-    if (!finalTags.includes(umb)) {
-      finalTags.push(umb);
+  // 3. Food / Snack Domain
+  const isFood =
+    /\b(cimin|cireng|batagor|seblak|nasgor|nasi|ayam|ciken|chicken|bakso|mie|sate|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza|odol|sabun)\b/i.test(lower) ||
+    (category === 'finance' && /\b(makan|jajan|lunch|dinner|snack)\b/i.test(lower));
+  if (isFood && !domainUmbrellas.includes('kopi')) {
+    domainUmbrellas.push('makanan');
+  }
+
+  // 4. Communication & Task Domain
+  const commMatch = lower.match(/\b(chat|telepon|telpon|wa|whatsapp|hubungi|dm|email|call)\s+([a-z0-9_-]+)(.*)/i);
+  if (commMatch) {
+    const person = commMatch[2].trim();
+    if (person && !['ke', 'sama', 'tentang', 'soal', 'ini', 'itu'].includes(person)) {
+      domainEntities.push(person);
+    }
+    const topicMatch = commMatch[3].match(/\b(tanya|soal|tentang|minta|bahas|cek|mengenai)\s+([a-z0-9_-]+)/i);
+    if (topicMatch && topicMatch[2]) {
+      domainEntities.push(topicMatch[2]);
+    }
+  }
+
+  // 5. Health & Wellness Domain (gejala, obat, workout)
+  const isHealth =
+    /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|obat|vitamin|apotek|dokter|klinik)\b/i.test(lower);
+  if (isHealth) {
+    domainUmbrellas.push('kesehatan');
+    if (/\bmigrain\b/i.test(lower)) domainEntities.push('migrain');
+    if (/\bpusing\b/i.test(lower)) domainEntities.push('pusing');
+    if (/\bparacetamol\b/i.test(lower)) domainEntities.push('paracetamol');
+    if (/\bpanadol\b/i.test(lower)) domainEntities.push('panadol');
+    if (/\bbodrex\b/i.test(lower)) domainEntities.push('bodrex');
+  }
+
+  // Gym / Workout Domain
+  if (/\b(squat|bench-press|deadlift|workout|gym|leg\s*day|pushup|pullup|cardio)\b/i.test(lower)) {
+    domainUmbrellas.push('workout');
+    domainUmbrellas.push('gym');
+    if (/\bsquat\b/i.test(lower)) domainEntities.push('squat');
+    if (/\bleg\s*day\b/i.test(lower)) domainEntities.push('leg-day');
+  }
+
+  // 6. Ideas & Creative Domain
+  if (/\b(ide|idea|kepikiran|konsep)\b/i.test(lower)) {
+    domainUmbrellas.push('ide');
+    if (/\btiktok\b/i.test(lower)) domainEntities.push('tiktok');
+    if (/\bapp\s*fatigue\b/i.test(lower)) domainEntities.push('app-fatigue');
+    if (/\bvoice\s*note\b/i.test(lower)) domainEntities.push('voice-note');
+    if (/\bfitur\b/i.test(lower)) domainEntities.push('fitur');
+  }
+
+  // 7. Credential Domain (Bank + Type)
+  if (category === 'credential' || /\b(no\s*rek|nomor\s*rekening|rekening|pin\s*atm|pin|password|wifi)\b/i.test(lower)) {
+    if (/\bbca\b/i.test(lower)) domainEntities.push('bca');
+    if (/\b(rekening|no\s*rek|nomor\s*rekening)\b/i.test(lower)) domainEntities.push('rekening');
+    if (/\batm\b/i.test(lower)) domainEntities.push('atm');
+    if (/\bpin\b/i.test(lower)) domainEntities.push('pin');
+    if (/\bwifi\b/i.test(lower)) domainEntities.push('wifi');
+  }
+
+  // 8. Schedule Domain
+  if (category === 'schedule' || /\bmeeting\b/i.test(lower)) {
+    if (/\bdesain\b/i.test(lower)) domainEntities.push('desain');
+    if (/\bmeeting\b/i.test(lower)) domainEntities.push('meeting');
+  }
+
+  // Candidate dishes/snacks and transit
+  const dishCandidates = [
+    'cimin', 'seblak', 'cireng', 'batagor', 'rendang', 'nasgor', 'ayam', 'bakso', 'mie', 'sate',
+    'bensin', 'pertalite', 'pertamax', 'parkir', 'tol', 'gojek', 'grab', 'ojol', 'indihome'
+  ];
+  for (const dish of dishCandidates) {
+    if (lower.includes(dish) && !domainEntities.includes(dish)) {
+      domainEntities.push(dish);
+    }
+  }
+
+  // Combine entities and baseTags with strict domain priorities
+  const combined: string[] = [];
+
+  // Specialized Domain Priority 1: Debt & Loans (Utang vs Piutang)
+  if (domainUmbrellas.includes('piutang') || domainUmbrellas.includes('utang')) {
+    const direction = domainUmbrellas.includes('piutang') ? 'piutang' : 'utang';
+    for (const ent of domainEntities) {
+      if (!combined.includes(ent)) combined.push(ent);
+    }
+    if (!combined.includes(direction)) combined.push(direction);
+    return combined.slice(0, 3);
+  }
+
+  // Specialized Domain Priority 2: Workout & Gym
+  if (domainUmbrellas.includes('workout') || domainUmbrellas.includes('gym')) {
+    if (!combined.includes('workout')) combined.push('workout');
+    if (!combined.includes('gym')) combined.push('gym');
+    for (const ent of domainEntities) {
+      if (!combined.includes(ent)) combined.push(ent);
+    }
+    return combined.slice(0, 3);
+  }
+
+  // Specialized Domain Priority 3: Ideas & Concepts
+  if (domainUmbrellas.includes('ide')) {
+    if (!combined.includes('ide')) combined.push('ide');
+    for (const ent of domainEntities) {
+      if (!combined.includes(ent)) combined.push(ent);
+    }
+    for (const t of baseTags) {
+      if (t !== 'ide' && !combined.includes(t)) combined.push(t);
+    }
+    return combined.slice(0, 3);
+  }
+
+  // Specialized Domain Priority 4: Health & Wellness
+  if (domainUmbrellas.includes('kesehatan')) {
+    if (!combined.includes('kesehatan')) combined.push('kesehatan');
+    for (const ent of domainEntities) {
+      if (!combined.includes(ent)) combined.push(ent);
+    }
+    for (const t of baseTags) {
+      if (t !== 'kesehatan' && t !== 'health' && !combined.includes(t)) combined.push(t);
+    }
+    return combined.slice(0, 3);
+  }
+
+  // General Domain Combination
+  for (const ent of domainEntities) {
+    if (!combined.includes(ent)) combined.push(ent);
+  }
+
+  for (const t of baseTags) {
+    if (!domainUmbrellas.includes(t) && !combined.includes(t)) {
+      combined.push(t);
+    }
+  }
+
+  for (const umb of domainUmbrellas) {
+    if (!combined.includes(umb)) {
+      combined.push(umb);
     }
   }
 
   // Fallback if still empty
-  if (finalTags.length === 0) {
+  if (combined.length === 0) {
     const cleanTokens = lower
       .replace(/(\$|rp)\s*\d+[a-z]*/gi, '')
       .replace(/\b\d+\s*(k|rb|jt|ribu|juta)?\b/gi, '')
-      .replace(/\b(beli|bayar|tfr|transfer|kirim|buat|untuk|ke|di|hiling|healing|putih)\b/gi, '')
+      .replace(/\b(beli|bayar|tfr|transfer|kirim|buat|untuk|ke|di)\b/gi, '')
       .split(/[^a-z0-9-]+/)
       .map(t => normalizeTag(t))
       .filter(t => t.length >= 3 && !BANNED_TAGS.has(t));
 
     if (cleanTokens.length > 0) {
-      finalTags.push(cleanTokens[0]);
+      combined.push(cleanTokens[0]);
     }
   }
 
-  return finalTags;
+  return combined.slice(0, 3);
 }
 
 /**
@@ -233,44 +385,50 @@ export async function processGeneralNote(
     const result = await generateText({
       model: openaiCompatible(modelName),
       temperature: 0,
-      system: `You are an intelligent tagging engine for UnlazyNotes.
+      system: `You are an intelligent semantic classifier and tagging engine for UnlazyNotes.
 Analyze the user's note and return a strict JSON object with:
-1. "category": exactly 1 category.
-2. "specific_tags": 1 to 3 meaningful keyword tags (lowercase-with-hyphens).
+1. "category": exactly 1 primary intent category.
+2. "specific_tags": 1 to 3 domain-aware tags (lowercase-with-hyphens).
+3. "source": detected platform source string or null.
 
-CATEGORIES & INTENT PRIORITY:
-The "category" MUST be one of these 9 exact values:
-- todo: Checklists, action items, tasks, wishlists, or plans WITHOUT prices/costs (e.g. "kemeja putih uniqlo" -> todo, "hiling dieng" -> todo).
-- finance: ALL money transactions, purchases, food/item expenses, bills, income WITH price/amount or payment intent (e.g. "cireng 5k", "rendang 50k", "batagor 15k", "bensin 20k", "bayar wifi" -> finance).
-- schedule: Specific dates, meetings, appointments, deadlines with temporal markers (e.g. "meeting bsk jam 2", "deadline tugas 18 okt").
-- bookmark: URLs / links.
-- credential: Passwords, tokens, pins, wifi keys.
-- draft: Long structured text, minutes of meeting (>150 chars).
-- reference: Snippets, recipes, quotes, documentation.
-- random-yap: Spontaneous shower thoughts, rants, musings.
-- others: Miscellaneous.
+PRIMARY INTENT CATEGORIES:
+- bookmark: Any note containing HTTP/HTTPS link(s), whether pure URL or accompanied by commentary/caption.
+- credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), NIK KTP, Token/API Key (whether formatted or free-text).
+- finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price.
+- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "flight jumat 20 okt").
+- todo: Action tasks, commands, chores, or communication requests (chat, call, wa, tanya, beli, cek, revisi) WITHOUT specific clock times.
+- others: Non-action notes, feelings, opinions, raw ideas, health symptoms/logs, and rants without action and without nominal amounts.
 
-DO NOT output 'food', 'expense', 'expenses', 'task', 'money', or 'shopping' as "category"! Always use "finance" or "todo".
+TAGGING RULES (ENTITY + DOMAIN UMBRELLA):
+Rule: NEVER leave specific entities empty! Always extract specific entities (names, brands, dishes, symptoms, topics) + domain umbrella:
+1. Food & Drinks (Finance):
+   - "cimin 20k" -> ["cimin", "makanan"]
+   - "kopi kenangan 22k" -> ["kopi-kenangan", "kopi"]
+2. Debt & Loans (Finance): Strict direction of money:
+   - "ubed minjem 100k" (our money borrowed by someone) -> ["ubed", "piutang"]
+   - "aku minjem 50k ke fajar" (our debt/obligation to someone) -> ["fajar", "utang"]
+3. Communication & Task (Todo): Person name + topic:
+   - "chat rizky tanya proposal" -> ["rizky", "proposal"]
+4. Schedule: Topic + event type:
+   - "meeting desain jam 3 sore" -> ["desain", "meeting"]
+5. Bookmarks: Platform name + caption topic:
+   - "https://medium.com/p/123 bacaan devops bagus" -> ["medium", "devops"]
+   - "https://youtu.be/xyz referensi animasi web" -> ["youtube", "animasi", "referensi"]
+6. Credentials: Bank/entity + type:
+   - "nomor rekening bca riku 1234567890" -> ["bca", "rekening"]
+   - "pin atm 182930" -> ["atm", "pin"]
+7. Health & Wellness (Others): Symptom, medicine, workout:
+   - "migrain minum paracetamol" -> ["kesehatan", "migrain", "paracetamol"]
+   - "leg day 4 set squat 60kg" -> ["workout", "gym", "squat"]
+8. Ideas & Concepts (Others): Concept umbrella + platform + topic:
+   - "ide konten tiktok soal app fatigue" -> ["ide", "tiktok", "app-fatigue"]
+   - "ide fitur: voice note transcription" -> ["ide", "fitur", "voice-note"]
 
-SPECIFIC TAG RULES (Extract 1 to 3 tags per note):
-1. Always combine [Specific Entity] + [Broad Concept/Domain] whenever applicable:
-   - Specific Entity: brand, item, dish, drink, tool, store, person, place (e.g. 'rendang', 'tequila', 'uniqlo', 'indihome', 'panadol', 'dieng', 'spotify').
-   - Broad Concept: underlying semantic domain (e.g. 'food', 'drink', 'transport', 'internet', 'health', 'travel', 'fashion', 'gaming', 'tech', 'entertainment').
-   - Ideal Examples:
-     • "rendang 50k" -> ["rendang", "food"]
-     • "cireng 5k" -> ["cireng", "food"]
-     • "tequila 120rb" -> ["tequila", "drink"]
-     • "kopi susu 20k" -> ["kopi", "drink"]
-     • "bensin 20k" -> ["bensin", "transport"]
-     • "tiket bioskop 50k" -> ["bioskop", "entertainment"]
-     • "langganan vps 100k" -> ["vps", "tech"]
-     • "panadol 10k" -> ["panadol", "health"]
-2. DO NOT output tags that merely repeat the category name (NEVER output 'todo', 'finance', 'expenses', 'task', 'money', 'schedule', 'note').
-3. Keep tags lowercase, single-word or hyphenated, max 20 chars.
-
-JSON FORMAT:
-{"category": "finance", "specific_tags": ["tequila", "drink"], "source": null}`,
-      prompt: `Classify and extract 1-3 tags as JSON {"category": "finance" | "todo" | ..., "specific_tags": ["entity", "umbrella"], "source": null}:\n"""${content}"""`,
+Formatting:
+- Output JSON ONLY.
+- lowercase-with-hyphens, max 20 chars per tag.
+- Category must be one of: "bookmark" | "credential" | "finance" | "schedule" | "todo" | "others" | "draft" | "reference" | "random-yap".`,
+      prompt: `Classify and extract tags as JSON {"category": "finance" | "todo" | "schedule" | "bookmark" | "credential" | "others", "specific_tags": [...], "source": null}:\n"""${content}"""`,
     });
 
     // Extract JSON block even if model wraps in markdown code fences (```json ... ```)

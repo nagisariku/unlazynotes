@@ -49,10 +49,46 @@ export const CREDENTIAL_TAXONOMY: CanonicalTagDef[] = [
   {
     canonical: 'bank',
     category: 'credential',
-    description: 'ATM PINs, mobile banking, and bank account credentials',
+    description: 'General mobile banking and bank credentials',
     aliases: {
-      id: ['pin', 'atm', 'bank', 'bca', 'mandiri', 'bri', 'bni', 'cimb'],
-      en: ['pin', 'atm', 'bank', 'banking'],
+      id: ['bank', 'mandiri', 'bri', 'bni', 'cimb'],
+      en: ['bank', 'banking'],
+    },
+  },
+  {
+    canonical: 'bca',
+    category: 'credential',
+    description: 'Bank Central Asia credentials and accounts',
+    aliases: {
+      id: ['bca'],
+      en: ['bca'],
+    },
+  },
+  {
+    canonical: 'rekening',
+    category: 'credential',
+    description: 'Bank account number credentials (no rek / nomor rekening)',
+    aliases: {
+      id: ['rekening', 'no rek', 'nomor rekening', 'norek'],
+      en: ['account-number', 'bank-account'],
+    },
+  },
+  {
+    canonical: 'atm',
+    category: 'credential',
+    description: 'ATM PINs and cards',
+    aliases: {
+      id: ['atm'],
+      en: ['atm'],
+    },
+  },
+  {
+    canonical: 'pin',
+    category: 'credential',
+    description: 'Security PIN numbers',
+    aliases: {
+      id: ['pin'],
+      en: ['pin'],
     },
   },
 ];

@@ -48,7 +48,10 @@ function classifyUrl(rawUrl: string): ClassifiedUrl {
   }
 
   // Domain-Aware Category Recognition
-  if (/dev\.to|stackoverflow\.com|gitlab\.com|bitbucket\.org|npmjs\.com|pypi\.org|docker\.com|kubernetes\.io|crates\.io|bun\.sh|deno\.com|medium\.com/i.test(host)) {
+  if (/medium\.com/i.test(host)) {
+    return { platformSource: 'article', tags: ['medium'] };
+  }
+  if (/dev\.to|stackoverflow\.com|gitlab\.com|bitbucket\.org|npmjs\.com|pypi\.org|docker\.com|kubernetes\.io|crates\.io|bun\.sh|deno\.com/i.test(host)) {
     return { platformSource: 'article', tags: ['dev'] };
   }
   if (/figma\.com|dribbble\.com|behance\.net|awwwards\.com|canva\.com|unsplash\.com|pinterest\.com/i.test(host)) {
@@ -75,6 +78,15 @@ function extractCaptionTags(textWithoutUrls: string): string[] {
   const lower = textWithoutUrls.toLowerCase();
   const tags: string[] = [];
 
+  if (/\b(devops|sre|ci\/cd|cicd|docker|k8s|kubernetes|infra|infrastructure)\b/i.test(lower)) {
+    tags.push('devops');
+  }
+  if (/\b(animasi|animation|motion|gsap|threejs)\b/i.test(lower)) {
+    tags.push('animasi');
+  }
+  if (/\b(referensi|reference|inspirasi|inspiration)\b/i.test(lower)) {
+    tags.push('referensi');
+  }
   if (/\b(belajar|study|kuliah|materi|tutorial|skripsi|kursus|course|guide|panduan)\b/i.test(lower)) {
     tags.push('study');
   }
@@ -161,7 +173,7 @@ export function processBookmarkNote(content: string): NoteTagResult {
     }
   }
 
-  const maxTags = matches.length > 1 ? 5 : 2;
+  const maxTags = matches.length > 1 || textWithoutUrls.length > 0 ? 5 : 2;
   const sanitized = sanitizeTags(rawTags, 'bookmark', text, maxTags);
 
   return {

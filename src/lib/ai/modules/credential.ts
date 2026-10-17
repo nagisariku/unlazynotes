@@ -8,11 +8,36 @@ import type { NoteTagResult } from '../types';
  */
 export function processCredentialNote(content: string): NoteTagResult {
   const text = content.trim();
-  const tags = extractTagsFromContent(text, 'credential', 1);
+  const lower = text.toLowerCase();
+  const tags: string[] = [];
+
+  // 1. Detect Bank Entity
+  if (/\bbca\b/i.test(lower)) tags.push('bca');
+  else if (/\bmandiri\b/i.test(lower)) tags.push('mandiri');
+  else if (/\bbri\b/i.test(lower)) tags.push('bri');
+  else if (/\bbni\b/i.test(lower)) tags.push('bni');
+  else if (/\bcimb\b/i.test(lower)) tags.push('cimb');
+  else if (/\bjago\b/i.test(lower)) tags.push('jago');
+
+  // 2. Detect Credential Type
+  if (/\b(rekening|no\s*rek|nomor\s*rekening|norek)\b/i.test(lower)) tags.push('rekening');
+  if (/\batm\b/i.test(lower)) tags.push('atm');
+  if (/\bpin\b/i.test(lower)) tags.push('pin');
+  if (/\bwifi\b/i.test(lower)) tags.push('wifi');
+  if (/\b(token|api_key|apikey|secret)\b/i.test(lower)) tags.push('api');
+  if (/\b(nik|ktp)\b/i.test(lower)) tags.push('ktp');
+
+  // 3. Fallback to taxonomy extraction
+  if (tags.length < 2) {
+    const fromTax = extractTagsFromContent(text, 'credential', 3);
+    for (const t of fromTax) {
+      if (!tags.includes(t)) tags.push(t);
+    }
+  }
 
   return {
     category: 'credential',
-    specific_tags: sanitizeTags(tags, 'credential', text),
+    specific_tags: sanitizeTags(tags, 'credential', text, 3),
     source: null,
   };
 }

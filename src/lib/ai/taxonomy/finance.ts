@@ -123,8 +123,44 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Loans, debts, and borrowed money',
     aliases: {
-      id: ['utang', 'hutang', 'piutang', 'pinjam', 'pinjaman', 'talangan'],
+      id: ['pinjam', 'pinjaman'],
       en: ['debt', 'loan', 'owe', 'borrowed'],
+    },
+  },
+  {
+    canonical: 'piutang',
+    category: 'finance',
+    description: 'Money lent to others / receivables (uang kita dipinjam orang)',
+    aliases: {
+      id: ['piutang', 'pinjemin', 'talangin'],
+      en: ['receivable', 'lent'],
+    },
+  },
+  {
+    canonical: 'utang',
+    category: 'finance',
+    description: 'Money borrowed from others / payable debts (kewajiban bayar kita)',
+    aliases: {
+      id: ['utang', 'hutang', 'ngutang'],
+      en: ['payable', 'debt-owed'],
+    },
+  },
+  {
+    canonical: 'makanan',
+    category: 'finance',
+    description: 'Indonesian street food, dishes, and snacks',
+    aliases: {
+      id: ['makanan', 'cimin', 'jajan', 'kuliner'],
+      en: ['snack-food'],
+    },
+  },
+  {
+    canonical: 'kopi',
+    category: 'finance',
+    description: 'Coffee drinks and specialty coffee shops',
+    aliases: {
+      id: ['kopi', 'kopi-kenangan', 'ngopi'],
+      en: ['coffee'],
     },
   },
   {

@@ -5,7 +5,7 @@ import { processBookmarkNote } from './ai/modules/bookmark';
 import { processFinanceNote } from './ai/modules/finance';
 import { processCredentialNote } from './ai/modules/credential';
 import { processTodoNote } from './ai/modules/todo';
-import { processGeneralNote } from './ai/modules/general';
+import { processGeneralNote, enrichDualLayerTags } from './ai/modules/general';
 
 // Export core types and schemas for backward compatibility
 export { NoteTagResultSchema, type NoteTagResult };
@@ -31,38 +31,25 @@ export function heuristicTagNote(content: string): NoteTagResult {
       return processCredentialNote(content);
     case 'todo':
       return processTodoNote(content);
+    case 'schedule': {
+      const tags: string[] = [];
+      if (lower.includes('desain')) tags.push('desain');
+      if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
+      else if (lower.includes('deadline') || lower.includes('tenggat')) tags.push('deadline');
+      else if (lower.includes('dokter')) tags.push('dokter');
+      else if (lower.includes('flight')) tags.push('flight');
+
+      if (tags.length === 0) tags.push('event');
+
+      return {
+        category: 'schedule',
+        specific_tags: sanitizeTags(tags, 'schedule', text),
+        source: null,
+      };
+    }
     case 'general':
     default: {
-      // 1. Detect Schedule
-      if (
-        lower.includes('meeting') ||
-        lower.includes('jadwal') ||
-        lower.includes('agenda') ||
-        lower.includes('jam ') ||
-        lower.includes('besok') ||
-        lower.includes('hari ini') ||
-        lower.includes('lusa') ||
-        lower.includes('deadline') ||
-        lower.includes('tanggal')
-      ) {
-        const tags: string[] = [];
-        if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
-        else if (lower.includes('deadline') || lower.includes('tenggat')) tags.push('deadline');
-
-        if (lower.includes('kantor') || lower.includes('kerja') || lower.includes('sprint') || lower.includes('client')) {
-          tags.push('work');
-        }
-
-        if (tags.length === 0) tags.push('event');
-
-        return {
-          category: 'schedule',
-          specific_tags: sanitizeTags(tags, 'schedule'),
-          source: null,
-        };
-      }
-
-      // 2. Detect Draft (Long text, summaries, articles)
+      // 1. Detect Draft (Long structured text >250 chars)
       if (
         text.length > 250 ||
         lower.includes('draft') ||
@@ -72,44 +59,16 @@ export function heuristicTagNote(content: string): NoteTagResult {
       ) {
         return {
           category: 'draft',
-          specific_tags: sanitizeTags(['writing'], 'draft'),
+          specific_tags: sanitizeTags(['writing'], 'draft', text),
           source: null,
         };
       }
 
-      // 3. Detect Random-yap
-      if (
-        lower.includes('ide ') ||
-        lower.includes('idea') ||
-        lower.includes('kepikiran') ||
-        lower.includes('opini')
-      ) {
-        return {
-          category: 'random-yap',
-          specific_tags: sanitizeTags(['idea'], 'random-yap'),
-          source: null,
-        };
-      }
-
-      // 4. Detect Reference
-      if (
-        lower.includes('referensi') ||
-        lower.includes('rujukan') ||
-        lower.includes('kutipan') ||
-        lower.includes('source code') ||
-        lower.includes('catatan penting')
-      ) {
-        return {
-          category: 'reference',
-          specific_tags: sanitizeTags(['reference'], 'reference'),
-          source: null,
-        };
-      }
-
-      // Default
+      // 2. Dual-layer entity extraction for health, ideas, workout, rants, etc.
+      const enriched = enrichDualLayerTags([], 'others', text);
       return {
         category: 'others',
-        specific_tags: [],
+        specific_tags: sanitizeTags(enriched, 'others', text, 3),
         source: null,
       };
     }

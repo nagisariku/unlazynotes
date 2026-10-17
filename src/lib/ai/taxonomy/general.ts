@@ -65,12 +65,39 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
     },
   },
   {
+    canonical: 'kesehatan',
+    category: 'others',
+    description: 'Health symptoms, medications, and wellness notes',
+    aliases: {
+      id: ['kesehatan', 'medis', 'gejala', 'obat'],
+      en: ['health', 'medical', 'symptom'],
+    },
+  },
+  {
+    canonical: 'desain',
+    category: 'schedule',
+    description: 'Design reviews, UI/UX sessions, and creative work',
+    aliases: {
+      id: ['desain', 'design', 'ui', 'ux'],
+      en: ['design', 'ui', 'ux'],
+    },
+  },
+  {
+    canonical: 'ide',
+    category: 'others',
+    description: 'Creative ideas, content brainstorms, and raw concepts',
+    aliases: {
+      id: ['ide', 'konsep', 'inovasi'],
+      en: ['idea', 'concept'],
+    },
+  },
+  {
     canonical: 'idea',
     category: 'random-yap',
     description: 'Spontaneous ideas, brainstorming, and concepts',
     aliases: {
-      id: ['ide', 'kepikiran', 'inovasi', 'konsep'],
-      en: ['idea', 'concept', 'brainstorm'],
+      id: ['kepikiran'],
+      en: ['brainstorm'],
     },
   },
 ];
