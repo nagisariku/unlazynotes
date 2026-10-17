@@ -66,6 +66,40 @@ export const BANNED_TAGS = new Set([
   'loans',
   'unclear',
   'ambiguous',
+  // Action verbs forbidden as tags (Indonesian & English)
+  'chat',
+  'beli',
+  'tanya',
+  'minum',
+  'bayar',
+  'transfer',
+  'kirim',
+  'hubungi',
+  'cek',
+  'revisi',
+  'ingat',
+  'baca',
+  'makan',
+  'minjem',
+  'pinjam',
+  'ngutang',
+  'tulis',
+  'bikin',
+  'buat',
+  'cari',
+  'ambil',
+  'tarik',
+  'simpan',
+  'call',
+  'ask',
+  'buy',
+  'pay',
+  'send',
+  'check',
+  'drink',
+  'eat',
+  'read',
+  'write',
 ]);
 
 export function normalizeTag(tag: string): string {
@@ -79,7 +113,11 @@ export function normalizeTag(tag: string): string {
     .replace(/^-|-$/g, '')
     .slice(0, 20);
 
-  if (t === 'idea' || t === 'ideas') t = 'ide';
+  // Standardize domain umbrellas to English
+  if (t === 'ide' || t === 'ideas') t = 'idea';
+  if (t === 'makanan') t = 'food';
+  if (t === 'kesehatan') t = 'health';
+  if (t === 'minuman') t = 'drink';
   if (t === 'feature-idea' || t === 'feature-ideas') t = 'fitur';
   if (t === 'content-idea' || t === 'content-ideas') t = 'konten';
   return t;

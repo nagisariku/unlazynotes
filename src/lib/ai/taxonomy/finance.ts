@@ -33,8 +33,8 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Food, dining, groceries, and meals',
     aliases: {
-      id: ['rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang'],
-      en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'restaurant', 'groceries', 'snack', 'burger', 'pizza'],
+      id: ['makanan', 'cimin', 'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang'],
+      en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'restaurant', 'groceries', 'snack', 'burger', 'pizza', 'snack-food'],
     },
   },
   {
@@ -143,15 +143,6 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     aliases: {
       id: ['utang', 'hutang', 'ngutang'],
       en: ['payable', 'debt-owed'],
-    },
-  },
-  {
-    canonical: 'makanan',
-    category: 'finance',
-    description: 'Indonesian street food, dishes, and snacks',
-    aliases: {
-      id: ['makanan', 'cimin', 'jajan', 'kuliner'],
-      en: ['snack-food'],
     },
   },
   {

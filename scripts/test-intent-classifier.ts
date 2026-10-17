@@ -12,6 +12,7 @@ interface TestCase {
   input: string;
   expectedCat: string;
   expectedTags: string[];
+  forbiddenTags?: string[];
   description: string;
 }
 
@@ -20,8 +21,8 @@ const TEST_MATRIX: TestCase[] = [
   {
     input: 'cimin 20k',
     expectedCat: 'finance',
-    expectedTags: ['cimin', 'makanan'],
-    description: '1. Food / Snack with nominal price',
+    expectedTags: ['cimin', 'food'],
+    description: '1. Food / Snack with nominal price (umbrella: food)',
   },
   {
     input: 'ubed minjem 100k',
@@ -33,7 +34,8 @@ const TEST_MATRIX: TestCase[] = [
     input: 'chat rizky tanya proposal',
     expectedCat: 'todo',
     expectedTags: ['rizky', 'proposal'],
-    description: '3. Communication task (person + topic)',
+    forbiddenTags: ['chat', 'tanya'],
+    description: '3. Communication task (person + topic, NO action verbs)',
   },
   {
     input: 'meeting desain jam 3 sore',
@@ -56,14 +58,15 @@ const TEST_MATRIX: TestCase[] = [
   {
     input: 'migrain minum paracetamol',
     expectedCat: 'others',
-    expectedTags: ['kesehatan', 'migrain', 'paracetamol'],
-    description: '7. Health symptom and medication log',
+    expectedTags: ['health', 'migrain', 'paracetamol'],
+    forbiddenTags: ['minum'],
+    description: '7. Health symptom and medication log (umbrella: health, NO verb)',
   },
   {
     input: 'ide konten tiktok soal app fatigue',
     expectedCat: 'others',
-    expectedTags: ['ide', 'tiktok', 'app-fatigue'],
-    description: '8. Creative idea (ide + platform + topic)',
+    expectedTags: ['idea', 'tiktok', 'app-fatigue'],
+    description: '8. Creative idea (umbrella: idea + platform + topic)',
   },
 
   // --- Extended Domain Edge Cases ---
@@ -94,8 +97,8 @@ const TEST_MATRIX: TestCase[] = [
   {
     input: 'ide fitur: voice note transcription',
     expectedCat: 'others',
-    expectedTags: ['ide', 'fitur', 'voice-note'],
-    description: 'Edge 5: Feature idea without empty tags',
+    expectedTags: ['idea', 'fitur', 'voice-note'],
+    description: 'Edge 5: Feature idea without empty tags (umbrella: idea)',
   },
 ];
 
@@ -115,7 +118,8 @@ async function runClassifierTests() {
 
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
-    const isPass = catPass && tagsPass;
+    const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
+    const isPass = catPass && tagsPass && forbiddenPass;
 
     if (isPass) passedLive++;
 
@@ -126,6 +130,7 @@ async function runClassifierTests() {
     if (!isPass) {
       if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
       if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
+      if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs leaked into tags: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
     }
   }
 
@@ -135,7 +140,8 @@ async function runClassifierTests() {
 
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
-    const isPass = catPass && tagsPass;
+    const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
+    const isPass = catPass && tagsPass && forbiddenPass;
 
     if (isPass) passedHeuristic++;
 
@@ -146,6 +152,7 @@ async function runClassifierTests() {
     if (!isPass) {
       if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
       if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
+      if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs leaked into tags: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
     }
   }
 

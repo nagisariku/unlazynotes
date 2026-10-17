@@ -196,7 +196,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     else if (/\bstarbucks\b/i.test(lower)) domainEntities.push('starbucks');
     else if (/\btomoro\b/i.test(lower)) domainEntities.push('tomoro');
   } else if (/\b(tequila|matcha|beer|bir|boba|wine|jus|juice|teh|tea|latte|espresso|americano|cocktail|vodka|soju)\b/i.test(lower)) {
-    domainUmbrellas.push('minuman');
+    domainUmbrellas.push('drink');
   }
 
   // 3. Food / Snack Domain
@@ -204,7 +204,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     /\b(cimin|cireng|batagor|seblak|nasgor|nasi|ayam|ciken|chicken|bakso|mie|sate|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza|odol|sabun)\b/i.test(lower) ||
     (category === 'finance' && /\b(makan|jajan|lunch|dinner|snack)\b/i.test(lower));
   if (isFood && !domainUmbrellas.includes('kopi')) {
-    domainUmbrellas.push('makanan');
+    domainUmbrellas.push('food');
   }
 
   // 4. Communication & Task Domain
@@ -224,7 +224,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
   const isHealth =
     /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|obat|vitamin|apotek|dokter|klinik)\b/i.test(lower);
   if (isHealth) {
-    domainUmbrellas.push('kesehatan');
+    domainUmbrellas.push('health');
     if (/\bmigrain\b/i.test(lower)) domainEntities.push('migrain');
     if (/\bpusing\b/i.test(lower)) domainEntities.push('pusing');
     if (/\bparacetamol\b/i.test(lower)) domainEntities.push('paracetamol');
@@ -242,7 +242,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
 
   // 6. Ideas & Creative Domain
   if (/\b(ide|idea|kepikiran|konsep)\b/i.test(lower)) {
-    domainUmbrellas.push('ide');
+    domainUmbrellas.push('idea');
     if (/\btiktok\b/i.test(lower)) domainEntities.push('tiktok');
     if (/\bapp\s*fatigue\b/i.test(lower)) domainEntities.push('app-fatigue');
     if (/\bvoice\s*note\b/i.test(lower)) domainEntities.push('voice-note');
@@ -299,20 +299,20 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
   }
 
   // Specialized Domain Priority 3: Ideas & Concepts
-  if (domainUmbrellas.includes('ide')) {
-    if (!combined.includes('ide')) combined.push('ide');
+  if (domainUmbrellas.includes('idea')) {
+    if (!combined.includes('idea')) combined.push('idea');
     for (const ent of domainEntities) {
       if (!combined.includes(ent)) combined.push(ent);
     }
     for (const t of baseTags) {
-      if (t !== 'ide' && !combined.includes(t)) combined.push(t);
+      if (t !== 'ide' && t !== 'idea' && !combined.includes(t)) combined.push(t);
     }
     return combined.slice(0, 3);
   }
 
   // Specialized Domain Priority 4: Health & Wellness
-  if (domainUmbrellas.includes('kesehatan')) {
-    if (!combined.includes('kesehatan')) combined.push('kesehatan');
+  if (domainUmbrellas.includes('health')) {
+    if (!combined.includes('health')) combined.push('health');
     for (const ent of domainEntities) {
       if (!combined.includes(ent)) combined.push(ent);
     }
@@ -400,14 +400,18 @@ PRIMARY INTENT CATEGORIES:
 - others: Non-action notes, feelings, opinions, raw ideas, health symptoms/logs, and rants without action and without nominal amounts.
 
 TAGGING RULES (ENTITY + DOMAIN UMBRELLA):
-Rule: NEVER leave specific entities empty! Always extract specific entities (names, brands, dishes, symptoms, topics) + domain umbrella:
+Rule 1 (Standard English Umbrella Tags): Always use standard English for domain umbrella tags (e.g. use "food" NOT "makanan", "health" NOT "kesehatan", "idea" NOT "ide", "drink" NOT "minuman") to keep tag history unified.
+Rule 2 (NO ACTION VERBS AS TAGS): NEVER extract action verbs as tags (e.g. NEVER tag 'chat', 'beli', 'tanya', 'minum', 'bayar', 'transfer', 'kirim', 'hubungi'). Only extract concrete nouns, subjects, topics, and person names!
+Rule 3: NEVER leave specific entities empty! Always extract specific entities (names, brands, dishes, symptoms, topics) + domain umbrella:
+
+Examples:
 1. Food & Drinks (Finance):
-   - "cimin 20k" -> ["cimin", "makanan"]
+   - "cimin 20k" -> ["cimin", "food"]
    - "kopi kenangan 22k" -> ["kopi-kenangan", "kopi"]
 2. Debt & Loans (Finance): Strict direction of money:
    - "ubed minjem 100k" (our money borrowed by someone) -> ["ubed", "piutang"]
    - "aku minjem 50k ke fajar" (our debt/obligation to someone) -> ["fajar", "utang"]
-3. Communication & Task (Todo): Person name + topic:
+3. Communication & Task (Todo): Person name + topic (NO VERBS like 'chat' or 'tanya'):
    - "chat rizky tanya proposal" -> ["rizky", "proposal"]
 4. Schedule: Topic + event type:
    - "meeting desain jam 3 sore" -> ["desain", "meeting"]
@@ -417,12 +421,12 @@ Rule: NEVER leave specific entities empty! Always extract specific entities (nam
 6. Credentials: Bank/entity + type:
    - "nomor rekening bca riku 1234567890" -> ["bca", "rekening"]
    - "pin atm 182930" -> ["atm", "pin"]
-7. Health & Wellness (Others): Symptom, medicine, workout:
-   - "migrain minum paracetamol" -> ["kesehatan", "migrain", "paracetamol"]
+7. Health & Wellness (Others): Symptom, medicine, workout (umbrella: "health", NO verbs like 'minum'):
+   - "migrain minum paracetamol" -> ["health", "migrain", "paracetamol"]
    - "leg day 4 set squat 60kg" -> ["workout", "gym", "squat"]
-8. Ideas & Concepts (Others): Concept umbrella + platform + topic:
-   - "ide konten tiktok soal app fatigue" -> ["ide", "tiktok", "app-fatigue"]
-   - "ide fitur: voice note transcription" -> ["ide", "fitur", "voice-note"]
+8. Ideas & Concepts (Others): Concept umbrella "idea" + platform + topic:
+   - "ide konten tiktok soal app fatigue" -> ["idea", "tiktok", "app-fatigue"]
+   - "ide fitur: voice note transcription" -> ["idea", "fitur", "voice-note"]
 
 Formatting:
 - Output JSON ONLY.
