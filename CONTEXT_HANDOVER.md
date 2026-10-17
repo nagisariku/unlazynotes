@@ -174,6 +174,42 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
 7. **Validasi Test Suite**:
    - `scripts/test-tier-quota.ts`: 19/19 skenario pengujian komprehensif lolos 100% PASS (lazy reset, 30-note paywall, non-refund on delete, pro unlimited, expired downgrade, gating /secure, /vault, /ask, dan priority queue).
 
+### R. Sistem i18n Telegram Bot (Bilingual EN / ID)
+1. **Kamus Terpusat ([`src/lib/i18n/telegram.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/i18n/telegram.ts))**:
+   - Mendukung lokalisasi penuh untuk seluruh command dan feedback bot: `/help`, `/start`, `/login`, `/logout`, `/tags`, `/search`, `/ask`, `/secure`, `/vault`, notifikasi paywall kuota, warning password/kredensial, dan filter format yang belum didukung.
+2. **Deteksi Bahasa Adaptif**:
+   - Pengguna terdaftar: Menggunakan `user.preferredLocale` yang tersimpan di database.
+   - Pengguna belum login: Otomatis mendeteksi bahasa pengirim via `message.from.language_code` (`id` $\rightarrow$ ID, lainnya $\rightarrow$ EN).
+   - Sinkronisasi instan saat menghubungkan akun pertama kali.
+
+### S. Dynamic Dual-Layer Taxonomy & Anti-Flood Tagging Engine
+1. **Prinsip Taksonomi Universal (High-Level Root)**:
+   - Tag payung (*Domain Umbrella*) selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (`food`, `drink`, `tech`, `meeting`, `health`, `workout`, `subscription`, `shopping`, `quran`, `quote`, `random-yap`).
+   - Dilarang membuat pecahan spesifik dari domain utama (`food-order` $\rightarrow$ `food`, `beverage` $\rightarrow$ `drink`).
+2. **Memori Penggunaan Tag (Tag Reuse)**:
+   - Injeksi 30 tag riwayat akun pengguna ke konteks LLM untuk mencegah fragmentasi sinonim.
+3. **Disiplin Alokasi Tag (Maksimal 2 - 3 Tag per Catatan)**:
+   - Tag 1 (WAJIB - Specific Entity): Entitas konkret (cilok, tahu-gejrot, martabak, cursor, q4-roadmap, demo, nasgor, cimin, uniqlo, biore, admin).
+   - Tag 2 (WAJIB - Domain Umbrella): 1 kata dasar payung universal.
+   - Tag 3 (OPSIONAL - Context/Brand/Person): Brand, pembayaran (`qris`, `cash`), atau nama orang (`gojek`, `bca`, `client`).
+4. **Negative Constraints**:
+   - Dilarang tag kata kerja aksi (`chat`, `beli`, `tanya`, `minum`, `bayar`, `kirim`, `cari`, `bandingin`) $\rightarrow$ dimasukkan ke `BANNED_TAGS`.
+   - Dilarang tag nama mata uang atau pajak (`usd`, `idr`, `rp`, `dollar`, `tax`, `pajak`).
+   - Dilarang tag terpotong (*no truncated words*).
+
+### T. Penanganan 4 Edge Case Audit Klasifikasi Catatan
+1. **Prioritas Kredensial Mengalahkan Todo**: Jika catatan memuat kredensial, password, PIN, atau token (misal: `"login dashboard admin... passwordnya RahasiaBanget#2026!"`), kategori WAJIB `credential`, BUKAN `todo`, meskipun ada kata kerja aksi seperti `login`.
+2. **Kutipan Agama / Quote / Renungan Panjang $\rightarrow$ REFERENCE / DRAFT**: Teks kutipan ayat Al-Qur'an, hadits, doa, dan kutipan filosofis (misal Surah Asy-Syarh) DILARANG masuk `todo`. Masuk ke `reference` (kutipan/doa) atau `draft` (refleksi > 250 karakter).
+3. **Multi-line Shopping List adalah TODO (Bukan Others)**: Daftar belanja berbaris tanpa harga WAJIB masuk `todo`. Dilarang memberikan tag halusinasi `food` pada pakaian atau sabun/odol.
+4. **Pertahankan Entitas Makanan Utama**: Untuk catatan makanan/jajan pendek, nama makanan konkret selalu dipertahankan sebagai Tag 1 (`cimin 12k` $\rightarrow$ `["cimin", "food"]`, `jajan cilok 5rebu` $\rightarrow$ `["cilok", "food"]`, `martabak telur 45k via qris bca` $\rightarrow$ `["martabak", "food", "qris"]`).
+
+### U. 4 Micro-Tuning Terakhir (Sanitizer & Classifier)
+1. **Bug Sanitizer Trailing Hyphen (`/^-+|-+$/g`)**: Pembersihan strip di awal dan akhir tag pada `normalizeTag()` dan `sanitizeTags()` di [`src/lib/ai/sanitizer.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/sanitizer.ts), mencegah tag berakhiran strip seperti `bab-`.
+2. **Guard Kredensial KTP / SIM / Paspor**: Kata `ktp`, `sim`, `paspor` HANYA memicu kategori `credential` jika memuat digit identitas (`\b\d{4,}\b`). Aktivitas birokrasi seperti `"perpanjang sim a... bawa fotokopi ktp"` otomatis masuk `todo`.
+3. **Catatan Curhat / Shower Thoughts $\rightarrow$ WAJIB `random-yap`**: Opini santai, uneg-uneg, dan renungan hidup tanpa aksi (misal: `"kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja"`) WAJIB dikategorikan sebagai `random-yap`, BUKAN `others`.
+4. **Tugas Riset / Perbandingan adalah TODO**: Catatan yang memuat kata kerja riset atau komparasi harga tanpa pembayaran nominal (misal: `"cari info biaya kuliah s2 itb"`, `"bandingin harga macbook m3 vs m4"`) WAJIB masuk `todo`.
+5. **Verifikasi Test Suite**: `scripts/test-intent-classifier.ts` memverifikasi 31/31 skenario uji lolos 100% PASS pada Live AI Pipeline dan Deterministic Heuristic Fallback.
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
