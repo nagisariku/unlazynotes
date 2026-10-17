@@ -12,13 +12,17 @@ export function processTodoNote(content: string, existingUserTags?: string[]): N
   const lower = text.toLowerCase();
   const tags: string[] = [];
 
-  // 1. Food orders, multi-line shopping lists, or rich entity tasks
+  // 1. Food orders, multi-line shopping lists, research/comparison tasks, or rich entity tasks
   const isShoppingList =
     /\b(beli|stok|belanja|pesen|pesan|order)\b/i.test(lower) &&
     (content.includes('\n') || /\b(dan|serta|stok)\b/i.test(lower));
 
+  const isResearchOrChore =
+    /\b(cari|bandingin|bandingkan|compare|riset|research|survey|survei|analisa|perpanjang|urus|bawa|fotokopi|kuliah|macbook|laptop|sim|ktp)\b/i.test(lower);
+
   if (
     isShoppingList ||
+    isResearchOrChore ||
     /\b(martabak|cilok|tahu\s*gejrot|nasgor|cimin|seblak|ayam|bakso|mie|sate|makan|food|gojek|grab)\b/i.test(lower)
   ) {
     const enriched = enrichDualLayerTags([], 'todo', text);
@@ -77,9 +81,9 @@ export function processTodoNote(content: string, existingUserTags?: string[]): N
   // 5. Fallback: extract concrete entity words from task (e.g. "beli odol dan sabun")
   if (tags.length === 0) {
     const words = lower
-      .replace(/\b(beli|cek|revisi|kerjakan|kirim|bereskan|harus|wajib|jangan|lupa|dan|atau|ke|di|pesen|pesan|order)\b/gi, '')
+      .replace(/\b(beli|cek|revisi|kerjakan|kirim|bereskan|harus|wajib|jangan|lupa|dan|atau|ke|di|pesen|pesan|order|cari|bandingin|bandingkan|riset|survey|perpanjang|urus|bawa)\b/gi, '')
       .split(/[^a-z0-9-]+/)
-      .filter(w => w.length >= 3);
+      .filter((w) => w.length >= 3);
     for (const w of words) {
       tags.push(w);
       if (tags.length >= 2) break;

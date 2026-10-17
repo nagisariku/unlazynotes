@@ -25,15 +25,22 @@ export function routeNoteIntent(content: string): DetectedModule {
     return 'bookmark';
   }
 
-  // 3. CREDENTIAL Intent: Deteksi data sensitif pribadi (Password, PIN ATM, No Rekening, NIK KTP, Token/API Key)
-  const isCredential =
-    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|nik(\s*ktp)?|ktp|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
+  // 3. CREDENTIAL Intent: Deteksi data sensitif pribadi (Password, PIN ATM, No Rekening, Token/API Key, dan NIK/SIM dengan nomor)
+  const hasPureCredential =
+    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
     /\b(password|pass|pin|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
     lower.startsWith('pass:') ||
     lower.startsWith('pin:') ||
     lower.startsWith('token:') ||
     lower.startsWith('secret:') ||
     lower.startsWith('sandi:');
+
+  // ID documents (KTP, SIM, Paspor, NIK) ONLY trigger credential if accompanied by identity numbers/digits
+  const hasIdDocumentWithNumber =
+    /\b(nik|ktp|sim|paspor|passport)\b[^\n\r]*?\b\d{4,}\b/i.test(lower) ||
+    (/\b(no(mor)?\s*(ktp|nik|sim|paspor|passport)|nik(\s*ktp)?|nomor\s*identitas)\b/i.test(lower) && /\b\d{4,}\b/.test(lower));
+
+  const isCredential = hasPureCredential || hasIdDocumentWithNumber;
 
   if (isCredential) {
     return 'credential';
@@ -107,7 +114,7 @@ export function routeNoteIntent(content: string): DetectedModule {
     isShoppingList ||
     lower.startsWith('todo') ||
     lower.startsWith('task') ||
-    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order)\b/i.test(lower) ||
+    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order|cari|carikan|bandingin|bandingkan|compare|riset|research|survey|survei|analisa|analisis|perpanjang|urus|bawa|ambil|fotokopi)\b/i.test(lower) ||
     (/\b(belajar|study|kuliah|review|prepare)\b/i.test(lower) && /\b(ujian|exam|uts|uas|kuis|quiz|tes|besok|minggu depan|midterm|finals)\b/i.test(lower));
 
   if (isCommunicationTask || isActionTask) {

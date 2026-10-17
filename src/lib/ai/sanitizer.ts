@@ -104,6 +104,10 @@ export const BANNED_TAGS = new Set([
   'bikin',
   'buat',
   'cari',
+  'bandingin',
+  'bandingkan',
+  'perpanjang',
+  'urus',
   'ambil',
   'tarik',
   'simpan',
@@ -154,7 +158,7 @@ export function normalizeTag(tag: string): string {
     .replace(/[_\s]+/g, '-')
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/^-+|-+$/g, '');
 
   // 1. Prevent truncated words: resolve words > 20 chars to their clean base form without arbitrary chopping
   if (t.length > 20) {
@@ -207,7 +211,7 @@ export function normalizeTag(tag: string): string {
   if (t === 'cursor-ai' || t === 'cursor-editor') t = 'cursor';
   if (t === 'tahu-gejrot-pedas' || t === 'tahu-gejrot') t = 'tahu-gejrot';
 
-  return t;
+  return t.replace(/^-+|-+$/g, '');
 }
 
 /**
@@ -353,11 +357,11 @@ export function sanitizeTags(
     t = t
       .replace(/[^a-z0-9-]/g, '')
       .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '');
+      .replace(/^-+|-+$/g, '');
     if (!t) continue;
 
-    // Strip trailing digits only if pure word ending in digits
-    t = t.replace(/\d+$/, '');
+    // Strip trailing digits only if pure word ending in digits and clean trailing hyphens
+    t = t.replace(/\d+$/, '').replace(/^-+|-+$/g, '');
     if (!t) continue;
 
     if (t === catNormalized) continue;
@@ -419,5 +423,8 @@ export function sanitizeTags(
     }
   }
 
-  return result.slice(0, maxTags);
+  return result
+    .map((tag) => tag.replace(/^-+|-+$/g, ''))
+    .filter(Boolean)
+    .slice(0, maxTags);
 }

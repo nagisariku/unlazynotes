@@ -189,6 +189,42 @@ const TEST_MATRIX: TestCase[] = [
     expectedTags: ['cilok', 'food'],
     description: 'Audit 4c: Retain primary food entity cilok',
   },
+
+  // --- 4 Micro-Tuning Edge Cases ---
+  {
+    input: 'perpanjang sim a ke polres bawa fotokopi ktp dan surat dokter',
+    expectedCat: 'todo',
+    expectedTags: ['sim', 'ktp'],
+    forbiddenTags: ['credential', 'perpanjang'],
+    description: 'Tuning 1: Bureaucracy task with KTP/SIM without digits MUST be todo (NOT credential)',
+  },
+  {
+    input: 'nik ktp riku 3201234567890123',
+    expectedCat: 'credential',
+    expectedTags: ['ktp'],
+    description: 'Tuning 1b: ID document WITH numbers is credential',
+  },
+  {
+    input: 'kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja',
+    expectedCat: 'random-yap',
+    expectedTags: ['macet'],
+    forbiddenTags: ['others', 'todo'],
+    description: 'Tuning 2: Curhat / shower thought WAJIB random-yap (NOT others)',
+  },
+  {
+    input: 'cari info biaya kuliah s2 itb tahun ini',
+    expectedCat: 'todo',
+    expectedTags: ['kuliah'],
+    forbiddenTags: ['others', 'cari'],
+    description: 'Tuning 3: Research task is TODO (NOT others)',
+  },
+  {
+    input: 'bandingin harga macbook m3 vs m4 sebelum beli',
+    expectedCat: 'todo',
+    expectedTags: ['macbook'],
+    forbiddenTags: ['others', 'bandingin', 'bandingkan', 'finance'],
+    description: 'Tuning 4: Comparison task without specific amount is TODO (NOT finance/others)',
+  },
 ];
 
 async function runClassifierTests() {
@@ -209,7 +245,8 @@ async function runClassifierTests() {
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
     const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
-    const isPass = catPass && tagsPass && forbiddenPass && countPass;
+    const hyphenPass = res.specific_tags.every((t) => !t.startsWith('-') && !t.endsWith('-'));
+    const isPass = catPass && tagsPass && forbiddenPass && countPass && hyphenPass;
 
     if (isPass) passedLive++;
 
@@ -222,6 +259,7 @@ async function runClassifierTests() {
       if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
       if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs/currencies leaked: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
       if (!countPass) console.log(`      ⚠️ Tag count discipline violated: ${res.specific_tags.length} tags (expected max 3)`);
+      if (!hyphenPass) console.log(`      ⚠️ Trailing/leading hyphens detected in tags: ${JSON.stringify(res.specific_tags.filter((t) => t.startsWith('-') || t.endsWith('-')))}`);
     }
   }
 
@@ -233,7 +271,8 @@ async function runClassifierTests() {
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
     const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
-    const isPass = catPass && tagsPass && forbiddenPass && countPass;
+    const hyphenPass = res.specific_tags.every((t) => !t.startsWith('-') && !t.endsWith('-'));
+    const isPass = catPass && tagsPass && forbiddenPass && countPass && hyphenPass;
 
     if (isPass) passedHeuristic++;
 

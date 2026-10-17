@@ -34,15 +34,22 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     return 'bookmark';
   }
 
-  // 3. Sensitive Credentials (Password, ATM PIN, Bank Account Number, NIK, Token, API Key)
-  const isCredential =
-    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|nik(\s*ktp)?|ktp|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
+  // 3. Sensitive Credentials (Password, ATM PIN, Bank Account Number, Token, API Key, dan NIK/SIM dengan nomor)
+  const hasPureCredential =
+    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
     /\b(password|pass|pin|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
     lower.startsWith('pass:') ||
     lower.startsWith('pin:') ||
     lower.startsWith('token:') ||
     lower.startsWith('secret:') ||
     lower.startsWith('sandi:');
+
+  // ID documents (KTP, SIM, Paspor, NIK) ONLY trigger credential if accompanied by identity numbers/digits
+  const hasIdDocumentWithNumber =
+    /\b(nik|ktp|sim|paspor|passport)\b[^\n\r]*?\b\d{4,}\b/i.test(lower) ||
+    (/\b(no(mor)?\s*(ktp|nik|sim|paspor|passport)|nik(\s*ktp)?|nomor\s*identitas)\b/i.test(lower) && /\b\d{4,}\b/.test(lower));
+
+  const isCredential = hasPureCredential || hasIdDocumentWithNumber;
 
   if (isCredential) {
     return 'credential';
@@ -124,11 +131,19 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     isShoppingList ||
     lower.startsWith('todo') ||
     lower.startsWith('task') ||
-    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order)\b/i.test(lower) ||
+    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order|cari|carikan|bandingin|bandingkan|compare|riset|research|survey|survei|analisa|analisis|perpanjang|urus|bawa|ambil|fotokopi)\b/i.test(lower) ||
     (/\b(belajar|study|kuliah|review|prepare)\b/i.test(lower) && /\b(ujian|exam|uts|uas|kuis|quiz|tes|besok|minggu depan|midterm|finals)\b/i.test(lower));
 
   if (isCommunicationTask || isActionTask) {
     return 'todo';
+  }
+
+  // 9. Curhat, Shower Thoughts & Life Musings without action -> 'random-yap' (NOT others!)
+  const isCurhatOrShowerThought =
+    /\b(kadang mikir|kepikiran|kenapa ya|heran|curhat|uneg-uneg|capek banget|males banget|kok bisa|shower thought|renungan|kenapa orang|ngapain ya)\b/i.test(lower);
+
+  if (isCurhatOrShowerThought) {
+    return 'random-yap';
   }
 
   // If rawCat from LLM was provided, map synonyms or use it
@@ -136,6 +151,9 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     const c = rawCat.toLowerCase().trim();
     if (c === 'bookmark' && !hasUrl) {
       return lower.includes('kodepos') ? 'reference' : 'others';
+    }
+    if (['rant', 'thought', 'yap', 'shower-thought', 'curhat', 'uneg-uneg', 'opini', 'random-yap'].includes(c)) {
+      return 'random-yap';
     }
     if (CATEGORIES.includes(c as NoteCategory)) {
       return c as NoteCategory;
@@ -161,7 +179,7 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     if (['recipe', 'quote', 'snippet', 'documentation'].includes(c)) {
       return 'reference';
     }
-    if (['idea', 'rant', 'thought', 'yap', 'shower-thought'].includes(c)) {
+    if (['idea', 'konsep'].includes(c)) {
       return 'others';
     }
   }
@@ -316,9 +334,10 @@ export function enrichDualLayerTags(
     }
   }
 
-  // 7. Health & Wellness Domain (Guarded against shopping lists)
+  // 7. Health & Wellness Domain (Guarded against shopping lists and todo tasks)
   const isHealth =
     !isShoppingList &&
+    category !== 'todo' &&
     /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|obat|vitamin|apotek|dokter|klinik)\b/i.test(lower);
   if (isHealth) {
     domainUmbrellas.push('health');
@@ -356,6 +375,9 @@ export function enrichDualLayerTags(
     if (/\badmin\b/i.test(lower)) domainEntities.push('admin');
     if (/\bdashboard\b/i.test(lower)) domainEntities.push('dashboard');
     if (/\blogin\b/i.test(lower)) domainEntities.push('login');
+    if (/\b(nik|ktp)\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) domainEntities.push('ktp');
+    if (/\bsim\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) domainEntities.push('sim');
+    if (/\bpaspor\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) domainEntities.push('paspor');
   }
 
   // 10. Scripture & Quotes Domain (Quran, Hadith, Doa, Philosophy, Quotes)
@@ -379,6 +401,27 @@ export function enrichDualLayerTags(
       domainUmbrellas.push('quote');
     }
   }
+
+  // 11. Curhat & Shower Thoughts Domain (random-yap)
+  const isCurhat =
+    category === 'random-yap' ||
+    /\b(curhat|uneg-uneg|kadang mikir|kepikiran|kenapa ya|heran|capek banget|males banget|kok bisa|shower thought|renungan|kenapa orang|ngapain ya|macet-macetan|macet)\b/i.test(lower);
+  if (isCurhat) {
+    if (/\b(macet|macet-macetan)\b/i.test(lower)) domainEntities.push('macet');
+    if (/\b(kerja|kantor|ngantor)\b/i.test(lower)) domainEntities.push('kerja');
+    if (/\b(liburan|healing|istirahat)\b/i.test(lower)) domainEntities.push('liburan');
+    if (/\bcurhat\b/i.test(lower)) domainUmbrellas.push('curhat');
+    else domainUmbrellas.push('renungan');
+  }
+
+  // 12. Research & Comparison & Chore Domain (todo)
+  if (/\b(macbook)\b/i.test(lower)) domainEntities.push('macbook');
+  if (/\b(laptop|gadget)\b/i.test(lower)) domainEntities.push('laptop');
+  if (/\b(biaya\s*kuliah|kuliah|kampus)\b/i.test(lower)) domainEntities.push('kuliah');
+  if (/\b(itb|ui|ugm|undip)\b/i.test(lower)) domainEntities.push('itb');
+  if (/\bpolres\b/i.test(lower)) domainEntities.push('polres');
+  if (/\bsim\b/i.test(lower) && !/\b\d{4,}\b/.test(lower)) domainEntities.push('sim');
+  if (/\bktp\b/i.test(lower) && !/\b\d{4,}\b/.test(lower)) domainEntities.push('ktp');
 
   // Candidate dishes/snacks and transit
   const dishCandidates = [
@@ -427,7 +470,7 @@ export function enrichDualLayerTags(
   }
 
   // Specialized Domain Priority 4: Health & Wellness
-  if (domainUmbrellas.includes('health')) {
+  if (category !== 'todo' && domainUmbrellas.includes('health')) {
     if (!combined.includes('health')) combined.push('health');
     for (const ent of domainEntities) {
       if (!combined.includes(ent)) combined.push(ent);
@@ -459,6 +502,21 @@ export function enrichDualLayerTags(
       if (!combined.includes(ent)) combined.push(ent);
       if (combined.length >= 3) break;
     }
+    return combined.slice(0, 3);
+  }
+
+  // Specialized Domain Priority 7: Curhat / Shower Thoughts (random-yap)
+  if (category === 'random-yap' || domainUmbrellas.includes('curhat') || domainUmbrellas.includes('renungan')) {
+    for (const ent of domainEntities) {
+      if (!combined.includes(ent)) combined.push(ent);
+    }
+    for (const umb of domainUmbrellas) {
+      if (!combined.includes(umb)) combined.push(umb);
+    }
+    for (const t of baseTags) {
+      if (!combined.includes(t) && !BANNED_TAGS.has(t)) combined.push(t);
+    }
+    if (combined.length === 0) combined.push('renungan');
     return combined.slice(0, 3);
   }
 
@@ -560,13 +618,15 @@ Analyze the user's note and return a strict JSON object with:
 
 PRIMARY INTENT CATEGORIES:
 - bookmark: Any note containing HTTP/HTTPS link(s), whether pure URL or accompanied by commentary/caption.
-- credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), NIK KTP, Token/API Key (whether formatted or free-text like "passwordnya ..."). STRICT PRIORITY OVER TODO: If a note contains credentials/passwords, it is ALWAYS "credential", even if it mentions action verbs like "login", "buka", or "akses".
+- credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), Token/API Key.
+  CRITICAL ID CARD GUARD: Words like "ktp", "sim", "paspor", "passport", "nik" ONLY trigger "credential" if accompanied by actual identity numbers/digits. Administrative tasks or procedures (e.g. "perpanjang sim a... bawa fotokopi ktp", "urus paspor") are actionable tasks and MUST be classified as "todo", NOT "credential"!
 - finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price. MUST ALWAYS retain the specific entity as Tag 1 (e.g. "cimin 12k" -> ["cimin", "food"]).
 - schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "demo produk client selasa jam 10 pagi", "flight jumat 20 okt").
-- todo: Action tasks, commands, chores, food orders, or multi-line shopping lists without prices. MULTI-LINE SHOPPING LISTS (e.g. clothes, soap, toiletries) are strictly "todo" (NEVER hallucinate "food" tag!).
+- todo: Action tasks, commands, chores, food orders, multi-line shopping lists, or research/comparison tasks (e.g. "cari info...", "bandingin harga...", "survei...", "perpanjang sim...", "urus berkas...").
+- random-yap: Casual thoughts, uneg-uneg, venting, shower thoughts, and life musings without action (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...", "kenapa ya tiap senin rasanya...", "curhat capek banget..."). WAJIB use "random-yap" (NOT "others") for personal reflections, curhat, and shower thoughts!
 - reference: Religious scriptures, Quranic verses, hadith, prayers (doa), quotes, recipes, code snippets. SCRIPTURES & QUOTES ARE NEVER TODO!
 - draft: Long reflections (>250 chars), essays, unformatted articles, speech transcripts.
-- others: Non-action notes, feelings, opinions, raw ideas, health symptoms/logs, and rants without action and without nominal amounts.
+- others: Specific non-action structured logs: health symptoms & medication logs (e.g. "migrain minum paracetamol"), gym/workout logs ("squat 60kg"), raw feature/business ideas ("ide fitur: ...").
 
 CORE TAGGING PRINCIPLES:
 1. High-Level Universal Root Umbrella:
@@ -583,7 +643,7 @@ CORE TAGGING PRINCIPLES:
    - DILARANG Tag Terpotong: Gunakan kata dasar yang utuh (gunakan demo atau presentation, JANGAN potong jadi product-demonstratio).
    - DILARANG Tag Redundan: Jangan keluarkan dua tag yang sinonim / semakna dalam satu catatan (misal: jangan pasang demo bersamaan dengan product-demo, jangan pasang kopi bersamaan dengan coffee).
    - DILARANG Tag Mata Uang / Pajak: Hapus tag nama mata uang seperti usd, idr, rp, dollar, dollars, tax, pajak.
-   - DILARANG Tag Kata Kerja: Jangan jadikan kata kerja aksi (seperti chat, beli, tanya, minum, bayar, kirim) sebagai tag!
+   - DILARANG Tag Kata Kerja: Jangan jadikan kata kerja aksi (seperti chat, beli, tanya, minum, bayar, kirim, cari, bandingin) sebagai tag!
    - DILARANG Tag Halusinasi Makanan: Jangan berikan tag "food" untuk sabun, odol, kemeja, pakaian, atau obat!
 ${userTagContext}
 Examples:
@@ -597,26 +657,33 @@ Examples:
    - "jajan tahu gejrot 10rebu" -> {"category": "finance", "specific_tags": ["tahu-gejrot", "food"]}
 2. Multi-line Shopping List (TODO, NOT Others, NO Food Hallucination):
    - "beli kemeja putih uniqlo \n stok sabun biore \n obat tetes mata rohto" -> {"category": "todo", "specific_tags": ["shopping", "uniqlo", "biore"]}
-3. Credentials (Strict Priority over Todo):
+3. Research, Comparison & Bureaucracy Tasks (TODO):
+   - "perpanjang sim a ke polres bawa fotokopi ktp" -> {"category": "todo", "specific_tags": ["sim", "ktp", "polres"]}
+   - "cari info biaya kuliah s2 itb" -> {"category": "todo", "specific_tags": ["kuliah", "itb"]}
+   - "bandingin harga macbook m3 vs m4" -> {"category": "todo", "specific_tags": ["macbook", "laptop"]}
+4. Curhat & Shower Thoughts (RANDOM-YAP, WAJIB Bukan Others):
+   - "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja" -> {"category": "random-yap", "specific_tags": ["macet", "kerja", "renungan"]}
+5. Credentials (Strict Priority over Todo when containing credentials):
    - "login dashboard admin pake email admin@shirobit.com passwordnya RahasiaBanget#2026!" -> {"category": "credential", "specific_tags": ["admin", "dashboard", "login"]}
    - "nomor rekening bca riku 1234567890" -> {"category": "credential", "specific_tags": ["bca", "rekening"]}
-4. Scriptures & Quotes (REFERENCE or DRAFT, NEVER Todo):
+   - "nik ktp riku 3201234567890123" -> {"category": "credential", "specific_tags": ["ktp", "nik"]}
+6. Scriptures & Quotes (REFERENCE or DRAFT, NEVER Todo):
    - "Maka sesungguhnya bersama kesulitan ada kemudahan. (QS. Asy-Syarh: 5-6)" -> {"category": "reference", "specific_tags": ["surah-asy-syarh", "quran"]}
-5. Subscription & Tech:
+7. Subscription & Tech:
    - "subscription cursor 20 usd kena tax 20 dollar" -> {"category": "finance", "specific_tags": ["cursor", "subscription", "tech"]}
-6. Schedule & Meetings:
+8. Schedule & Meetings:
    - "demo produk client selasa jam 10 pagi" -> {"category": "schedule", "specific_tags": ["demo", "meeting", "client"]}
    - "coffee break with client discuss Q4 roadmap jam 4 sore" -> {"category": "schedule", "specific_tags": ["q4-roadmap", "meeting", "client"]}
    - "meeting desain jam 3 sore" -> {"category": "schedule", "specific_tags": ["desain", "meeting"]}
-7. Debt & Loans (Finance):
+9. Debt & Loans (Finance):
    - "ubed minjem 100k" -> {"category": "finance", "specific_tags": ["ubed", "piutang"]}
    - "aku minjem 50k ke fajar" -> {"category": "finance", "specific_tags": ["fajar", "utang"]}
-8. Communication & Tasks (Todo):
+10. Communication & Tasks (Todo):
    - "chat rizky tanya proposal" -> {"category": "todo", "specific_tags": ["rizky", "proposal"]}
-9. Bookmarks:
+11. Bookmarks:
    - "https://medium.com/p/123 bacaan devops bagus" -> {"category": "bookmark", "specific_tags": ["medium", "devops"]}
    - "https://youtu.be/xyz referensi animasi web" -> {"category": "bookmark", "specific_tags": ["youtube", "animasi", "referensi"]}
-10. Health, Workout & Ideas (Others):
+12. Health, Workout & Ideas (Others):
    - "migrain minum paracetamol" -> {"category": "others", "specific_tags": ["health", "migrain", "paracetamol"]}
    - "leg day 4 set squat 60kg" -> {"category": "others", "specific_tags": ["workout", "gym", "squat"]}
    - "ide konten tiktok soal app fatigue" -> {"category": "others", "specific_tags": ["idea", "tiktok", "app-fatigue"]}
@@ -626,7 +693,7 @@ Formatting:
 - Output JSON ONLY.
 - lowercase-with-hyphens, max 20 chars per tag.
 - Category must be one of: "bookmark" | "credential" | "finance" | "schedule" | "todo" | "others" | "draft" | "reference" | "random-yap".`,
-      prompt: `Classify and extract tags as JSON {"category": "finance" | "todo" | "schedule" | "bookmark" | "credential" | "reference" | "draft" | "others", "specific_tags": [...], "source": null}:\n"""${content}"""`,
+      prompt: `Classify and extract tags as JSON {"category": "finance" | "todo" | "schedule" | "bookmark" | "credential" | "reference" | "draft" | "random-yap" | "others", "specific_tags": [...], "source": null}:\n"""${content}"""`,
     });
 
     // Extract JSON block even if model wraps in markdown code fences (```json ... ```)

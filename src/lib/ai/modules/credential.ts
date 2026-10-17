@@ -28,7 +28,9 @@ export function processCredentialNote(content: string): NoteTagResult {
   if (/\bpin\b/i.test(lower)) tags.push('pin');
   if (/\bwifi\b/i.test(lower)) tags.push('wifi');
   if (/\b(token|api_key|apikey|secret)\b/i.test(lower)) tags.push('api');
-  if (/\b(nik|ktp)\b/i.test(lower)) tags.push('ktp');
+  if (/\b(nik|ktp)\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('ktp');
+  if (/\bsim\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('sim');
+  if (/\bpaspor\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) tags.push('paspor');
 
   // 3. Fallback to taxonomy extraction
   if (tags.length < 2) {

@@ -84,7 +84,19 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         };
       }
 
-      // 3. Dual-layer entity extraction for health, ideas, workout, rants, etc.
+      // 3. Detect Random-Yap (Curhat, shower thoughts, rants, uneg-uneg)
+      const isRandomYap =
+        /\b(kadang mikir|kepikiran|kenapa ya|heran|curhat|uneg-uneg|capek banget|males banget|kok bisa|shower thought|renungan|kenapa orang|ngapain ya)\b/i.test(lower);
+      if (isRandomYap) {
+        const enriched = enrichDualLayerTags([], 'random-yap', text);
+        return {
+          category: 'random-yap',
+          specific_tags: sanitizeTags(enriched, 'random-yap', text, 3, existingUserTags),
+          source: null,
+        };
+      }
+
+      // 4. Dual-layer entity extraction for health, ideas, workout, etc.
       const enriched = enrichDualLayerTags([], 'others', text);
       return {
         category: 'others',
