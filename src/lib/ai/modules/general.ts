@@ -56,7 +56,7 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     (/\b(flight|terbang|berangkat)\s+(senin|selasa|rabu|kamis|jumat|sabtu|minggu|\d{1,2}\s+[a-z]+)\b/i.test(lower)) ||
     (/\b(meeting|rapat|sync|call)\b/i.test(lower) && /\b(jam|pukul|\d+[:.]\d+|\d+\s*sore|\d+\s*pagi|\d+\s*siang|\d+\s*malam)\b/i.test(lower));
 
-  const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|juta|perak)\b/i.test(lower);
+  const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak|usd|dollar|dollars|sgd|eur|gbp)\b/i.test(lower);
   const hasCurrencyPrefix = /(\$|rp\.?|idr|usd|sgd|eur|gbp)\s*\d+/i.test(lower);
 
   if (isSchedulePattern && !hasCurrencySuffix && !hasCurrencyPrefix) {
@@ -70,10 +70,10 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
 
   const hasDebtPattern =
     /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
-    (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
+    (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
 
-  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee)\b/i.test(lower);
-  const hasItemWithNumber = /\b(cimin|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting)\s+(\$|rp)?\d+/i.test(lower);
+  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan)\b/i.test(lower);
+  const hasItemWithNumber = /\b(cimin|cilok|tahu|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting|cursor)\s+(\$|rp)?\d+/i.test(lower);
 
   const isFinance =
     !isHealthMetric &&
@@ -105,7 +105,7 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
   const isActionTask =
     lower.startsWith('todo') ||
     lower.startsWith('task') ||
-    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan)\b/i.test(lower) ||
+    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order)\b/i.test(lower) ||
     (/\b(belajar|study|kuliah|review|prepare)\b/i.test(lower) && /\b(ujian|exam|uts|uas|kuis|quiz|tes|besok|minggu depan|midterm|finals)\b/i.test(lower));
 
   if (isCommunicationTask || isActionTask) {
@@ -152,16 +152,25 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
 
 /**
  * Ensures universal Dual-Layer Tagging: [Specific Entity] + [Broad Concept/Domain].
- * Strictly ensures: Dilarang menghasilkan tag kosong jika terdapat entitas nama orang, brand, tempat, gejala, atau subjek konkret!
+ * Strictly enforces 3-tier tag allocation (max 2 - 3 tags per note):
+ * - Tag 1 (REQUIRED - Specific Entity): Concrete noun (cilok, tahu-gejrot, martabak, cursor, q4-roadmap, demo, etc.)
+ * - Tag 2 (REQUIRED - Domain Umbrella): Universal English root word (food, drink, tech, meeting, subscription, health, etc.)
+ * - Tag 3 (OPTIONAL - Context/Brand/Person): Brand, person, or context (gojek, client, bca, etc.)
  */
-export function enrichDualLayerTags(tags: string[], category: NoteCategory, content: string, rawLlmCat?: string): string[] {
+export function enrichDualLayerTags(
+  tags: string[],
+  category: NoteCategory,
+  content: string,
+  rawLlmCat?: string
+): string[] {
   const lower = content.toLowerCase();
   let baseTags = [...tags]
-    .map(t => normalizeTag(t))
-    .filter(t => t && !BANNED_TAGS.has(t));
+    .map((t) => normalizeTag(t))
+    .filter((t) => t && !BANNED_TAGS.has(t));
 
-  const domainUmbrellas: string[] = [];
   const domainEntities: string[] = [];
+  const domainUmbrellas: string[] = [];
+  const domainContexts: string[] = [];
 
   // 1. Debt & Loans Domain (Utang vs Piutang)
   if (/\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower)) {
@@ -188,26 +197,75 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
   }
 
   // 2. Coffee & Beverage Domain
-  if (/\b(kopi\s*kenangan|fore|janji\s*jiwa|starbucks|tomoro|kopi|coffee|ngopi)\b/i.test(lower)) {
+  if (/\b(kopi\s*kenangan|fore|janji\s*jiwa|starbucks|tomoro)\b/i.test(lower)) {
     domainUmbrellas.push('kopi');
     if (/\bkopi\s*kenangan\b/i.test(lower)) domainEntities.push('kopi-kenangan');
     else if (/\bfore\b/i.test(lower)) domainEntities.push('fore');
     else if (/\bjanji\s*jiwa\b/i.test(lower)) domainEntities.push('janji-jiwa');
     else if (/\bstarbucks\b/i.test(lower)) domainEntities.push('starbucks');
     else if (/\btomoro\b/i.test(lower)) domainEntities.push('tomoro');
-  } else if (/\b(tequila|matcha|beer|bir|boba|wine|jus|juice|teh|tea|latte|espresso|americano|cocktail|vodka|soju)\b/i.test(lower)) {
+  } else if (/\b(kopi|coffee|ngopi)\b/i.test(lower) && !/\b(coffee\s*break)\b/i.test(lower)) {
+    domainUmbrellas.push('kopi');
+  } else if (/\b(tequila|matcha|beer|bir|boba|wine|jus|juice|teh|tea|latte|es\s*teh|cocktail|vodka|soju)\b/i.test(lower)) {
     domainUmbrellas.push('drink');
   }
 
   // 3. Food / Snack Domain
   const isFood =
-    /\b(cimin|cireng|batagor|seblak|nasgor|nasi|ayam|ciken|chicken|bakso|mie|sate|martabak|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza|odol|sabun)\b/i.test(lower) ||
+    /\b(cimin|cireng|batagor|seblak|nasgor|nasi|ayam|ciken|chicken|bakso|mie|sate|martabak|cilok|tahu\s*gejrot|siomay|pempek|soto|rawon|resto|cafe|kuliner|makanan|gorengan|burger|pizza|odol|sabun)\b/i.test(lower) ||
     (category === 'finance' && /\b(makan|jajan|lunch|dinner|snack)\b/i.test(lower));
   if (isFood && !domainUmbrellas.includes('kopi')) {
     domainUmbrellas.push('food');
   }
 
-  // 4. Communication & Task Domain
+  // Specific food dishes
+  if (/\bmartabak\b/i.test(lower)) domainEntities.push('martabak');
+  if (/\bcilok\b/i.test(lower)) domainEntities.push('cilok');
+  if (/\btahu\s*gejrot\b/i.test(lower)) domainEntities.push('tahu-gejrot');
+  if (/\bnasgor\b/i.test(lower)) domainEntities.push('nasgor');
+  if (/\bcimin\b/i.test(lower)) domainEntities.push('cimin');
+
+  // Multi-item food + drink (e.g. "nasgor mawut 18rb es teh 4k")
+  if (/\b(es\s*teh|teh|tea)\b/i.test(lower) && domainUmbrellas.includes('food')) {
+    domainUmbrellas.push('drink');
+  }
+
+  // Brand / Delivery Context
+  if (/\bgojek\b/i.test(lower)) domainContexts.push('gojek');
+  if (/\bgrab\b/i.test(lower)) domainContexts.push('grab');
+
+  // 4. Tech & Subscription Domain
+  if (/\b(subscription|langganan|subs)\b/i.test(lower)) {
+    domainUmbrellas.push('subscription');
+  }
+  if (/\b(cursor)\b/i.test(lower)) {
+    domainEntities.push('cursor');
+    domainUmbrellas.push('tech');
+  } else if (/\b(vps|hosting|server|saas|software|cloud|code|editor|ai)\b/i.test(lower)) {
+    domainUmbrellas.push('tech');
+  }
+
+  // 5. Schedule & Meeting Domain
+  if (/\b(q4\s*roadmap|roadmap)\b/i.test(lower)) {
+    domainEntities.push('q4-roadmap');
+  }
+  if (/\b(demo|product\s*demo|produk\s*demo)\b/i.test(lower)) {
+    domainEntities.push('demo');
+  }
+  if (/\bdesain\b/i.test(lower)) {
+    domainEntities.push('desain');
+  }
+  if (/\b(client|klien)\b/i.test(lower)) {
+    domainContexts.push('client');
+  }
+  if (
+    category === 'schedule' ||
+    /\b(meeting|rapat|sync|call|discuss|coffee\s*break|demo)\b/i.test(lower)
+  ) {
+    domainUmbrellas.push('meeting');
+  }
+
+  // 6. Communication & Task Domain
   const commMatch = lower.match(/\b(chat|telepon|telpon|wa|whatsapp|hubungi|dm|email|call)\s+([a-z0-9_-]+)(.*)/i);
   if (commMatch) {
     const person = commMatch[2].trim();
@@ -220,7 +278,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     }
   }
 
-  // 5. Health & Wellness Domain (gejala, obat, workout)
+  // 7. Health & Wellness Domain
   const isHealth =
     /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|obat|vitamin|apotek|dokter|klinik)\b/i.test(lower);
   if (isHealth) {
@@ -240,7 +298,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     if (/\bleg\s*day\b/i.test(lower)) domainEntities.push('leg-day');
   }
 
-  // 6. Ideas & Creative Domain
+  // 8. Ideas & Creative Domain
   if (/\b(ide|idea|kepikiran|konsep)\b/i.test(lower)) {
     domainUmbrellas.push('idea');
     if (/\btiktok\b/i.test(lower)) domainEntities.push('tiktok');
@@ -249,7 +307,7 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     if (/\bfitur\b/i.test(lower)) domainEntities.push('fitur');
   }
 
-  // 7. Credential Domain (Bank + Type)
+  // 9. Credential Domain
   if (category === 'credential' || /\b(no\s*rek|nomor\s*rekening|rekening|pin\s*atm|pin|password|wifi)\b/i.test(lower)) {
     if (/\bbca\b/i.test(lower)) domainEntities.push('bca');
     if (/\b(rekening|no\s*rek|nomor\s*rekening)\b/i.test(lower)) domainEntities.push('rekening');
@@ -258,16 +316,10 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     if (/\bwifi\b/i.test(lower)) domainEntities.push('wifi');
   }
 
-  // 8. Schedule Domain
-  if (category === 'schedule' || /\bmeeting\b/i.test(lower)) {
-    if (/\bdesain\b/i.test(lower)) domainEntities.push('desain');
-    if (/\bmeeting\b/i.test(lower)) domainEntities.push('meeting');
-  }
-
   // Candidate dishes/snacks and transit
   const dishCandidates = [
     'cimin', 'seblak', 'cireng', 'batagor', 'rendang', 'nasgor', 'ayam', 'bakso', 'mie', 'sate',
-    'bensin', 'pertalite', 'pertamax', 'parkir', 'tol', 'gojek', 'grab', 'ojol', 'indihome'
+    'bensin', 'pertalite', 'pertamax', 'parkir', 'tol', 'ojol', 'indihome'
   ];
   for (const dish of dishCandidates) {
     if (lower.includes(dish) && !domainEntities.includes(dish)) {
@@ -322,20 +374,41 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
     return combined.slice(0, 3);
   }
 
-  // General Domain Combination
+  // STRICT 3-TIER ALLOCATION ORDER:
+  // Tier 1: Specific Entity (martabak, cursor, q4-roadmap, demo, cilok, tahu-gejrot, nasgor)
   for (const ent of domainEntities) {
     if (!combined.includes(ent)) combined.push(ent);
+    if (combined.length >= 3) break;
   }
 
-  for (const t of baseTags) {
-    if (!domainUmbrellas.includes(t) && !combined.includes(t)) {
-      combined.push(t);
+  // Tier 2: Domain Umbrella (food, drink, tech, meeting, subscription, etc.)
+  if (combined.length < 3) {
+    for (const umb of domainUmbrellas) {
+      if (!combined.includes(umb)) combined.push(umb);
+      if (combined.length >= 3) break;
     }
   }
 
-  for (const umb of domainUmbrellas) {
-    if (!combined.includes(umb)) {
-      combined.push(umb);
+  // Tier 3: Context / Brand / Person (gojek, client, bca, etc.)
+  if (combined.length < 3) {
+    for (const ctx of domainContexts) {
+      if (!combined.includes(ctx)) combined.push(ctx);
+      if (combined.length >= 3) break;
+    }
+  }
+
+  // Tier 4: Incorporate valid candidate baseTags from LLM if room remains
+  if (combined.length < 3) {
+    for (const t of baseTags) {
+      if (
+        !combined.includes(t) &&
+        !domainUmbrellas.includes(t) &&
+        !domainContexts.includes(t) &&
+        !BANNED_TAGS.has(t)
+      ) {
+        combined.push(t);
+        if (combined.length >= 3) break;
+      }
     }
   }
 
@@ -346,8 +419,8 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
       .replace(/\b\d+\s*(k|rb|jt|ribu|juta)?\b/gi, '')
       .replace(/\b(beli|bayar|tfr|transfer|kirim|buat|untuk|ke|di)\b/gi, '')
       .split(/[^a-z0-9-]+/)
-      .map(t => normalizeTag(t))
-      .filter(t => t.length >= 3 && !BANNED_TAGS.has(t));
+      .map((t) => normalizeTag(t))
+      .filter((t) => t.length >= 3 && !BANNED_TAGS.has(t));
 
     if (cleanTokens.length > 0) {
       combined.push(cleanTokens[0]);
@@ -364,7 +437,8 @@ export function enrichDualLayerTags(tags: string[], category: NoteCategory, cont
  */
 export async function processGeneralNote(
   content: string,
-  heuristicFallback: (text: string) => NoteTagResult
+  heuristicFallback: (text: string) => NoteTagResult,
+  existingUserTags?: string[]
 ): Promise<NoteTagResult> {
   const apiKey = process.env.AI_PROVIDER_API_KEY;
   const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
@@ -382,51 +456,74 @@ export async function processGeneralNote(
       },
     });
 
+    const userTagContext =
+      existingUserTags && existingUserTags.length > 0
+        ? `\nUSER EXISTING TAG MEMORY (Prioritize reusing these tags over inventing new synonyms):\n${JSON.stringify(existingUserTags.slice(0, 30))}\n`
+        : '';
+
     const result = await generateText({
       model: openaiCompatible(modelName),
       temperature: 0,
       system: `You are an intelligent semantic classifier and tagging engine for UnlazyNotes.
 Analyze the user's note and return a strict JSON object with:
 1. "category": exactly 1 primary intent category.
-2. "specific_tags": 1 to 3 domain-aware tags (lowercase-with-hyphens).
+2. "specific_tags": 2 to 3 domain-aware tags (lowercase-with-hyphens).
 3. "source": detected platform source string or null.
 
 PRIMARY INTENT CATEGORIES:
 - bookmark: Any note containing HTTP/HTTPS link(s), whether pure URL or accompanied by commentary/caption.
 - credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), NIK KTP, Token/API Key (whether formatted or free-text).
 - finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price.
-- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "flight jumat 20 okt").
-- todo: Action tasks, commands, chores, or communication requests (chat, call, wa, tanya, beli, cek, revisi) WITHOUT specific clock times.
+- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "demo produk client selasa jam 10 pagi", "flight jumat 20 okt").
+- todo: Action tasks, commands, chores, food orders, or communication requests (chat, call, wa, tanya, beli, pesen, cek, revisi) WITHOUT specific clock times.
 - others: Non-action notes, feelings, opinions, raw ideas, health symptoms/logs, and rants without action and without nominal amounts.
 
-TAGGING RULES (ENTITY + DOMAIN UMBRELLA):
-Rule 1 (Standard English Umbrella Tags): Always use standard English for domain umbrella tags (e.g. use "food" NOT "makanan", "health" NOT "kesehatan", "idea" NOT "ide", "drink" NOT "minuman") to keep tag history unified.
-Rule 2 (NO ACTION VERBS AS TAGS): NEVER extract action verbs as tags (e.g. NEVER tag 'chat', 'beli', 'tanya', 'minum', 'bayar', 'transfer', 'kirim', 'hubungi'). Only extract concrete nouns, subjects, topics, and person names!
-Rule 3: NEVER leave specific entities empty! Always extract specific entities (names, brands, dishes, symptoms, topics) + domain umbrella:
-
+CORE TAGGING PRINCIPLES:
+1. High-Level Universal Root Umbrella:
+   - Tag payung (Domain Umbrella) HARUS selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (Single universal English root word):
+     food, drink, tech, work, meeting, pet, music, gaming, health, travel, finance, subscription.
+   - DILARANG membuat tag turunan/spesifik yang merupakan pecahan domain utama (gunakan "food" BUKAN "food-order"/"street-food"/"jajan"; gunakan "drink" BUKAN "beverage"/"minuman").
+2. Prioritize Tag Reuse (User Tag Memory):
+   - Prioritaskan untuk MEMAKAI ULANG tag yang sudah sering digunakan user pada catatan-catatan sebelumnya agar tag dashboard rapi.
+3. Strict Tag Allocation Discipline (Maksimal 2 - 3 Tag per Catatan):
+   - Tag 1 (WAJIB - Specific Entity): Subjek/kata benda konkret dari teks user (contoh: cilok, tahu-gejrot, martabak, cursor, q4-roadmap, demo, nasgor, cimin).
+   - Tag 2 (WAJIB - Domain Umbrella): 1 kata dasar payung universal (contoh: food, drink, tech, meeting, pet, gaming, subscription).
+   - Tag 3 (OPSIONAL - Context/Brand/Person): Brand atau nama orang jika relevan (contoh: gojek, bca, client).
+4. Negative Constraints:
+   - DILARANG Tag Terpotong: Gunakan kata dasar yang utuh (gunakan demo atau presentation, JANGAN potong jadi product-demonstratio).
+   - DILARANG Tag Redundan: Jangan keluarkan dua tag yang sinonim / semakna dalam satu catatan (misal: jangan pasang demo bersamaan dengan product-demo, jangan pasang kopi bersamaan dengan coffee).
+   - DILARANG Tag Mata Uang / Pajak: Hapus tag nama mata uang seperti usd, idr, rp, dollar, dollars, tax, pajak.
+   - DILARANG Tag Kata Kerja: Jangan jadikan kata kerja aksi (seperti chat, beli, tanya, minum, bayar, kirim) sebagai tag!
+${userTagContext}
 Examples:
-1. Food & Drinks (Finance):
-   - "cimin 20k" -> ["cimin", "food"]
-   - "kopi kenangan 22k" -> ["kopi-kenangan", "kopi"]
-2. Debt & Loans (Finance): Strict direction of money:
-   - "ubed minjem 100k" (our money borrowed by someone) -> ["ubed", "piutang"]
-   - "aku minjem 50k ke fajar" (our debt/obligation to someone) -> ["fajar", "utang"]
-3. Communication & Task (Todo): Person name + topic (NO VERBS like 'chat' or 'tanya'):
-   - "chat rizky tanya proposal" -> ["rizky", "proposal"]
-4. Schedule: Topic + event type:
-   - "meeting desain jam 3 sore" -> ["desain", "meeting"]
-5. Bookmarks: Platform name + caption topic:
-   - "https://medium.com/p/123 bacaan devops bagus" -> ["medium", "devops"]
-   - "https://youtu.be/xyz referensi animasi web" -> ["youtube", "animasi", "referensi"]
-6. Credentials: Bank/entity + type:
-   - "nomor rekening bca riku 1234567890" -> ["bca", "rekening"]
-   - "pin atm 182930" -> ["atm", "pin"]
-7. Health & Wellness (Others): Symptom, medicine, workout (umbrella: "health", NO verbs like 'minum'):
-   - "migrain minum paracetamol" -> ["health", "migrain", "paracetamol"]
-   - "leg day 4 set squat 60kg" -> ["workout", "gym", "squat"]
-8. Ideas & Concepts (Others): Concept umbrella "idea" + platform + topic:
-   - "ide konten tiktok soal app fatigue" -> ["idea", "tiktok", "app-fatigue"]
-   - "ide fitur: voice note transcription" -> ["idea", "fitur", "voice-note"]
+1. Food & Drink:
+   - "pesen martabak manis gojek" -> {"category": "todo", "specific_tags": ["martabak", "food", "gojek"]}
+   - "cimin 20k" -> {"category": "finance", "specific_tags": ["cimin", "food"]}
+   - "kopi kenangan 22k" -> {"category": "finance", "specific_tags": ["kopi-kenangan", "kopi"]}
+   - "nasgor mawut 18rb es teh 4k" -> {"category": "finance", "specific_tags": ["nasgor", "food", "drink"]}
+   - "jajan cilok depan indomaret 5rb" -> {"category": "finance", "specific_tags": ["cilok", "food"]}
+   - "jajan tahu gejrot 10rebu" -> {"category": "finance", "specific_tags": ["tahu-gejrot", "food"]}
+2. Subscription & Tech:
+   - "subscription cursor 20 usd kena tax 20 dollar" -> {"category": "finance", "specific_tags": ["cursor", "subscription", "tech"]}
+3. Schedule & Meetings:
+   - "demo produk client selasa jam 10 pagi" -> {"category": "schedule", "specific_tags": ["demo", "meeting", "client"]}
+   - "coffee break with client discuss Q4 roadmap jam 4 sore" -> {"category": "schedule", "specific_tags": ["q4-roadmap", "meeting", "client"]}
+   - "meeting desain jam 3 sore" -> {"category": "schedule", "specific_tags": ["desain", "meeting"]}
+4. Debt & Loans (Finance):
+   - "ubed minjem 100k" -> {"category": "finance", "specific_tags": ["ubed", "piutang"]}
+   - "aku minjem 50k ke fajar" -> {"category": "finance", "specific_tags": ["fajar", "utang"]}
+5. Communication & Tasks (Todo):
+   - "chat rizky tanya proposal" -> {"category": "todo", "specific_tags": ["rizky", "proposal"]}
+6. Bookmarks:
+   - "https://medium.com/p/123 bacaan devops bagus" -> {"category": "bookmark", "specific_tags": ["medium", "devops"]}
+   - "https://youtu.be/xyz referensi animasi web" -> {"category": "bookmark", "specific_tags": ["youtube", "animasi", "referensi"]}
+7. Credentials:
+   - "nomor rekening bca riku 1234567890" -> {"category": "credential", "specific_tags": ["bca", "rekening"]}
+8. Health, Workout & Ideas (Others):
+   - "migrain minum paracetamol" -> {"category": "others", "specific_tags": ["health", "migrain", "paracetamol"]}
+   - "leg day 4 set squat 60kg" -> {"category": "others", "specific_tags": ["workout", "gym", "squat"]}
+   - "ide konten tiktok soal app fatigue" -> {"category": "others", "specific_tags": ["idea", "tiktok", "app-fatigue"]}
+   - "ide fitur: voice note transcription" -> {"category": "others", "specific_tags": ["idea", "fitur", "voice-note"]}
 
 Formatting:
 - Output JSON ONLY.
@@ -459,7 +556,7 @@ Formatting:
     else if (typeof parsed.item === 'string') rawTags = [parsed.item];
 
     const enriched = enrichDualLayerTags(rawTags, category, content, rawCategory);
-    const cleanTags = sanitizeTags(enriched, category, content, 3);
+    const cleanTags = sanitizeTags(enriched, category, content, 3, existingUserTags);
 
     let cleanSource: Source | null = null;
     if (parsed.source) {

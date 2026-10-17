@@ -100,6 +100,54 @@ const TEST_MATRIX: TestCase[] = [
     expectedTags: ['idea', 'fitur', 'voice-note'],
     description: 'Edge 5: Feature idea without empty tags (umbrella: idea)',
   },
+
+  // --- Dynamic Taxonomy & Anti-Flood Test Cases (Prompt Enhancements) ---
+  {
+    input: 'pesen martabak manis gojek',
+    expectedCat: 'todo',
+    expectedTags: ['martabak', 'food', 'gojek'],
+    forbiddenTags: ['pesen', 'pesan'],
+    description: 'Taxonomy 1: Food order task (entity: martabak, umbrella: food, brand: gojek)',
+  },
+  {
+    input: 'demo produk client selasa jam 10 pagi',
+    expectedCat: 'schedule',
+    expectedTags: ['demo', 'meeting', 'client'],
+    forbiddenTags: ['product-demonstratio'],
+    description: 'Taxonomy 2: Product demo schedule (entity: demo, umbrella: meeting, person: client)',
+  },
+  {
+    input: 'subscription cursor 20 usd kena tax 20 dollar',
+    expectedCat: 'finance',
+    expectedTags: ['cursor', 'subscription', 'tech'],
+    forbiddenTags: ['usd', 'dollar', 'tax', 'pajak'],
+    description: 'Taxonomy 3: Tech subscription with currency/tax stripped (cursor + subscription + tech)',
+  },
+  {
+    input: 'coffee break with client discuss Q4 roadmap jam 4 sore',
+    expectedCat: 'schedule',
+    expectedTags: ['q4-roadmap', 'meeting', 'client'],
+    forbiddenTags: ['discuss'],
+    description: 'Taxonomy 4: Meeting schedule with topic entity (q4-roadmap + meeting + client)',
+  },
+  {
+    input: 'nasgor mawut 18rb es teh 4k',
+    expectedCat: 'finance',
+    expectedTags: ['nasgor', 'food', 'drink'],
+    description: 'Taxonomy 5: Multi-dish finance transaction (nasgor + food + drink)',
+  },
+  {
+    input: 'jajan cilok depan indomaret 5rb',
+    expectedCat: 'finance',
+    expectedTags: ['cilok', 'food'],
+    description: 'Taxonomy 6: Street snack finance (cilok + food)',
+  },
+  {
+    input: 'jajan tahu gejrot 10rebu',
+    expectedCat: 'finance',
+    expectedTags: ['tahu-gejrot', 'food'],
+    description: 'Taxonomy 7: Local snack finance with Indonesian currency slang (tahu-gejrot + food)',
+  },
 ];
 
 async function runClassifierTests() {
@@ -119,7 +167,8 @@ async function runClassifierTests() {
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
-    const isPass = catPass && tagsPass && forbiddenPass;
+    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
+    const isPass = catPass && tagsPass && forbiddenPass && countPass;
 
     if (isPass) passedLive++;
 
@@ -130,7 +179,8 @@ async function runClassifierTests() {
     if (!isPass) {
       if (!catPass) console.log(`      ⚠️ Category mismatch: got "${res.category}", expected "${tc.expectedCat}"`);
       if (!tagsPass) console.log(`      ⚠️ Tags mismatch: missing ${JSON.stringify(tc.expectedTags.filter((t) => !res.specific_tags.includes(t)))}`);
-      if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs leaked into tags: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
+      if (!forbiddenPass) console.log(`      ⚠️ Forbidden verbs/currencies leaked: ${JSON.stringify(tc.forbiddenTags?.filter((ft) => res.specific_tags.includes(ft)))}`);
+      if (!countPass) console.log(`      ⚠️ Tag count discipline violated: ${res.specific_tags.length} tags (expected max 3)`);
     }
   }
 
@@ -141,7 +191,8 @@ async function runClassifierTests() {
     const catPass = res.category === tc.expectedCat;
     const tagsPass = tc.expectedTags.every((t) => res.specific_tags.includes(t));
     const forbiddenPass = !tc.forbiddenTags || tc.forbiddenTags.every((ft) => !res.specific_tags.includes(ft));
-    const isPass = catPass && tagsPass && forbiddenPass;
+    const countPass = res.specific_tags.length >= 1 && res.specific_tags.length <= 3;
+    const isPass = catPass && tagsPass && forbiddenPass && countPass;
 
     if (isPass) passedHeuristic++;
 

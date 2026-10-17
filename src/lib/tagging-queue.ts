@@ -5,8 +5,10 @@ import { eq } from 'drizzle-orm';
 
 export interface TaggingTask {
   noteId: string;
+  userId?: string;
   content: string;
   tier: 'free' | 'pro';
+  existingUserTags?: string[];
   createdAt: number;
   onComplete?: (result: { category: string; specificTags: string[] }) => void;
   onError?: (error: unknown) => void;
@@ -62,7 +64,21 @@ class TaggingQueueManager {
 
     (async () => {
       try {
-        const tagResult = await generateNoteTags(task.content);
+        let existingUserTags = task.existingUserTags;
+        if (!existingUserTags && task.userId) {
+          try {
+            const userNotes = await db.query.notes.findMany({
+              where: eq(notes.userId, task.userId),
+              columns: { specificTags: true },
+              limit: 50,
+            });
+            existingUserTags = Array.from(new Set(userNotes.flatMap((n) => n.specificTags || [])));
+          } catch {
+            // Non-fatal fallback
+          }
+        }
+
+        const tagResult = await generateNoteTags(task.content, existingUserTags);
         const validCategory: NoteCategory = (tagResult.category as NoteCategory) || 'others';
 
         await db

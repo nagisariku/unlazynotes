@@ -22,10 +22,19 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
   {
     canonical: 'bill',
     category: 'finance',
-    description: 'Recurring utility bills, rent, and subscriptions',
+    description: 'Recurring utility bills, rent, and public services',
     aliases: {
-      id: ['tagihan', 'langganan', 'pln', 'listrik', 'pdam', 'air', 'bpjs', 'wifi', 'internet', 'indihome', 'sewa'],
-      en: ['bill', 'subscription', 'utility', 'utilities', 'electricity', 'water', 'rent', 'insurance', 'telecom'],
+      id: ['tagihan', 'pln', 'listrik', 'pdam', 'air', 'bpjs', 'wifi', 'internet', 'indihome', 'sewa'],
+      en: ['bill', 'utility', 'utilities', 'electricity', 'water', 'rent', 'insurance', 'telecom'],
+    },
+  },
+  {
+    canonical: 'subscription',
+    category: 'finance',
+    description: 'Recurring SaaS, memberships, digital services, and subscriptions',
+    aliases: {
+      id: ['langganan', 'subs', 'subscription', 'membership'],
+      en: ['subscription', 'saas', 'membership', 'subs'],
     },
   },
   {
@@ -33,7 +42,7 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Food, dining, groceries, and meals',
     aliases: {
-      id: ['makanan', 'cimin', 'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang'],
+      id: ['makanan', 'cimin', 'rendang', 'cireng', 'batagor', 'seblak', 'nasgor', 'ayam', 'ciken', 'bakso', 'mie', 'sate', 'martabak', 'cilok', 'tahu-gejrot', 'tahu gejrot', 'siomay', 'pempek', 'soto', 'rawon', 'gorengan', 'makan', 'jajan', 'snack', 'lunch', 'dinner', 'sarapan', 'resto', 'cafe', 'warteg', 'padang'],
       en: ['food', 'meal', 'lunch', 'dinner', 'breakfast', 'restaurant', 'groceries', 'snack', 'burger', 'pizza', 'snack-food'],
     },
   },
@@ -60,8 +69,8 @@ export const FINANCE_TAXONOMY: CanonicalTagDef[] = [
     category: 'finance',
     description: 'Servers, cloud, hosting, and tech infrastructure',
     aliases: {
-      id: ['vps', 'server', 'hosting', 'domain', 'cloud', 'software'],
-      en: ['tech', 'technology', 'vps', 'server', 'hosting', 'domain', 'cloud', 'software', 'saas'],
+      id: ['vps', 'server', 'hosting', 'domain', 'cloud', 'software', 'cursor'],
+      en: ['tech', 'technology', 'vps', 'server', 'hosting', 'domain', 'cloud', 'software', 'saas', 'cursor'],
     },
   },
   {

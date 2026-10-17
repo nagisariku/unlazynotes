@@ -17,7 +17,7 @@ export * from './ai/taxonomy';
  * Heuristic fallback parser when AI provider is unreachable or for deterministic offline routing.
  * Follows the modular category handlers and reusable clustering formula.
  */
-export function heuristicTagNote(content: string): NoteTagResult {
+export function heuristicTagNote(content: string, existingUserTags?: string[]): NoteTagResult {
   const text = content.trim();
   const lower = text.toLowerCase();
   const module = routeNoteIntent(content);
@@ -26,24 +26,28 @@ export function heuristicTagNote(content: string): NoteTagResult {
     case 'bookmark':
       return processBookmarkNote(content);
     case 'finance':
-      return processFinanceNote(content);
+      return processFinanceNote(content, existingUserTags);
     case 'credential':
       return processCredentialNote(content);
     case 'todo':
-      return processTodoNote(content);
+      return processTodoNote(content, existingUserTags);
     case 'schedule': {
-      const tags: string[] = [];
-      if (lower.includes('desain')) tags.push('desain');
-      if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
-      else if (lower.includes('deadline') || lower.includes('tenggat')) tags.push('deadline');
-      else if (lower.includes('dokter')) tags.push('dokter');
-      else if (lower.includes('flight')) tags.push('flight');
+      const enriched = enrichDualLayerTags([], 'schedule', text);
+      const tags: string[] = [...enriched];
+
+      if (tags.length === 0) {
+        if (lower.includes('desain')) tags.push('desain');
+        if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
+        else if (lower.includes('deadline') || lower.includes('tenggat')) tags.push('deadline');
+        else if (lower.includes('dokter')) tags.push('dokter');
+        else if (lower.includes('flight')) tags.push('flight');
+      }
 
       if (tags.length === 0) tags.push('event');
 
       return {
         category: 'schedule',
-        specific_tags: sanitizeTags(tags, 'schedule', text),
+        specific_tags: sanitizeTags(tags, 'schedule', text, 3, existingUserTags),
         source: null,
       };
     }
@@ -59,7 +63,7 @@ export function heuristicTagNote(content: string): NoteTagResult {
       ) {
         return {
           category: 'draft',
-          specific_tags: sanitizeTags(['writing'], 'draft', text),
+          specific_tags: sanitizeTags(['writing'], 'draft', text, 3, existingUserTags),
           source: null,
         };
       }
@@ -68,7 +72,7 @@ export function heuristicTagNote(content: string): NoteTagResult {
       const enriched = enrichDualLayerTags([], 'others', text);
       return {
         category: 'others',
-        specific_tags: sanitizeTags(enriched, 'others', text, 3),
+        specific_tags: sanitizeTags(enriched, 'others', text, 3, existingUserTags),
         source: null,
       };
     }
@@ -81,7 +85,10 @@ export function heuristicTagNote(content: string): NoteTagResult {
  * are analyzed by the LLM for deep contextual intelligence, Indonesian slang understanding,
  * and entity extraction.
  */
-export async function generateNoteTags(content: string): Promise<NoteTagResult> {
+export async function generateNoteTags(
+  content: string,
+  existingUserTags?: string[]
+): Promise<NoteTagResult> {
   const text = content.trim();
   const urlRegex = /(https?:\/\/[^\s]+)/i;
   const isPureUrl = urlRegex.test(text) && text.replace(/(https?:\/\/[^\s]+)/gi, '').trim().length === 0;
@@ -90,7 +97,11 @@ export async function generateNoteTags(content: string): Promise<NoteTagResult> 
     return processBookmarkNote(content);
   }
 
-  const result = await processGeneralNote(content, heuristicTagNote);
+  const result = await processGeneralNote(
+    content,
+    (fallbackText) => heuristicTagNote(fallbackText, existingUserTags),
+    existingUserTags
+  );
 
   // If the note was classified as bookmark and contains URLs, merge with bookmark module for rich platform & URL tags
   if (result.category === 'bookmark' && urlRegex.test(text)) {
@@ -98,7 +109,13 @@ export async function generateNoteTags(content: string): Promise<NoteTagResult> 
     return {
       category: 'bookmark',
       source: bm.source,
-      specific_tags: sanitizeTags([...bm.specific_tags, ...result.specific_tags], 'bookmark', content, 5),
+      specific_tags: sanitizeTags(
+        [...bm.specific_tags, ...result.specific_tags],
+        'bookmark',
+        content,
+        3,
+        existingUserTags
+      ),
     };
   }
 

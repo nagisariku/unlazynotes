@@ -84,7 +84,7 @@ export function extractTagsFromContent(content: string, category: Category, limi
   for (const def of catDefs) {
     // Check if canonical word itself exists as word boundary in text
     const allKeywords = [def.canonical, ...def.aliases.id, ...def.aliases.en];
-    const escaped = allKeywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const escaped = allKeywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-_\s]+/g, '[-_\\s]+'));
     const pattern = new RegExp(`\\b(${escaped.join('|')})\\b`, 'i');
 
     if (pattern.test(text)) {

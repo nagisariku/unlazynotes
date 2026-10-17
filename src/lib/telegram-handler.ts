@@ -107,6 +107,7 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
     // 4. Background AI Categorization & Tagging via Priority Queue (Fast-lane Pro)
     taggingQueue.enqueue({
       noteId,
+      userId: item.activeKey.userId,
       content: mergedText,
       tier: item.tier,
     });

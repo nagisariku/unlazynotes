@@ -116,8 +116,20 @@ export const POST: APIRoute = async ({ request }) => {
       );
     }
 
+    let existingUserTags: string[] = [];
+    try {
+      const userNotes = await db.query.notes.findMany({
+        where: eq(notes.userId, user.id),
+        columns: { specificTags: true },
+        limit: 50,
+      });
+      existingUserTags = Array.from(new Set(userNotes.flatMap((n) => n.specificTags || [])));
+    } catch {
+      // Non-fatal
+    }
+
     // AI Categorization & Tagging
-    const tagResult = await generateNoteTags(trimmedContent);
+    const tagResult = await generateNoteTags(trimmedContent, existingUserTags);
     const validCategory: NoteCategory = CATEGORIES.includes(
       tagResult.category as NoteCategory
     )

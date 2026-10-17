@@ -1,17 +1,30 @@
 import { sanitizeTags } from '../sanitizer';
 import { extractTagsFromContent } from '../taxonomy';
+import { enrichDualLayerTags } from './general';
 import type { NoteTagResult } from '../types';
 
 /**
  * Specialized Todo Module with Bilingual Taxonomy.
  * Guaranteed category 'todo' with broad, reusable single-word tags.
  */
-export function processTodoNote(content: string): NoteTagResult {
+export function processTodoNote(content: string, existingUserTags?: string[]): NoteTagResult {
   const text = content.trim();
   const lower = text.toLowerCase();
   const tags: string[] = [];
 
-  // 1. Communication task: Person name + Topic
+  // 1. Food orders / food tasks (e.g. "pesen martabak manis gojek")
+  if (/\b(martabak|cilok|tahu\s*gejrot|nasgor|cimin|seblak|ayam|bakso|mie|sate|makan|food|gojek|grab)\b/i.test(lower)) {
+    const enriched = enrichDualLayerTags([], 'todo', text);
+    if (enriched.length > 0) {
+      return {
+        category: 'todo',
+        specific_tags: sanitizeTags(enriched, 'todo', text, 3, existingUserTags),
+        source: null,
+      };
+    }
+  }
+
+  // 2. Communication task: Person name + Topic
   const commMatch = lower.match(/\b(chat|telepon|telpon|wa|whatsapp|hubungi|dm|email|call)\s+([a-z0-9_-]+)(.*)/i);
   if (commMatch) {
     const person = commMatch[2].trim();
@@ -33,7 +46,7 @@ export function processTodoNote(content: string): NoteTagResult {
     }
   }
 
-  // 2. Study & Exam priority pairing
+  // 3. Study & Exam priority pairing
   if (/belajar|study|kuliah|kursus|materi|pr\b|tugas|homework|reading/i.test(lower)) {
     if (!tags.includes('study')) tags.push('study');
     if (/ujian|exam|uts|uas|kuis|quiz|tes|midterm|finals/i.test(lower)) {
@@ -43,7 +56,7 @@ export function processTodoNote(content: string): NoteTagResult {
     if (!tags.includes('exam')) tags.push('exam');
   }
 
-  // 3. Extract remaining canonical tags from taxonomy
+  // 4. Extract remaining canonical tags from taxonomy
   if (tags.length < 2) {
     const matched = extractTagsFromContent(text, 'todo', 2);
     for (const m of matched) {
@@ -54,10 +67,10 @@ export function processTodoNote(content: string): NoteTagResult {
     }
   }
 
-  // 4. Fallback: extract concrete entity words from task (e.g. "beli odol dan sabun")
+  // 5. Fallback: extract concrete entity words from task (e.g. "beli odol dan sabun")
   if (tags.length === 0) {
     const words = lower
-      .replace(/\b(beli|cek|revisi|kerjakan|kirim|bereskan|harus|wajib|jangan|lupa|dan|atau|ke|di)\b/gi, '')
+      .replace(/\b(beli|cek|revisi|kerjakan|kirim|bereskan|harus|wajib|jangan|lupa|dan|atau|ke|di|pesen|pesan|order)\b/gi, '')
       .split(/[^a-z0-9-]+/)
       .filter(w => w.length >= 3);
     for (const w of words) {
@@ -68,7 +81,7 @@ export function processTodoNote(content: string): NoteTagResult {
 
   return {
     category: 'todo',
-    specific_tags: sanitizeTags(tags, 'todo', text),
+    specific_tags: sanitizeTags(tags, 'todo', text, 3, existingUserTags),
     source: null,
   };
 }

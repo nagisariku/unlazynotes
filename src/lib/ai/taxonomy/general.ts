@@ -13,10 +13,19 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
   {
     canonical: 'meeting',
     category: 'schedule',
-    description: 'Meetings, syncs, and appointments',
+    description: 'Meetings, syncs, appointments, product demos, and discussions',
     aliases: {
-      id: ['meeting', 'rapat', 'sprint', 'sync', 'kumpul'],
-      en: ['meeting', 'sync', 'call', 'appointment'],
+      id: ['meeting', 'rapat', 'sprint', 'sync', 'kumpul', 'demo', 'diskusi'],
+      en: ['meeting', 'sync', 'call', 'appointment', 'demo', 'presentation', 'discuss', 'coffee-break'],
+    },
+  },
+  {
+    canonical: 'work',
+    category: 'schedule',
+    description: 'Work, client projects, and professional tasks',
+    aliases: {
+      id: ['kerja', 'pekerjaan', 'kantor', 'projek', 'klien', 'client'],
+      en: ['work', 'job', 'project', 'client'],
     },
   },
   {
