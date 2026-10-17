@@ -53,7 +53,23 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
     }
     case 'general':
     default: {
-      // 1. Detect Draft (Long structured text >250 chars)
+      // 1. Detect Scripture / Quotes / Prayers / Reflections -> reference or draft (NEVER todo)
+      const isArabicScript = /[\u0600-\u06FF]/.test(content);
+      const isScriptureOrQuote =
+        isArabicScript ||
+        /\b(surah|qs\b|q\.s\b|ayat|al-qur'?an|quran|hadits|hadist|rasulullah|allah|bismillah|alhamdulillah|doa|quote|kutipan|pepatah|filosofi|renungan|refleksi|asy-syarh|ash-sharh|al-baqarah|al-fatihah)\b/i.test(lower);
+
+      if (isScriptureOrQuote) {
+        const cat = text.length > 250 ? 'draft' : 'reference';
+        const enriched = enrichDualLayerTags([], cat, text);
+        return {
+          category: cat,
+          specific_tags: sanitizeTags(enriched, cat, text, 3, existingUserTags),
+          source: null,
+        };
+      }
+
+      // 2. Detect Draft (Long structured text >250 chars)
       if (
         text.length > 250 ||
         lower.includes('draft') ||
@@ -68,7 +84,7 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         };
       }
 
-      // 2. Dual-layer entity extraction for health, ideas, workout, rants, etc.
+      // 3. Dual-layer entity extraction for health, ideas, workout, rants, etc.
       const enriched = enrichDualLayerTags([], 'others', text);
       return {
         category: 'others',

@@ -368,9 +368,23 @@ export function sanitizeTags(
 
     // 6. Tag Reuse: Prioritize existing user tags if matching
     if (existingUserTags && existingUserTags.length > 0) {
-      const matchedUserTag = existingUserTags.find(ut => {
+      const matchedUserTag = existingUserTags.find((ut) => {
         const normUt = normalizeTag(ut);
-        return normUt === t || normUt === canonical || isTwinOrRedundantTag(t, [normUt], catNormalized);
+        if (normUt === t) return true;
+        if (t === canonical && normUt === canonical) return true;
+        const twinPairs = [
+          ['kopi', 'coffee'],
+          ['desain', 'design'],
+          ['rekening', 'bank-account'],
+          ['food', 'makanan'],
+          ['drink', 'minuman'],
+          ['health', 'kesehatan'],
+          ['idea', 'ide'],
+          ['meeting', 'rapat'],
+          ['work', 'kerja'],
+          ['client', 'klien'],
+        ];
+        return twinPairs.some(([a, b]) => (t === a && normUt === b) || (t === b && normUt === a));
       });
       if (matchedUserTag) {
         t = normalizeTag(matchedUserTag);

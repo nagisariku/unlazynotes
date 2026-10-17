@@ -27,7 +27,8 @@ export function routeNoteIntent(content: string): DetectedModule {
 
   // 3. CREDENTIAL Intent: Deteksi data sensitif pribadi (Password, PIN ATM, No Rekening, NIK KTP, Token/API Key)
   const isCredential =
-    /\b(password|pass|pin\s*atm|pin|no\s*rek|nomor\s*rekening|rekening|nik\s*ktp|nik|ktp|token|api_key|apikey|secret|sandi|ssid|wlan)\b/i.test(lower) ||
+    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|nik(\s*ktp)?|ktp|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
+    /\b(password|pass|pin|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
     lower.startsWith('pass:') ||
     lower.startsWith('pin:') ||
     lower.startsWith('token:') ||
@@ -50,8 +51,9 @@ export function routeNoteIntent(content: string): DetectedModule {
   // Guard against non-schedule numbers like price
   const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak|usd|dollar|dollars|sgd|eur|gbp)\b/i.test(lower);
   const hasCurrencyPrefix = /(\$|rp\.?|idr|usd|sgd|eur|gbp)\s*\d+/i.test(lower);
+  const hasThousandsSeparator = /\b\d{1,3}([.,]\d{3})+(\s*(via|pake|qris|cash|transfer|debit|kredit))?\b/i.test(lower);
 
-  if (hasSpecificTime && !hasCurrencySuffix && !hasCurrencyPrefix) {
+  if (hasSpecificTime && !hasCurrencySuffix && !hasCurrencyPrefix && !hasThousandsSeparator) {
     return 'schedule';
   }
 
@@ -64,8 +66,8 @@ export function routeNoteIntent(content: string): DetectedModule {
     /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
     (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
 
-  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan)\b/i.test(lower);
-  const hasItemWithNumber = /\b(cimin|cilok|tahu|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting|cursor)\s+(\$|rp)?\d+/i.test(lower);
+  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan|qris|cash|patungan)\b/i.test(lower);
+  const hasItemWithNumber = /\b(cimin|cilok|tahu|martabak|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting|cursor)\s+.*(\$|rp)?\d+/i.test(lower);
 
   const isFinance =
     !isHealthMetric &&
@@ -74,18 +76,35 @@ export function routeNoteIntent(content: string): DetectedModule {
     (
       hasCurrencySuffix ||
       hasCurrencyPrefix ||
+      hasThousandsSeparator ||
       hasDebtPattern ||
       hasItemWithNumber ||
-      (hasFinanceVerb && /\b\d+\b/.test(lower))
+      (hasFinanceVerb && (/\b\d+\b/.test(lower) || hasThousandsSeparator))
     );
 
   if (isFinance) {
     return 'finance';
   }
 
-  // 6. TODO Intent: Segala bentuk aksi, tugas, perintah, atau komunikasi tanpa jam kalender spesifik
+  // 6. SCRIPTURE / QUOTES / PRAYERS / REFLECTIONS -> 'general' (Reference or Draft, NEVER Todo!)
+  const isArabicScript = /[\u0600-\u06FF]/.test(content);
+  const isScriptureOrQuote =
+    isArabicScript ||
+    /\b(surah|qs\b|q\.s\b|ayat|al-qur'?an|quran|hadits|hadist|rasulullah|allah|bismillah|alhamdulillah|doa|quote|kutipan|pepatah|filosofi|renungan|refleksi|asy-syarh|ash-sharh|al-baqarah|al-fatihah)\b/i.test(lower);
+
+  if (isScriptureOrQuote && !lower.startsWith('- [ ]') && !lower.startsWith('todo:')) {
+    return 'general';
+  }
+
+  // 7. TODO Intent: Segala bentuk aksi, tugas, perintah, atau komunikasi tanpa jam kalender spesifik
+  // Multi-line shopping list without prices is strictly TODO (e.g. "beli kemeja putih uniqlo \n stok sabun biore \n obat tetes mata rohto")
+  const isShoppingList =
+    /\b(beli|stok|belanja|pesen|pesan|order)\b/i.test(lower) &&
+    (content.includes('\n') || /\b(dan|serta|stok)\b/i.test(lower));
+
   const isCommunicationTask = /\b(chat|telepon|telpon|wa|whatsapp|tanya|hubungi|dm|email|follow up|call)\s+[a-z0-9_-]+/i.test(lower);
   const isActionTask =
+    isShoppingList ||
     lower.startsWith('todo') ||
     lower.startsWith('task') ||
     /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order)\b/i.test(lower) ||
@@ -95,6 +114,6 @@ export function routeNoteIntent(content: string): DetectedModule {
     return 'todo';
   }
 
-  // 7. OTHERS / RANDOM-YAP: Catatan non-aksi (curahan hati, opini, ide mentah, log kesehatan/gejala, rants)
+  // 8. OTHERS / RANDOM-YAP: Catatan non-aksi (curahan hati, opini, ide mentah, log kesehatan/gejala, rants)
   return 'general';
 }

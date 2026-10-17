@@ -19,7 +19,10 @@ export function processCredentialNote(content: string): NoteTagResult {
   else if (/\bcimb\b/i.test(lower)) tags.push('cimb');
   else if (/\bjago\b/i.test(lower)) tags.push('jago');
 
-  // 2. Detect Credential Type
+  // 2. Detect Credential Type & Target Systems
+  if (/\badmin\b/i.test(lower)) tags.push('admin');
+  if (/\bdashboard\b/i.test(lower)) tags.push('dashboard');
+  if (/\blogin\b/i.test(lower)) tags.push('login');
   if (/\b(rekening|no\s*rek|nomor\s*rekening|norek)\b/i.test(lower)) tags.push('rekening');
   if (/\batm\b/i.test(lower)) tags.push('atm');
   if (/\bpin\b/i.test(lower)) tags.push('pin');

@@ -12,8 +12,15 @@ export function processTodoNote(content: string, existingUserTags?: string[]): N
   const lower = text.toLowerCase();
   const tags: string[] = [];
 
-  // 1. Food orders / food tasks (e.g. "pesen martabak manis gojek")
-  if (/\b(martabak|cilok|tahu\s*gejrot|nasgor|cimin|seblak|ayam|bakso|mie|sate|makan|food|gojek|grab)\b/i.test(lower)) {
+  // 1. Food orders, multi-line shopping lists, or rich entity tasks
+  const isShoppingList =
+    /\b(beli|stok|belanja|pesen|pesan|order)\b/i.test(lower) &&
+    (content.includes('\n') || /\b(dan|serta|stok)\b/i.test(lower));
+
+  if (
+    isShoppingList ||
+    /\b(martabak|cilok|tahu\s*gejrot|nasgor|cimin|seblak|ayam|bakso|mie|sate|makan|food|gojek|grab)\b/i.test(lower)
+  ) {
     const enriched = enrichDualLayerTags([], 'todo', text);
     if (enriched.length > 0) {
       return {

@@ -148,6 +148,47 @@ const TEST_MATRIX: TestCase[] = [
     expectedTags: ['tahu-gejrot', 'food'],
     description: 'Taxonomy 7: Local snack finance with Indonesian currency slang (tahu-gejrot + food)',
   },
+
+  // --- 4 Critical Audit Edge Cases ---
+  {
+    input: 'login dashboard admin pake email admin@shirobit.com passwordnya RahasiaBanget#2026!',
+    expectedCat: 'credential',
+    expectedTags: ['admin', 'dashboard'],
+    forbiddenTags: ['todo', 'task'],
+    description: 'Audit 1: Credential priority over action verb login',
+  },
+  {
+    input: 'Maka sesungguhnya bersama kesulitan ada kemudahan. (QS. Asy-Syarh: 5-6)',
+    expectedCat: 'reference',
+    expectedTags: ['surah-asy-syarh', 'quran'],
+    forbiddenTags: ['todo', 'task'],
+    description: 'Audit 2: Religious scripture quote -> reference (NEVER todo)',
+  },
+  {
+    input: 'beli kemeja putih uniqlo \n stok sabun biore \n obat tetes mata rohto',
+    expectedCat: 'todo',
+    expectedTags: ['shopping', 'uniqlo'],
+    forbiddenTags: ['food', 'makanan'],
+    description: 'Audit 3: Multi-line shopping list -> todo (NO hallucinated food tag)',
+  },
+  {
+    input: 'martabak telur 45k via qris bca',
+    expectedCat: 'finance',
+    expectedTags: ['martabak', 'food', 'qris'],
+    description: 'Audit 4: Always retain primary food entity + qris context',
+  },
+  {
+    input: 'cimin 12k',
+    expectedCat: 'finance',
+    expectedTags: ['cimin', 'food'],
+    description: 'Audit 4b: Retain primary food entity cimin',
+  },
+  {
+    input: 'jajan cilok 5rebu',
+    expectedCat: 'finance',
+    expectedTags: ['cilok', 'food'],
+    description: 'Audit 4c: Retain primary food entity cilok',
+  },
 ];
 
 async function runClassifierTests() {
