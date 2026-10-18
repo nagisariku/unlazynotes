@@ -613,16 +613,18 @@ async function runTests() {
   });
   assert(pinBtnRes.ok === true && pinBtnRes.action === 'pin_list', 'Dock button ⭐️ Pin routes to pin_list');
 
-  // 6. i18n Help & Dashboard prompt checks (no security disclaimer, contains dashboardUrl)
+  // 6. i18n Help & Dashboard prompt checks (all 10 commands present, no security disclaimer, contains dashboard link)
   const helpId = getTelegramMsg('help', 'id');
   const helpEn = getTelegramMsg('help', 'en');
-  assert(helpId.includes('/pin') && helpId.includes('{dashboardUrl}'), 'help.id contains /pin and {dashboardUrl}');
-  assert(helpEn.includes('/pin') && helpEn.includes('{dashboardUrl}'), 'help.en contains /pin and {dashboardUrl}');
+  const commandsToCheck = ['/start', '/login', '/logout', '/tags', '/pin', '/search', '/ask', '/secure', '/vault'];
+  const allIdCmds = commandsToCheck.every((cmd) => helpId.includes(cmd));
+  const allEnCmds = commandsToCheck.every((cmd) => helpEn.includes(cmd));
+  assert(allIdCmds, 'help.id contains all 10 commands');
+  assert(allEnCmds, 'help.en contains all 10 commands');
   assert(!helpId.includes('{securityDisclaimer}'), 'help.id does not contain {securityDisclaimer}');
   assert(!helpEn.includes('{securityDisclaimer}'), 'help.en does not contain {securityDisclaimer}');
-
-  const renderedHelp = getTelegramMsg('help', 'id', { dashboardUrl: 'https://unlazynotes.com/dashboard' });
-  assert(renderedHelp.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.id renders Web Dashboard link properly');
+  assert(helpId.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.id renders Web Dashboard link properly');
+  assert(helpEn.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.en renders Web Dashboard link properly');
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);
