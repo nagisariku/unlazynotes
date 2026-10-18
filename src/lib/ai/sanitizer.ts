@@ -171,8 +171,8 @@ export function normalizeTag(tag: string): string {
     .replace(/^-+|-+$/g, '');
 
   // Dynamic Anti-Meta Filter (Zero-Hardcoding):
-  // Clean tags matching meta-structural descriptor patterns (e.g. date-reference -> date, tuweb-item -> tuweb)
-  t = t.replace(/-?(reference|descriptor|marker|meta|item|info)$/i, '').replace(/^-+|-+$/g, '');
+  // Clean tags matching meta-structural descriptor patterns (e.g. date-referenced -> date, tuweb-item -> tuweb)
+  t = t.replace(/[-_]?(reference[ds]?|descriptor|marker|meta|item|info)$/i, '').replace(/^-+|-+$/g, '');
 
   // 1. Prevent truncated words: resolve words > 20 chars to their clean base form without arbitrary chopping
   if (t.length > 20) {
@@ -209,7 +209,7 @@ export function normalizeTag(tag: string): string {
   if (t === 'minuman' || t === 'beverage' || t === 'beverages' || t === 'drinks' || t === 'drink-order') t = 'drink';
   if (t === 'langganan' || t === 'subs') t = 'subscription';
   if (t === 'pekerjaan' || t === 'job' || t === 'jobs') t = 'work';
-  if (t === 'rapat' || t === 'sync' || t === 'sprint' || t === 'appointment' || t === 'conference' || t === 'discuss' || t === 'coffee-break') {
+  if (t === 'rapat' || t === 'sync' || t === 'sprint' || t === 'conference' || t === 'discuss' || t === 'coffee-break') {
     t = 'meeting';
   }
   if (t === 'hewan' || t === 'pets') t = 'pet';

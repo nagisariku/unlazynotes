@@ -316,9 +316,19 @@ export function enrichDualLayerTags(
   if (/\b(client|klien)\b/i.test(lower)) {
     domainContexts.push('client');
   }
-  // Meeting Domain: HANYA jika teks memuat keyword rapat/diskusi eksplisit (BUKAN otomatis untuk seluruh schedule)
-  if (/\b(meeting|rapat|sync|call|sprint|discuss|coffee\s*break|demo)\b/i.test(lower)) {
+  // Meeting Domain: HANYA jika teks memuat keyword rapat/diskusi/demo kerja eksplisit (BUKAN otomatis untuk seluruh schedule)
+  // Jadwal pribadi/kesehatan/hiburan (seperti dokter, nonton, tuweb) DILARANG diberi tag meeting
+  const isExplicitMeeting = /\b(meeting|rapat|sync|call|discuss|sprint|demo|coffee\s*break)\b/i.test(lower);
+  const isNonMeetingSchedule = /\b(dokter|gigi|klinik|rumah\s*sakit|rs|puskesmas|obat|kontrol|tuweb|tuweeb|nonton|bioskop|cgv|xxi|film|movie)\b/i.test(lower);
+  if (isExplicitMeeting && !isNonMeetingSchedule) {
     domainUmbrellas.push('meeting');
+  }
+
+  // Health / Medical Schedule (HANYA jika category === 'schedule' dan memuat dokter/gigi/kontrol, misal: "kontrol dokter gigi tgl 25")
+  if (category === 'schedule' && /\b(dokter|gigi|klinik|puskesmas|rs|rumah\s*sakit|periksa|kontrol)\b/i.test(lower) && !/\b(surat|fotokopi|berkas)\b/i.test(lower)) {
+    if (/\bdokter\b/i.test(lower)) domainEntities.push('dokter');
+    if (/\bgigi\b/i.test(lower)) domainEntities.push('gigi');
+    if (!domainUmbrellas.includes('health')) domainUmbrellas.push('health');
   }
 
   // Entertainment / Cinema Domain (e.g. nonton avatar di cgv sabtu malam jam 21.15 seat f12)
@@ -656,7 +666,7 @@ PRIMARY INTENT CATEGORIES:
 
 CORE TAGGING PRINCIPLES:
 0. Concrete Domain Entity Rule (Strict Anti-Meta):
-   - Tags MUST strictly represent concrete domain entities, real-world topics, brands, tools, projects, or subjects (e.g., 'tuweb', 'kuliah', 'shirobit', 'laundry'). NEVER extract meta-structural descriptors of the note itself (e.g., NEVER produce tags ending in '-reference', '-item', '-info', '-marker' or generic terms like 'date-reference', 'time', 'note').
+   - Tags MUST strictly represent concrete domain entities, real-world topics, brands, tools, projects, or subjects (e.g., 'tuweb', 'kuliah', 'shirobit', 'laundry', 'dokter', 'gigi'). NEVER produce meta-structural tags that describe dates, times, or notes (e.g. date-reference, date-referenced, time-info, schedule-item). Tags must strictly be real-world topics or entities.
 1. High-Level Universal Root Umbrella:
    - Tag payung (Domain Umbrella) HARUS selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (Single universal English root word):
      food, drink, tech, work, meeting, entertainment, pet, music, gaming, health, travel, finance, subscription, shopping, quran, quote.
@@ -669,6 +679,7 @@ CORE TAGGING PRINCIPLES:
    - Tag 3 (OPSIONAL - Context/Brand/Person): Brand, payment, atau nama orang jika relevan (contoh: gojek, bca, qris, client).
    - Tag 4 & 5 (OPSIONAL - Multi-Entity): Entitas konkret pendamping (contoh: website, pt-karya-maju, dll.).
 4. Negative Constraints:
+   - DILARANG Tag Meeting Salah Sasaran: Tag 'meeting' HANYA boleh diberikan untuk pertemuan kerja/bisnis eksplisit (meeting, rapat, sync, call, discuss, sprint). Jadwal pribadi/medis/kesehatan (seperti dokter, klinik, gigi, kontrol obat), pendidikan (tuweb), atau hiburan (nonton, bioskop) DILARANG KERAS diberi tag 'meeting'!
    - DILARANG Tag Terpotong: Gunakan kata dasar yang utuh (gunakan demo atau presentation, JANGAN potong jadi product-demonstratio).
    - DILARANG Tag Redundan: Jangan keluarkan dua tag yang sinonim / semakna dalam satu catatan (misal: jangan pasang demo bersamaan dengan product-demo, jangan pasang kopi bersamaan dengan coffee).
    - DILARANG Tag Mata Uang / Pajak: Hapus tag nama mata uang seperti usd, idr, rp, dollar, dollars, tax, pajak.
@@ -676,7 +687,8 @@ CORE TAGGING PRINCIPLES:
    - DILARANG Tag Halusinasi Makanan: Jangan berikan tag "food" untuk sabun, odol, kemeja, pakaian, atau obat!
 ${userTagContext}
 Examples:
-0. Schedule with Calendar Date (Explicit Anchor):
+0. Schedule with Calendar Date (Explicit Anchor & Medical Schedules):
+   - "kontrol dokter gigi tgl 25" -> {"category": "schedule", "specific_tags": ["dokter", "gigi", "health"]}
    - "tuweeb 2, tanggal 16" -> {"category": "schedule", "specific_tags": ["tuweeb"]}
 1. Food & Drink (Always Retain Specific Food Entity):
    - "cimin 12k" -> {"category": "finance", "specific_tags": ["cimin", "food"]}

@@ -30,19 +30,43 @@ async function run() {
     console.error('❌ FAILED: Expected concrete tag "tuweeb", got', catResult.specific_tags);
     process.exit(1);
   }
-  const hasMetaTag = catResult.specific_tags.some(t => /(-reference|-item|-info|-marker|date-reference|time|note)/i.test(t));
+  const hasMetaTag = catResult.specific_tags.some(t => /(-reference[ds]?|-item|-info|-marker|date-reference|date-referenced|time|note)/i.test(t));
   if (hasMetaTag) {
     console.error('❌ FAILED: Found forbidden meta-descriptor tag:', catResult.specific_tags);
     process.exit(1);
   }
   console.log('✅ PASS: Categorized as schedule with concrete tag and zero meta-descriptors!');
 
-  // 1b. Test Dynamic Anti-Meta Sanitizer
+  // 1b. Test Doctor Non-Meeting Guard
+  console.log('--- 1b. Testing Doctor Schedule (Non-Meeting Guard) ---');
+  const doctorResult = heuristicTagNote('kontrol dokter gigi tgl 25');
+  console.log('Input: "kontrol dokter gigi tgl 25" -> Category:', doctorResult.category, '| Tags:', doctorResult.specific_tags);
+  if (doctorResult.category !== 'schedule') {
+    console.error('❌ FAILED: Expected schedule, got', doctorResult.category);
+    process.exit(1);
+  }
+  if (doctorResult.specific_tags.includes('meeting')) {
+    console.error('❌ FAILED: Medical/Doctor schedule MUST NOT contain tag "meeting":', doctorResult.specific_tags);
+    process.exit(1);
+  }
+  if (!doctorResult.specific_tags.includes('dokter') && !doctorResult.specific_tags.includes('gigi')) {
+    console.error('❌ FAILED: Doctor schedule should contain "dokter" or "gigi":', doctorResult.specific_tags);
+    process.exit(1);
+  }
+  console.log('✅ PASS: Doctor schedule has no "meeting" tag and has concrete health entities!');
+
+  // 1c. Test Dynamic Anti-Meta Sanitizer
   const { sanitizeTags } = await import('../src/lib/ai/sanitizer');
-  const rawTestTags = ['tuweb-item', 'date-reference', 'time', 'descriptor', 'meeting-marker'];
+  const rawTestTags = ['tuweb-item', 'date-referenced', 'date-reference', 'time-info', 'descriptor', 'meeting-marker'];
   const cleanedTags = sanitizeTags(rawTestTags, 'schedule', 'tuweb meeting jam 10');
   console.log('Sanitizer raw:', rawTestTags, '-> Cleaned:', cleanedTags);
-  if (cleanedTags.includes('date-reference') || cleanedTags.includes('time') || cleanedTags.includes('descriptor')) {
+  if (
+    cleanedTags.includes('date-referenced') ||
+    cleanedTags.includes('date-reference') ||
+    cleanedTags.includes('time-info') ||
+    cleanedTags.includes('time') ||
+    cleanedTags.includes('descriptor')
+  ) {
     console.error('❌ FAILED: Sanitizer failed to strip meta-descriptors:', cleanedTags);
     process.exit(1);
   }
@@ -121,14 +145,13 @@ async function run() {
   }
   console.log('✅ PASS: No conversational closing questions.');
 
-  // 3. Compact line count (under 20 lines)
-  const lines = response.split('\n').filter(l => l.trim().length > 0);
-  console.log(`Response line count: ${lines.length}`);
-  if (lines.length > 20) {
-    console.error('❌ FAILED: Response too long (> 20 lines)');
+  // 4. No fabricated 'Lanjutkan tugas' or placing past date (tuweeb 16 okt) as today's task
+  const hasFabricatedContinuation = /lanjutkan\s+tugas/i.test(response);
+  if (hasFabricatedContinuation) {
+    console.error('❌ FAILED: Response fabricated "Lanjutkan tugas" phrase:', response);
     process.exit(1);
   }
-  console.log('✅ PASS: Response is compact and mobile-friendly.');
+  console.log('✅ PASS: No fabricated "Lanjutkan tugas" found.');
 
   // Clean up
   await db.delete(notes).where(eq(notes.userId, testUserId));

@@ -152,16 +152,22 @@ Prinsip Penalaran Waktu Berbasis First-Principles (Wajib Ditaati):
    - KHUSUS untuk pertanyaan seputar tugas aktif, to-do, deadline, jadwal terdekat, atau agenda: HANYA evaluasi catatan yang berumur <= 30 hari dari Current Time (abaikan to-do purba > 30 hari yang sudah usang).
    - Untuk pertanyaan seputar arsip, referensi, catatan keuangan/pengeluaran, data statis, atau informasi umum: gunakan seluruh konteks 90 hari yang relevan.
 
-2. Algoritma Resolusi Waktu Matematis:
+2. Algoritma Resolusi Waktu Matematis & Pemisahan Mutlak Waktu:
    - Langkah 1 (Jangkar Waktu): Setiap catatan memiliki [createdAt] sebagai titik tolak waktu mutlak.
    - Langkah 2 (Kalkulasi Target):
      * Waktu Relatif ("besok", "lusa", "3 hari lagi", "nanti malam"): Hitung matematis: Target = createdAt + offset relatif.
        (Contoh: Catatan dibuat Sabtu 17 Okt "ambil laundry lusa" -> Target = Senin 19 Okt. Jika Current Time Minggu 18 Okt, maka tugas ini MASIH MENDATANG, BELUM LEWAT).
      * Tanggal Kalender ("tanggal X" tanpa bulan): Gunakan bulan dan tahun dari createdAt sebagai referensi penanggalan target.
    - Langkah 3 (Klasifikasi Status Objektif terhadap Current Time):
-     * Jika Target < Current Time -> Kelompokkan ke ⚠️ *Sudah Lewat (Overdue)*. DILARANG KERAS memasukkannya ke "Hari ini" atau "Mendatang".
-     * Jika Target >= Current Time -> Kelompokkan ke 📌 *Mendatang / Minggu Ini*, urutkan kronologis dari yang paling dekat ke jauh.
-     * Jika catatan sama sekali tidak memiliki penanda waktu -> Kelompokkan ke 📝 *To-Do Tanpa Tenggat* (JANGAN diasumsikan jatuh tempo hari ini).
+     * DILARANG KERAS MENGARANG: Jika tanggal target pada catatan sudah berlalu terhadap waktu sekarang (misal: tanggal 16 < 19 Okt), catatan tersebut adalah JADWAL MASA LAMPAU / SUDAH LEWAT, BUKAN tugas hari ini! JANGAN PERNAH mengarang kalimat seperti "Lanjutkan tugas...", "Prioritas hari ini...", atau "Tugas tertunda yang harus dikerjakan hari ini" untuk menyisipkan jadwal lampau ke dalam daftar Hari Ini.
+     * Jika Target < Current Time -> HANYA BOLEH dimasukkan ke:
+       ⚠️ Catatan / Jadwal yang Sudah Lewat (perlu dicek):
+     * Jika Target >= Current Time -> Masukkan ke:
+       📌 Mendatang / Minggu Ini:
+       (urutkan kronologis dari yang paling dekat ke depan).
+     * Jika catatan sama sekali tidak memiliki penanda waktu -> Masukkan ke:
+       📝 To-Do Tanpa Tenggat:
+       (JANGAN diasumsikan jatuh tempo hari ini).
 
 3. Integritas Status & Anti-Spekulasi:
    - Anggap tugas berstatus aktif kecuali ada catatan lain yang eksplisit menyatakan sudah selesai atau dibatalkan.
@@ -172,11 +178,11 @@ Prinsip Penalaran Waktu Berbasis First-Principles (Wajib Ditaati):
    - DILARANG KERAS menyertakan penutup basa-basi atau tawaran bantuan di akhir respons (seperti: "Mau saya bantu...", "Ada yang perlu dibantu lagi?", "Semoga membantu!", dsb.). Akhiri jawaban tepat setelah data/poin terakhir tanpa kalimat penutup tambahan apapun.
    - Sajikan dalam format ringkas to-the-point maksimal 10-15 baris.
    - Jika menjawab daftar tugas / jadwal / agenda / to-do, kelompokkan secara rapi (lewati kelompok yang kosong):
-     ⚠️ *Sudah Lewat (Overdue):*
-     • [nama item] - [keterangan waktu / tanggal]
-     📌 *Mendatang / Minggu Ini:*
-     • [nama item] - [keterangan target waktu, urutkan dari terdekat]
-     📝 *To-Do Tanpa Tenggat:*
+     ⚠️ Catatan / Jadwal yang Sudah Lewat (perlu dicek):
+     • [nama item] - [keterangan waktu / tanggal lampau]
+     📌 Mendatang / Minggu Ini:
+     • [nama item] - [keterangan target waktu ke depan, urutkan dari terdekat]
+     📝 To-Do Tanpa Tenggat:
      • [nama item]
    - Jika pertanyaan bersifat spesifik non-jadwal (misal: total pengeluaran, nomor rekening, catatan tertentu), jawab langsung to-the-point dengan rincian singkat tanpa kelompok di atas.
 
