@@ -331,8 +331,20 @@ async function runTests() {
   const kb7 = buildPaginationKeyboard('tags', 'client', 1, 2, mock7Items);
   assert(kb7?.inline_keyboard[0].length === 5, `Row 1 has 5 buttons for 7 items`);
   assert(kb7?.inline_keyboard[1].length === 2, `Row 2 has 2 buttons for 7 items`);
-  assert(kb7?.inline_keyboard[2].length === 2, `Row 3 is pagination nav [1/2] [Next] on page 1`);
+  assert(kb7?.inline_keyboard[2].length === 1, `Row 3 has 1 button on page 1 of 2 (Next only)`);
+  assert(kb7?.inline_keyboard[2][0].text === 'Next ▶️', `Row 3 button on page 1 is 'Next ▶️'`);
   assert(kb7?.inline_keyboard[3][0].text === '🏷 Kembali ke Tags', `Row 4 is back button`);
+
+  // Test page 2 of 2 (Prev only)
+  const kb7Page2 = buildPaginationKeyboard('tags', 'client', 2, 2, mock7Items);
+  assert(kb7Page2?.inline_keyboard[2].length === 1, `Row 3 has 1 button on page 2 of 2 (Prev only)`);
+  assert(kb7Page2?.inline_keyboard[2][0].text === '◀️ Prev', `Row 3 button on page 2 is '◀️ Prev'`);
+
+  // Test middle page (page 2 of 3: both Prev and Next)
+  const kb7Page2of3 = buildPaginationKeyboard('tags', 'client', 2, 3, mock7Items);
+  assert(kb7Page2of3?.inline_keyboard[2].length === 2, `Row 3 has 2 buttons on page 2 of 3 (Prev and Next)`);
+  assert(kb7Page2of3?.inline_keyboard[2][0].text === '◀️ Prev', `First nav button is '◀️ Prev'`);
+  assert(kb7Page2of3?.inline_keyboard[2][1].text === 'Next ▶️', `Second nav button is 'Next ▶️'`);
 
   // --- ITEM 10: Testing Refined 1-Tag-per-Note Recent, Strict Global Deduplication, and Search Tracking ---
   console.log('\n--- 10. Testing 1-Tag Recent & Global Deduplication ---');

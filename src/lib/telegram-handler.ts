@@ -672,18 +672,16 @@ export function buildPaginationKeyboard(
       });
     }
 
-    navButtons.push({
-      text: `[ ${currentPage} / ${totalPages} ]`,
-      callback_data: 'noop',
-    });
-
     if (currentPage < totalPages) {
       navButtons.push({
         text: 'Next ▶️',
         callback_data: `page:${type}:${queryVal}:${currentPage + 1}`,
       });
     }
-    rows.push(navButtons);
+
+    if (navButtons.length > 0) {
+      rows.push(navButtons);
+    }
   }
 
   // 3. Baris Menu
