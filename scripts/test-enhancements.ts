@@ -580,11 +580,14 @@ async function runTests() {
     processTelegramMessage,
   } = await import('../src/lib/telegram-handler');
 
-  // 1. Structure of PERSISTENT_DOCK_KEYBOARD (2 buttons: Tags & Pin)
+  // 1. Structure of PERSISTENT_DOCK_KEYBOARD (2 rows: [Tags, Pin] and [Tutup Menu])
   assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'PERSISTENT_DOCK_KEYBOARD has keyboard array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'PERSISTENT_DOCK_KEYBOARD has 2 dock buttons');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 2, 'PERSISTENT_DOCK_KEYBOARD has 2 rows');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row 1 has 2 dock buttons');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '🏷 Tags', 'Button 1 is 🏷 Tags');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1].length === 1, 'Row 2 has 1 button');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1][0].text === '❌ Tutup Menu', 'Row 2 button is ❌ Tutup Menu');
   assert(PERSISTENT_DOCK_KEYBOARD.resize_keyboard === true, 'resize_keyboard is true');
   assert((PERSISTENT_DOCK_KEYBOARD as any).is_persistent === undefined, 'is_persistent is removed to fix back navigation lag');
 
@@ -612,6 +615,19 @@ async function runTests() {
     text: '⭐️ Pin',
   });
   assert(pinBtnRes.ok === true && pinBtnRes.action === 'pin_list', 'Dock button ⭐️ Pin routes to pin_list');
+
+  // 5b. Routing '❌ Tutup Menu' and /close
+  const closeBtnRes = await processTelegramMessage({
+    chat: { id: testChatId11 },
+    text: '❌ Tutup Menu',
+  });
+  assert(closeBtnRes.ok === true && closeBtnRes.action === 'keyboard_closed', 'Button ❌ Tutup Menu closes keyboard dock');
+
+  const closeCmdRes = await processTelegramMessage({
+    chat: { id: testChatId11 },
+    text: '/close',
+  });
+  assert(closeCmdRes.ok === true && closeCmdRes.action === 'keyboard_closed', 'Command /close closes keyboard dock');
 
   // 6. i18n Help & Dashboard prompt checks (all 10 commands present, no security disclaimer, contains dashboard link)
   const helpId = getTelegramMsg('help', 'id');

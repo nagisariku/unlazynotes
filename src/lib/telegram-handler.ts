@@ -28,7 +28,8 @@ export const DEBOUNCE_DELAY_MS = 3000;
 
 export const PERSISTENT_DOCK_KEYBOARD = {
   keyboard: [
-    [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }]
+    [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
+    [{ text: '❌ Tutup Menu' }]
   ],
   resize_keyboard: true,
 };
@@ -874,7 +875,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin';
+  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '❌ Tutup Menu';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -1056,6 +1057,26 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     );
 
     return { ok: true, action: 'logout_success' };
+  }
+
+  // 3b. Tutup Keyboard Menu (/close, /hide, /reset, atau tombol '❌ Tutup Menu')
+  if (
+    text === '❌ Tutup Menu' ||
+    text === '/close' ||
+    text === '/hide' ||
+    text === '/reset' ||
+    /^(\/(close|hide|reset))(@[a-zA-Z0-9_]+)?$/.test(text)
+  ) {
+    await sendTelegramMessage(
+      chatId,
+      '👌 Menu dock ditutup. Ketik /help atau /start kapan saja untuk memunculkan kembali.',
+      {
+        reply_markup: {
+          remove_keyboard: true,
+        },
+      }
+    );
+    return { ok: true, action: 'keyboard_closed' };
   }
 
   // 4. Validasi Autentikasi Pengguna
