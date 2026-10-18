@@ -200,7 +200,7 @@ export function enrichDualLayerTags(
   tags: string[],
   category: NoteCategory,
   content: string,
-  rawLlmCat?: string
+  _rawLlmCat?: string
 ): string[] {
   const lower = content.toLowerCase();
   let baseTags = [...tags]
@@ -649,7 +649,7 @@ export async function processGeneralNote(
       system: `You are an intelligent semantic classifier and tagging engine for UnlazyNotes.
 Analyze the user's note and return a strict JSON object with:
 1. "category": exactly 1 primary intent category.
-2. "specific_tags": 2 to 5 domain-aware tags (lowercase-with-hyphens).
+2. "specific_tags": 3 to 5 domain-aware tags (lowercase-with-hyphens).
 3. "source": detected platform source string or null.
 
 PRIMARY INTENT CATEGORIES:
@@ -666,7 +666,7 @@ PRIMARY INTENT CATEGORIES:
 
 CORE TAGGING PRINCIPLES:
 0. Concrete Domain Entity Rule (Strict Anti-Meta):
-   - Tags MUST strictly represent concrete domain entities, real-world topics, brands, tools, projects, or subjects (e.g., 'tuweb', 'kuliah', 'shirobit', 'laundry', 'dokter', 'gigi'). NEVER produce meta-structural tags that describe dates, times, or notes (e.g. date-reference, date-referenced, time-info, schedule-item). Tags must strictly be real-world topics or entities.
+   - Tags MUST strictly be concrete real-world topics, brands, subjects, or entities. NEVER output meta-structural or temporal descriptors as tags (e.g. NEVER output date-reference, date-referenced, time-info, note, task-item).
 1. High-Level Universal Root Umbrella:
    - Tag payung (Domain Umbrella) HARUS selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (Single universal English root word):
      food, drink, tech, work, meeting, entertainment, pet, music, gaming, health, travel, finance, subscription, shopping, quran, quote.
@@ -687,9 +687,6 @@ CORE TAGGING PRINCIPLES:
    - DILARANG Tag Halusinasi Makanan: Jangan berikan tag "food" untuk sabun, odol, kemeja, pakaian, atau obat!
 ${userTagContext}
 Examples:
-0. Schedule with Calendar Date (Explicit Anchor & Medical Schedules):
-   - "kontrol dokter gigi tgl 25" -> {"category": "schedule", "specific_tags": ["dokter", "gigi", "health"]}
-   - "tuweeb 2, tanggal 16" -> {"category": "schedule", "specific_tags": ["tuweeb"]}
 1. Food & Drink (Always Retain Specific Food Entity):
    - "cimin 12k" -> {"category": "finance", "specific_tags": ["cimin", "food"]}
    - "jajan cilok 5rebu" -> {"category": "finance", "specific_tags": ["cilok", "food"]}
@@ -714,11 +711,14 @@ Examples:
    - "Maka sesungguhnya bersama kesulitan ada kemudahan. (QS. Asy-Syarh: 5-6)" -> {"category": "reference", "specific_tags": ["surah-asy-syarh", "quran"]}
 7. Subscription & Tech:
    - "subscription cursor 20 usd kena tax 20 dollar" -> {"category": "finance", "specific_tags": ["cursor", "subscription", "tech"]}
-8. Schedule & Entertainment:
+8. Schedule Multi-Domain (Diverse Real-World Categories):
+   - "kontrol dokter gigi tgl 25 jam 10 pagi" -> {"category": "schedule", "specific_tags": ["dokter-gigi", "health"]}
+   - "nonton avatar di cgv sabtu malam jam 21.15 seat f12" -> {"category": "schedule", "specific_tags": ["avatar", "cgv", "entertainment"]}
+   - "tuweeb 2, tanggal 16" -> {"category": "schedule", "specific_tags": ["tuweeb", "kuliah"]}
+   - "meeting evaluasi sprint tim shirobit jam 14.00" -> {"category": "schedule", "specific_tags": ["sprint", "shirobit", "meeting"]}
    - "demo produk client selasa jam 10 pagi" -> {"category": "schedule", "specific_tags": ["demo", "meeting", "client"]}
    - "coffee break with client discuss Q4 roadmap jam 4 sore" -> {"category": "schedule", "specific_tags": ["q4-roadmap", "meeting", "client"]}
    - "meeting desain jam 3 sore" -> {"category": "schedule", "specific_tags": ["desain", "meeting"]}
-   - "nonton avatar di cgv sabtu malam jam 21.15 seat f12" -> {"category": "schedule", "specific_tags": ["avatar", "cgv", "entertainment"]}
 9. Debt & Multi-Entity Business Income (Finance):
    - "ubed minjem 100k" -> {"category": "finance", "specific_tags": ["ubed", "piutang"]}
    - "aku minjem 50k ke fajar" -> {"category": "finance", "specific_tags": ["fajar", "utang"]}
