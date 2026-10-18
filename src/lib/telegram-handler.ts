@@ -22,7 +22,7 @@ import {
 import { taggingQueue } from '@/lib/tagging-queue';
 import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/lib/i18n/telegram';
 
-export const PAGE_SIZE = 5;
+export const PAGE_SIZE = 9;
 export const DEBOUNCE_DELAY_MS = 3000;
 
 export interface TelegramProcessResult {
@@ -167,6 +167,7 @@ export function formatSnippetPage(
 
   const groupsMap = new Map<string, DateGroup>();
 
+  let noteIndex = 1;
   for (const n of items) {
     const itemDate = new Date(n.createdAt);
     const dateKey = format(itemDate, 'yyyy-MM-dd');
@@ -195,7 +196,8 @@ export function formatSnippetPage(
     const rawClean = n.content.replace(/\s+/g, ' ').trim();
     const clean = rawClean || defaultTitle;
     const snippet = clean.length > 140 ? `${clean.slice(0, 140)}...` : clean;
-    group.snippets.push(snippet);
+    group.snippets.push(`(${noteIndex}) 📌 ${snippet}`);
+    noteIndex++;
   }
 
   const groupBlocks: string[] = [];
@@ -203,7 +205,7 @@ export function formatSnippetPage(
     const dateStr = format(group.date, 'EEE dd/MM/yy');
     const tagsList = Array.from(group.tags);
     const headerLine = tagsList.length > 0 ? `📅 ${dateStr} • Tags: ${tagsList.join(', ')}` : `📅 ${dateStr}`;
-    const itemsLines = group.snippets.map((s) => `📌 ${s}`).join('\n');
+    const itemsLines = group.snippets.join('\n');
     groupBlocks.push(`${headerLine}\n${itemsLines}`);
   }
 
@@ -270,7 +272,7 @@ export function escapeHtml(str: string): string {
  */
 export function formatTagNumberedHorizontal(items: string[]): string {
   if (items.length === 0) return '-';
-  return items.join(' ');
+  return items.join('  ');
 }
 
 /**
@@ -463,7 +465,15 @@ export async function handleTagFilter(
   const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
   const reply = formatSnippetPage(matchedNotes, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const keyboard = buildPaginationKeyboard('tags', targetTag, 1, totalPages);
+  const keyboard = buildPaginationKeyboard('tags', targetTag, 1, totalPages, matchedNotes);
+
+  noteListSessionMap.set(chatId, {
+    items: matchedNotes.map((n) => ({ id: n.id, content: n.content })),
+    type: 'tags',
+    queryVal: targetTag,
+    page: 1,
+    expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+  });
 
   await sendTelegramMessage(chatId, reply, {
     parse_mode: 'Markdown',
@@ -474,18 +484,118 @@ export async function handleTagFilter(
 }
 
 /**
- * Builds Telegram Inline Keyboard for pagination: [ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]
+ * In-memory map to store navigation context for note detail view when callback_data is long.
+ */
+export const noteNavMap = new Map<string, { type: 'tags' | 'search'; queryVal: string; page: number }>();
+
+/**
+ * In-memory session state for active note snippets list on a chat.
+ * Used for direct number input shortcut to open note detail.
+ */
+export const noteListSessionMap = new Map<
+  string,
+  {
+    items: Array<{ id: string; content: string }>;
+    type: 'tags' | 'search';
+    queryVal: string;
+    page: number;
+    expiresAt: number;
+  }
+>();
+
+/**
+ * Renders pure note content detail with navigation buttons:
+ * - [ ⬅️ Kembali ke Daftar ]
+ * - [ 🏷 Menu Tags ]
+ */
+export async function displayNoteDetail(
+  chatId: string,
+  messageId: number | undefined,
+  noteId: string,
+  type: 'tags' | 'search',
+  queryVal: string,
+  currentPage: number
+): Promise<TelegramProcessResult> {
+  const [note] = await db
+    .select()
+    .from(notes)
+    .where(eq(notes.id, noteId))
+    .limit(1);
+
+  if (!note) {
+    return { ok: false, error: 'note_not_found' };
+  }
+
+  const detailText = `📌 ${note.content.trim()}`;
+  const detailKeyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: '⬅️ Kembali ke Daftar',
+          callback_data: `page:${type}:${queryVal}:${currentPage}`,
+        },
+        {
+          text: '🏷 Menu Tags',
+          callback_data: 'menu:tags',
+        },
+      ],
+    ],
+  };
+
+  if (messageId) {
+    await editTelegramMessage(chatId, messageId, detailText, {
+      reply_markup: detailKeyboard,
+    });
+  } else {
+    await sendTelegramMessage(chatId, detailText, {
+      reply_markup: detailKeyboard,
+    });
+  }
+
+  return { ok: true, action: 'note_detail_view', noteId };
+}
+
+/**
+ * Builds Telegram Inline Keyboard for pagination and note detail numbers:
+ * - Number buttons: [ 1 ], [ 2 ], ... (max 5 per row, up to 9 notes)
+ * - Pagination row: [ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]
+ * - Menu row: [ 🏷 Kembali ke Tags ]
  */
 export function buildPaginationKeyboard(
   type: 'tags' | 'search',
   queryVal: string,
   currentPage: number,
-  totalPages: number
+  totalPages: number,
+  items?: Array<{ id: string }>
 ) {
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-  const navButtons: Array<{ text: string; callback_data: string }> = [];
 
+  // 1. Deretan Tombol Angka Murni Tanpa Emoji (1-Tap Note Detail)
+  if (items && items.length > 0) {
+    const numButtons: Array<{ text: string; callback_data: string }> = items.map((it, idx) => {
+      noteNavMap.set(it.id, { type, queryVal, page: currentPage });
+
+      const rawCb = `note:view:${it.id}:${type}:${queryVal}:${currentPage}`;
+      // Fallback jika panjang melebihi batas 64 byte Telegram callback_data
+      const callback_data = rawCb.length <= 64 ? rawCb : `note:view:${it.id}:${type}::${currentPage}`;
+
+      return {
+        text: ` ${idx + 1} `,
+        callback_data,
+      };
+    });
+
+    if (numButtons.length <= 5) {
+      rows.push(numButtons);
+    } else {
+      rows.push(numButtons.slice(0, 5));
+      rows.push(numButtons.slice(5));
+    }
+  }
+
+  // 2. Baris Pagination (jika totalPages > 1)
   if (totalPages > 1) {
+    const navButtons: Array<{ text: string; callback_data: string }> = [];
     if (currentPage > 1) {
       navButtons.push({
         text: '◀️ Prev',
@@ -507,6 +617,7 @@ export function buildPaginationKeyboard(
     rows.push(navButtons);
   }
 
+  // 3. Baris Menu
   if (type === 'tags') {
     rows.push([
       {
@@ -775,13 +886,34 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
 
-  // 4b. Shortcut Penomoran Tag: Jika pesan berupa angka langsung atau berkurung (misal: 1 atau (1)) dan sesi /tags aktif
+  // 4b. Shortcut Penomoran: Jika pesan berupa angka langsung atau berkurung (misal: 1 atau (1))
   const numMatch = text.match(/^\(?(\d+)\)?$/);
   if (numMatch) {
+    const digit = parseInt(numMatch[1], 10);
+
+    // Prioritas 1: Jika user sedang melihat list catatan aktif dan digit cocok (1..items.length)
+    const listSession = noteListSessionMap.get(chatId);
+    if (listSession && listSession.expiresAt > Date.now()) {
+      if (digit >= 1 && digit <= listSession.items.length) {
+        if (debounceMap.has(chatId)) {
+          await flushDebounceBuffer(chatId);
+        }
+        const selectedNote = listSession.items[digit - 1];
+        return await displayNoteDetail(
+          chatId,
+          undefined,
+          selectedNote.id,
+          listSession.type,
+          listSession.queryVal,
+          listSession.page
+        );
+      }
+    }
+
+    // Prioritas 2: Jika ada sesi menu /tags global (shortcut filter tag)
     const session = tagSessionMap.get(chatId);
     if (session && session.expiresAt > Date.now()) {
-      const tagNum = parseInt(numMatch[1], 10);
-      const targetTag = session.tags.get(tagNum);
+      const targetTag = session.tags.get(digit);
       if (targetTag) {
         if (debounceMap.has(chatId)) {
           await flushDebounceBuffer(chatId);
@@ -887,7 +1019,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const headerTitle = getTelegramMsg('search_header', activeLocale, { keyword });
     const searchReply = formatSnippetPage(searchResults, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
     const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-    const keyboard = buildPaginationKeyboard('search', keyword, 1, totalPages);
+    const keyboard = buildPaginationKeyboard('search', keyword, 1, totalPages, searchResults);
+
+    noteListSessionMap.set(chatId, {
+      items: searchResults.map((n) => ({ id: n.id, content: n.content })),
+      type: 'search',
+      queryVal: keyword,
+      page: 1,
+      expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+    });
 
     await sendTelegramMessage(chatId, searchReply, {
       parse_mode: 'Markdown',
@@ -1240,7 +1380,15 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
     const newText = formatSnippetPage(matchedNotes, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
-    const keyboard = buildPaginationKeyboard('tags', targetTag, validPage, totalPages);
+    const keyboard = buildPaginationKeyboard('tags', targetTag, validPage, totalPages, matchedNotes);
+
+    noteListSessionMap.set(chatId, {
+      items: matchedNotes.map((n) => ({ id: n.id, content: n.content })),
+      type: 'tags',
+      queryVal: targetTag,
+      page: validPage,
+      expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+    });
 
     if (messageId) {
       await editTelegramMessage(chatId, messageId, newText, {
@@ -1251,6 +1399,22 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     await answerTelegramCallbackQuery(callbackId);
     return { ok: true, action: 'callback_page_tags', page: validPage, totalCount };
+  }
+
+  // 1c. Tampilan Detail Catatan: note:view:<noteId>:<type>:<queryVal>:<page>
+  if (data.startsWith('note:view:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const type = (parts[3] as 'tags' | 'search') || 'tags';
+    const pageNum = parseInt(parts[parts.length - 1], 10) || 1;
+    let queryVal = parts.slice(4, parts.length - 1).join(':');
+    if (!queryVal) {
+      queryVal = noteNavMap.get(noteId)?.queryVal || '';
+    }
+
+    const res = await displayNoteDetail(chatId, messageId, noteId, type, queryVal, pageNum);
+    await answerTelegramCallbackQuery(callbackId);
+    return res;
   }
 
   // 1b. Kembali ke Menu /tags: menu:tags
@@ -1366,7 +1530,15 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const headerTitle = getTelegramMsg('search_header', activeLocale, { keyword: query });
     const newText = formatSnippetPage(searchResults, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
-    const keyboard = buildPaginationKeyboard('search', query, validPage, totalPages);
+    const keyboard = buildPaginationKeyboard('search', query, validPage, totalPages, searchResults);
+
+    noteListSessionMap.set(chatId, {
+      items: searchResults.map((n) => ({ id: n.id, content: n.content })),
+      type: 'search',
+      queryVal: query,
+      page: validPage,
+      expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+    });
 
     if (messageId) {
       await editTelegramMessage(chatId, messageId, newText, {

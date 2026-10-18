@@ -115,8 +115,8 @@ async function runTests() {
   );
   assert(formatTagNumberedHorizontal([]) === '-', `Empty numbered tag list formats as '-'`);
   assert(
-    formatTagNumberedHorizontal(['(1)food', '(2)meeting', '(3)renungan']) === '(1)food (2)meeting (3)renungan',
-    `Tag list formats in capsule brackets separated by space without comma`
+    formatTagNumberedHorizontal(['(1)food', '(2)meeting', '(3)renungan']) === '(1)food  (2)meeting  (3)renungan',
+    `Tag list formats in capsule brackets separated by double space without comma`
   );
   assert(
     escapeHtml('c&k<test>') === 'c&amp;k&lt;test&gt;',
@@ -303,11 +303,11 @@ async function runTests() {
   assert(timelineOutput.includes('🏷 Catatan dengan label [client] (Hal. 1/1 • Total: 3)'), `Header includes title and pagination info`);
   assert(timelineOutput.includes('📅 Sat 17/10/26 • Tags:'), `Groups by date 'Sat 17/10/26'`);
   assert(timelineOutput.includes('📅 Fri 16/10/26 • Tags:'), `Groups by date 'Fri 16/10/26'`);
-  assert(timelineOutput.includes('📌 dapet transferan dp website klien 2.5jt pt karya maju'), `Displays clean pin note 1`);
-  assert(timelineOutput.includes('📌 coffee break with client discuss Q4 roadmap jam 4 sore'), `Displays clean pin note 2`);
-  assert(timelineOutput.includes('📌 demo produk client selasa jam 10 pagi'), `Displays clean pin note 3`);
-  assert(!timelineOutput.includes('*1.*'), `No item numbering (*1.*) in output`);
-  assert(!timelineOutput.includes('*2.*'), `No item numbering (*2.*) in output`);
+  assert(timelineOutput.includes('(1) 📌 dapet transferan dp website klien 2.5jt pt karya maju'), `Displays locally numbered note 1`);
+  assert(timelineOutput.includes('(2) 📌 coffee break with client discuss Q4 roadmap jam 4 sore'), `Displays locally numbered note 2`);
+  assert(timelineOutput.includes('(3) 📌 demo produk client selasa jam 10 pagi'), `Displays locally numbered note 3`);
+  assert(!timelineOutput.includes('*1.*'), `No obsolete item numbering (*1.*) in output`);
+  assert(!timelineOutput.includes('*2.*'), `No obsolete item numbering (*2.*) in output`);
 
   // Verify tags consolidated per day
   const satSection = timelineOutput.split('📅 Fri 16/10/26')[0];
@@ -319,6 +319,27 @@ async function runTests() {
     satSection.includes('meeting'),
     `Saturday header consolidates unique tags from all Saturday notes`
   );
+
+  // --- ITEM 9: Note Detail Inline Buttons (1-Tap Note Detail) ---
+  console.log('\n--- 9. Testing Note Detail Buttons & displayNoteDetail ---');
+  const mockItems = [
+    { id: 'uuid-1' },
+    { id: 'uuid-2' },
+    { id: 'uuid-3' },
+  ];
+  const kbWithButtons = buildPaginationKeyboard('tags', 'client', 1, 1, mockItems);
+  assert(kbWithButtons !== undefined, `Keyboard with note buttons generated`);
+  assert(kbWithButtons?.inline_keyboard[0].length === 3, `Row 1 has 3 number buttons for 3 items`);
+  assert(kbWithButtons?.inline_keyboard[0][0].text.trim() === '1', `Button 1 has text '1'`);
+  assert(kbWithButtons?.inline_keyboard[0][0].callback_data === 'note:view:uuid-1:tags:client:1', `Button 1 callback is note:view:uuid-1:tags:client:1`);
+
+  // Test 7 items (should break into 2 rows: 5 and 2)
+  const mock7Items = Array.from({ length: 7 }, (_, i) => ({ id: `uuid-${i + 1}` }));
+  const kb7 = buildPaginationKeyboard('tags', 'client', 1, 2, mock7Items);
+  assert(kb7?.inline_keyboard[0].length === 5, `Row 1 has 5 buttons for 7 items`);
+  assert(kb7?.inline_keyboard[1].length === 2, `Row 2 has 2 buttons for 7 items`);
+  assert(kb7?.inline_keyboard[2].length === 2, `Row 3 is pagination nav [1/2] [Next] on page 1`);
+  assert(kb7?.inline_keyboard[3][0].text === '🏷 Kembali ke Tags', `Row 4 is back button`);
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);
