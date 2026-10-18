@@ -227,12 +227,23 @@ export function formatTagListHorizontal(tags: string[]): string {
 }
 
 /**
- * Format numbered tag list horizontally separated by commas (1.tag1, 2.tag2, ...).
+ * Escape HTML special characters for Telegram HTML mode.
+ */
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Format numbered tag list horizontally separated by spaces in capsule brackets:
+ * (1)food (2)meeting (3)renungan ...
  * If empty, returns '-'.
  */
 export function formatTagNumberedHorizontal(items: string[]): string {
   if (items.length === 0) return '-';
-  return items.join(', ');
+  return items.join(' ');
 }
 
 /**
@@ -322,15 +333,13 @@ export async function getTagsOverviewData(userId: string) {
   const numberToTagMap = new Map<number, string>();
   let currentNumber = 1;
 
-  const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
-
   // 1. Teraktif (1 s/d N, maks 15)
   const activeNumbered: string[] = [];
   for (const t of activeTagsSlice) {
     usedTagsSet.add(t);
     const num = currentNumber++;
     numberToTagMap.set(num, t);
-    activeNumbered.push(`${num}.${escapeMd(t)}`);
+    activeNumbered.push(`(${num})${escapeHtml(t)}`);
   }
 
   // 2. Terakhir (melanjutkan nomor, maks 15, deduplikasi dari Teraktif)
@@ -340,7 +349,7 @@ export async function getTagsOverviewData(userId: string) {
       usedTagsSet.add(t);
       const num = currentNumber++;
       numberToTagMap.set(num, t);
-      recentNumbered.push(`${num}.${escapeMd(t)}`);
+      recentNumbered.push(`(${num})${escapeHtml(t)}`);
       if (recentNumbered.length >= 15) {
         break;
       }
@@ -362,7 +371,7 @@ export async function getTagsOverviewData(userId: string) {
       usedTagsSet.add(t);
       const num = currentNumber++;
       numberToTagMap.set(num, t);
-      searchedNumbered.push(`${num}.${escapeMd(t)}`);
+      searchedNumbered.push(`(${num})${escapeHtml(t)}`);
       if (searchedNumbered.length >= 15) {
         break;
       }
@@ -739,11 +748,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
 
-  // 4b. Shortcut Penomoran Tag: Jika pesan berupa angka murni (/^\d+$/) dan sesi /tags aktif
-  if (/^\d+$/.test(text)) {
+  // 4b. Shortcut Penomoran Tag: Jika pesan berupa angka langsung atau berkurung (misal: 1 atau (1)) dan sesi /tags aktif
+  const numMatch = text.match(/^\(?(\d+)\)?$/);
+  if (numMatch) {
     const session = tagSessionMap.get(chatId);
     if (session && session.expiresAt > Date.now()) {
-      const tagNum = parseInt(text, 10);
+      const tagNum = parseInt(numMatch[1], 10);
       const targetTag = session.tags.get(tagNum);
       if (targetTag) {
         if (debounceMap.has(chatId)) {
@@ -778,7 +788,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const keyboard = buildCategoriesGridKeyboard();
 
     await sendTelegramMessage(chatId, msg, {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
       reply_markup: keyboard,
     });
 
@@ -1256,7 +1266,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     if (messageId) {
       await editTelegramMessage(chatId, messageId, msg, {
-        parse_mode: 'Markdown',
+        parse_mode: 'HTML',
         reply_markup: keyboard,
       });
     }

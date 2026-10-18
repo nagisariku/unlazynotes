@@ -164,8 +164,8 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_header: {
-    id: `🏷 *Tags Anda*\n\n🔥 *Teraktif:*\n{activeTagsText}\n\n🕒 *Terakhir:*\n{recentTagsText}\n\n🔍 *Sering Dicari:*\n{searchedTagsText}\n\n_Ketik nomor tag (misal: \`1\`), ketik \`/tags <nama_tag>\`, atau pilih kategori di bawah._`,
-    en: `🏷 *Your Tags*\n\n🔥 *Most Active:*\n{activeTagsText}\n\n🕒 *Recent:*\n{recentTagsText}\n\n🔍 *Most Searched:*\n{searchedTagsText}\n\n_Type tag number (e.g. \`1\`), type \`/tags <tag_name>\`, or select a category below._`,
+    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n🔍 <b>Sering Dicari:</b>\n{searchedTagsText}\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
+    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n🔍 <b>Most Searched:</b>\n{searchedTagsText}\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
   },
 
   tags_cluster_detail: {

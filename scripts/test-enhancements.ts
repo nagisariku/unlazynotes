@@ -105,16 +105,22 @@ async function runTests() {
     `Whitelisted short tags 'ai', 'qa', 'ml' allowed (got ${JSON.stringify(testShortTags)})`
   );
 
-  // --- ITEM 4: Numbered Horizontal Tags Formatting ---
-  console.log('\n--- 4. Testing Numbered Horizontal Tags Formatting ---');
-  assert(formatTagListHorizontal([]) === '-', `Empty tag list formats as '-'`);
+  // --- ITEM 4: Numbered Capsule Tags Formatting ---
+  console.log('\n--- 4. Testing Numbered Capsule Tags Formatting ---');
+  const { formatTagNumberedHorizontal, escapeHtml } = await import('../src/lib/telegram-handler');
+  assert(formatTagListHorizontal([]) === '-', `Empty legacy tag list formats as '-'`);
   assert(
     formatTagListHorizontal(['kopi', 'cimin']) === '#kopi, #cimin',
     `Tag list formats horizontally with # prefix for legacy compatibility`
   );
+  assert(formatTagNumberedHorizontal([]) === '-', `Empty numbered tag list formats as '-'`);
   assert(
-    !formatTagListHorizontal(['kopi']).includes('('),
-    `Horizontal tag list does NOT contain count in parentheses`
+    formatTagNumberedHorizontal(['(1)food', '(2)meeting', '(3)renungan']) === '(1)food (2)meeting (3)renungan',
+    `Tag list formats in capsule brackets separated by space without comma`
+  );
+  assert(
+    escapeHtml('c&k<test>') === 'c&amp;k&lt;test&gt;',
+    `escapeHtml properly escapes HTML special characters`
   );
 
   // --- ITEM 5: 3x3 Categories Grid Keyboard ---
@@ -156,8 +162,8 @@ async function runTests() {
   assert(tagsPaginationKb?.inline_keyboard[1][0].text === '🏷 Kembali ke Tags', `Back button text is '🏷 Kembali ke Tags'`);
   assert(tagsPaginationKb?.inline_keyboard[1][0].callback_data === 'menu:tags', `Back button callback is 'menu:tags'`);
 
-  // --- ITEM 6: Tag Search Tracking, 15-Tag Limit, Global Numbering & Deduplication ---
-  console.log('\n--- 6. Testing 15-Tag Limit, Consecutive Global Numbering & Deduplication ---');
+  // --- ITEM 6: Tag Search Tracking, 15-Tag Limit, Capsule Numbering & Deduplication ---
+  console.log('\n--- 6. Testing 15-Tag Limit, Capsule Numbering & Deduplication ---');
   const testUserId = `test_user_tags_${Date.now()}`;
   await db.insert(users).values({
     id: testUserId,
@@ -201,26 +207,47 @@ async function runTests() {
   const overview = await getTagsOverviewData(testUserId);
   assert(overview.hasNotes === true, `Overview detects user notes`);
 
-  // Teraktif harus nomor 1 (kopi adalah frekuensi tertinggi = 2)
-  assert(overview.activeTagsText.startsWith('1.kopi'), `Active tags starts with 1.kopi (got: ${overview.activeTagsText})`);
+  // Teraktif harus nomor 1 (kopi adalah frekuensi tertinggi = 2) dengan format (1)kopi
+  assert(overview.activeTagsText.startsWith('(1)kopi'), `Active tags starts with (1)kopi (got: ${overview.activeTagsText})`);
   assert(!overview.activeTagsText.includes('#'), `Active tags formatted WITHOUT '#' prefix`);
+  assert(!overview.activeTagsText.includes(','), `Active tags formatted WITHOUT comma separator`);
 
   // Terakhir harus melanjutkan nomor urut (tidak reset ke 1) dan TIDAK mengandung 'kopi' karena deduplikasi
-  assert(!overview.recentTagsText.includes('.kopi'), `Recent tags deduplicates 'kopi' which is already in Active (got: ${overview.recentTagsText})`);
-  assert(!overview.recentTagsText.startsWith('1.'), `Recent tags continues global numbering and does NOT restart from 1 (got: ${overview.recentTagsText})`);
+  assert(!overview.recentTagsText.includes(')kopi'), `Recent tags deduplicates 'kopi' which is already in Active (got: ${overview.recentTagsText})`);
+  assert(!overview.recentTagsText.startsWith('(1)'), `Recent tags continues global numbering and does NOT restart from (1) (got: ${overview.recentTagsText})`);
 
   // Sering Dicari harus melanjutkan nomor urut berikutnya, TIDAK mengandung 'kopi', tapi mengandung 'crypto' dan 'investasi'
-  assert(!overview.searchedTagsText.includes('.kopi'), `Searched tags deduplicates 'kopi' (got: ${overview.searchedTagsText})`);
-  assert(overview.searchedTagsText.includes('crypto'), `Searched tags contains 'crypto' (got: ${overview.searchedTagsText})`);
-  assert(overview.searchedTagsText.includes('investasi'), `Searched tags contains 'investasi' (got: ${overview.searchedTagsText})`);
+  assert(!overview.searchedTagsText.includes(')kopi'), `Searched tags deduplicates 'kopi' (got: ${overview.searchedTagsText})`);
+  assert(overview.searchedTagsText.includes('(6)investasi'), `Searched tags contains (6)investasi (got: ${overview.searchedTagsText})`);
+  assert(overview.searchedTagsText.includes('(7)crypto'), `Searched tags contains (7)crypto (got: ${overview.searchedTagsText})`);
 
   // Validasi numberToTagMap
   assert(overview.numberToTagMap.get(1) === 'kopi', `numberToTagMap key 1 resolves to 'kopi'`);
   const tagForFirstRecent = overview.numberToTagMap.get(overview.numberToTagMap.size);
   assert(Boolean(tagForFirstRecent), `numberToTagMap contains mapping for all consecutive numbers`);
 
-  // --- ITEM 7: Number Shortcut Session & Tag Filter Routing ---
-  console.log('\n--- 7. Testing Number Shortcut Session & Tag Filter Routing ---');
+  // --- ITEM 7: HTML i18n & Bracketed Number Shortcut Resolution ---
+  console.log('\n--- 7. Testing HTML i18n & Bracketed Number Shortcut Resolution ---');
+  const { getTelegramMsg } = await import('../src/lib/i18n/telegram');
+  const htmlMsg = getTelegramMsg('tags_header', 'id', {
+    activeTagsText: overview.activeTagsText,
+    recentTagsText: overview.recentTagsText,
+    searchedTagsText: overview.searchedTagsText,
+  });
+
+  assert(htmlMsg.includes('<b>Tags Anda</b>'), `i18n tags_header uses HTML <b> tags for title`);
+  assert(htmlMsg.includes('<b>Teraktif:</b>'), `i18n tags_header uses HTML <b> tags for Teraktif`);
+  assert(htmlMsg.includes('&lt;nama_tag&gt;'), `i18n tags_header escapes HTML brackets properly`);
+
+  // Uji regex input shortcut: baik '1' maupun '(1)'
+  const numRegex = /^\(?(\d+)\)?$/;
+  const matchDirect = '1'.match(numRegex);
+  const matchBracket = '(1)'.match(numRegex);
+  const matchHighNum = '(16)'.match(numRegex);
+  assert(matchDirect !== null && matchDirect[1] === '1', `Regex matches direct number '1'`);
+  assert(matchBracket !== null && matchBracket[1] === '1', `Regex matches bracketed number '(1)'`);
+  assert(matchHighNum !== null && matchHighNum[1] === '16', `Regex matches bracketed number '(16)'`);
+
   const mockChatId = `chat_test_${Date.now()}`;
   const { tagSessionMap, TAG_SESSION_TTL_MS } = await import('../src/lib/telegram-handler');
 
