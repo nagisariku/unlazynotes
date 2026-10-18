@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { users, apiKeys, notes } from '@/db/schema';
-import { eq, and, desc, sql, ilike, gte } from 'drizzle-orm';
+import { users, apiKeys, notes, tagSearches } from '@/db/schema';
+import { eq, and, desc, sql, ilike } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
@@ -10,15 +10,7 @@ import {
   editTelegramMessage,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
-import {
-  normalizeTag,
-  clusterTags,
-  formatTagClustersMarkdown,
-  getTopTags,
-  formatTopTagsMarkdown,
-  formatClustersSummaryMarkdown,
-  findClusterByKeyOrAlias,
-} from '@/lib/ai';
+import { normalizeTag } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import {
@@ -26,7 +18,6 @@ import {
   incrementUserMonthlyNotes,
   getTelegramQuotaExceededMessage,
   getTelegramProGatedMessage,
-  FREE_MONTHLY_QUOTA,
 } from '@/lib/quota-service';
 import { taggingQueue } from '@/lib/tagging-queue';
 import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/lib/i18n/telegram';
@@ -161,6 +152,11 @@ export function formatSnippetPage(
   const pageInfo = getTelegramMsg('snippet_page_info', locale, { page, totalPages, totalCount });
   let text = `${headerTitle} ${pageInfo}\n\n`;
 
+  if (items.length === 0) {
+    text += locale === 'en' ? '_No notes found in this category or tag._' : '_Belum ada catatan pada kategori atau tag ini._';
+    return text.trim();
+  }
+
   const defaultTitle = getTelegramMsg('default_note_title', locale);
   for (let i = 0; i < items.length; i++) {
     const n = items[i];
@@ -188,6 +184,140 @@ export function formatSnippetPage(
 }
 
 /**
+ * Builds Telegram Inline Keyboard for 9 main categories (Grid 3x3).
+ */
+export function buildCategoriesGridKeyboard() {
+  return {
+    inline_keyboard: [
+      [
+        { text: '💰 Finance', callback_data: 'page:tags:finance:1' },
+        { text: '📋 Todo', callback_data: 'page:tags:todo:1' },
+        { text: '📅 Schedule', callback_data: 'page:tags:schedule:1' },
+      ],
+      [
+        { text: '🔖 Bookmark', callback_data: 'page:tags:bookmark:1' },
+        { text: '🔐 Credential', callback_data: 'page:tags:credential:1' },
+        { text: '📚 Reference', callback_data: 'page:tags:reference:1' },
+      ],
+      [
+        { text: '📝 Draft', callback_data: 'page:tags:draft:1' },
+        { text: '💬 Random-yap', callback_data: 'page:tags:random-yap:1' },
+        { text: '🏷 Others', callback_data: 'page:tags:others:1' },
+      ],
+    ],
+  };
+}
+
+/**
+ * Format tag list horizontally separated by commas (#tag1, #tag2, ...).
+ * If empty, returns '-'.
+ */
+export function formatTagListHorizontal(tags: string[]): string {
+  if (tags.length === 0) return '-';
+  const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
+  return tags.map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`)).join(', ');
+}
+
+/**
+ * Upsert increment search counter for a tag in tag_searches table.
+ */
+export async function recordTagSearch(userId: string, tag: string): Promise<void> {
+  const normTag = tag.trim().toLowerCase();
+  if (!normTag) return;
+
+  try {
+    const [existing] = await db
+      .select({ id: tagSearches.id, count: tagSearches.count })
+      .from(tagSearches)
+      .where(and(eq(tagSearches.userId, userId), eq(tagSearches.tag, normTag)))
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(tagSearches)
+        .set({
+          count: sql`${tagSearches.count} + 1`,
+          updatedAt: new Date(),
+        })
+        .where(eq(tagSearches.id, existing.id));
+    } else {
+      await db.insert(tagSearches).values({
+        id: crypto.randomUUID(),
+        userId,
+        tag: normTag,
+        count: 1,
+        updatedAt: new Date(),
+      });
+    }
+  } catch (err) {
+    console.error('[recordTagSearch] Failed to track tag search:', err);
+  }
+}
+
+/**
+ * Fetches data for the 3 horizontal lines of /tags:
+ * 1. Top 9 Active Tags (highest frequency across all user active notes)
+ * 2. Top 9 Recent Tags (unique tags from newest notes)
+ * 3. Top 9 Most Searched Tags (from tag_searches)
+ */
+export async function getTagsOverviewData(userId: string) {
+  const userNotes = await db
+    .select({
+      specificTags: notes.specificTags,
+      createdAt: notes.createdAt,
+    })
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isEncrypted, false)
+      )
+    )
+    .orderBy(desc(notes.createdAt));
+
+  const tagFreq = new Map<string, number>();
+  const recentTagsList: string[] = [];
+  const recentTagsSet = new Set<string>();
+
+  for (const n of userNotes) {
+    if (Array.isArray(n.specificTags)) {
+      for (const rawTag of n.specificTags) {
+        if (rawTag && typeof rawTag === 'string' && rawTag.trim()) {
+          const t = rawTag.trim().toLowerCase();
+          tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
+
+          if (!recentTagsSet.has(t) && recentTagsList.length < 9) {
+            recentTagsSet.add(t);
+            recentTagsList.push(t);
+          }
+        }
+      }
+    }
+  }
+
+  const activeTagsList = Array.from(tagFreq.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 9)
+    .map(([t]) => t);
+
+  const searchedRows = await db
+    .select({ tag: tagSearches.tag })
+    .from(tagSearches)
+    .where(eq(tagSearches.userId, userId))
+    .orderBy(desc(tagSearches.count), desc(tagSearches.updatedAt))
+    .limit(9);
+
+  const searchedTagsList = searchedRows.map((r) => r.tag);
+
+  return {
+    hasNotes: userNotes.length > 0,
+    activeTagsText: formatTagListHorizontal(activeTagsList),
+    recentTagsText: formatTagListHorizontal(recentTagsList),
+    searchedTagsText: formatTagListHorizontal(searchedTagsList),
+  };
+}
+
+/**
  * Builds Telegram Inline Keyboard for pagination: [ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]
  */
 export function buildPaginationKeyboard(
@@ -196,31 +326,44 @@ export function buildPaginationKeyboard(
   currentPage: number,
   totalPages: number
 ) {
-  if (totalPages <= 1) return undefined;
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  const navButtons: Array<{ text: string; callback_data: string }> = [];
 
-  const buttons: Array<{ text: string; callback_data: string }> = [];
+  if (totalPages > 1) {
+    if (currentPage > 1) {
+      navButtons.push({
+        text: '◀️ Prev',
+        callback_data: `page:${type}:${queryVal}:${currentPage - 1}`,
+      });
+    }
 
-  if (currentPage > 1) {
-    buttons.push({
-      text: '◀️ Prev',
-      callback_data: `page:${type}:${queryVal}:${currentPage - 1}`,
+    navButtons.push({
+      text: `[ ${currentPage} / ${totalPages} ]`,
+      callback_data: 'noop',
     });
+
+    if (currentPage < totalPages) {
+      navButtons.push({
+        text: 'Next ▶️',
+        callback_data: `page:${type}:${queryVal}:${currentPage + 1}`,
+      });
+    }
+    rows.push(navButtons);
   }
 
-  buttons.push({
-    text: `[ ${currentPage} / ${totalPages} ]`,
-    callback_data: 'noop',
-  });
-
-  if (currentPage < totalPages) {
-    buttons.push({
-      text: 'Next ▶️',
-      callback_data: `page:${type}:${queryVal}:${currentPage + 1}`,
-    });
+  if (type === 'tags') {
+    rows.push([
+      {
+        text: '🏷 Kembali ke Tags',
+        callback_data: 'menu:tags',
+      },
+    ]);
   }
+
+  if (rows.length === 0) return undefined;
 
   return {
-    inline_keyboard: [buttons],
+    inline_keyboard: rows,
   };
 }
 
@@ -478,151 +621,41 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 5. /tags (tanpa argumen)
   if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text)) {
-    const userNotes = await db
-      .select({
-        category: notes.category,
-        specificTags: notes.specificTags,
-      })
-      .from(notes)
-      .where(
-        and(
-          eq(notes.userId, activeKey.userId),
-          eq(notes.isEncrypted, false),
-          gte(notes.createdAt, sql`NOW() - INTERVAL '30 days'`)
-        )
-      );
+    const overview = await getTagsOverviewData(activeKey.userId);
 
-    if (userNotes.length === 0) {
+    if (!overview.hasNotes) {
       await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale));
       return { ok: true, action: 'tags_empty' };
     }
 
-    const rawSpecificTags: string[] = [];
-
-    for (const n of userNotes) {
-      if (Array.isArray(n.specificTags)) {
-        for (const t of n.specificTags) {
-          if (t && typeof t === 'string' && t.trim()) {
-            rawSpecificTags.push(t.trim());
-          }
-        }
-      }
-    }
-
-    const topTags = getTopTags(rawSpecificTags, 9);
-    const topTagsText = formatTopTagsMarkdown(topTags, activeLocale);
-
-    const clusters = clusterTags(rawSpecificTags);
-    const clustersSummaryText = formatClustersSummaryMarkdown(clusters, activeLocale);
-
-    const quotaStatus = quotaInfo.isPro
-      ? getTelegramMsg('quota_status_pro', activeLocale)
-      : getTelegramMsg('quota_status_free', activeLocale, {
-          currentCount: quotaInfo.currentCount,
-          maxQuota: FREE_MONTHLY_QUOTA,
-        });
-
     const msg = getTelegramMsg('tags_header', activeLocale, {
-      topTagsText,
-      clustersSummaryText,
-      quotaStatus,
+      activeTagsText: overview.activeTagsText,
+      recentTagsText: overview.recentTagsText,
+      searchedTagsText: overview.searchedTagsText,
     });
-    await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
+
+    const keyboard = buildCategoriesGridKeyboard();
+
+    await sendTelegramMessage(chatId, msg, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
 
     return { ok: true, action: 'tags_list' };
   }
 
-  // 6. /tags <nama_tag_atau_kategori>
+  // 6. /tags <nama_tag>
   if (text.startsWith('/tags ')) {
     const rawArg = text.substring(6).trim();
-    const normalizedArg = normalizeTag(rawArg);
+    const targetTag = normalizeTag(rawArg);
 
-    if (!normalizedArg) {
+    if (!targetTag) {
       await sendTelegramMessage(chatId, getTelegramMsg('tags_filter_missing', activeLocale), { parse_mode: 'Markdown' });
       return { ok: true, action: 'tags_filter_missing' };
     }
 
-    // Sub-Command Eksplorasi Klaster Kategori (misal: /tags finance, /tags kuliner, /tags tech)
-    const matchedCluster = findClusterByKeyOrAlias(normalizedArg);
-    if (matchedCluster) {
-      const userNotes = await db
-        .select({
-          specificTags: notes.specificTags,
-        })
-        .from(notes)
-        .where(
-          and(
-            eq(notes.userId, activeKey.userId),
-            eq(notes.isEncrypted, false),
-            gte(notes.createdAt, sql`NOW() - INTERVAL '30 days'`)
-          )
-        );
-
-      const rawSpecificTags: string[] = [];
-      for (const n of userNotes) {
-        if (Array.isArray(n.specificTags)) {
-          for (const t of n.specificTags) {
-            if (t && typeof t === 'string' && t.trim()) {
-              rawSpecificTags.push(t.trim());
-            }
-          }
-        }
-      }
-
-      const clusters = clusterTags(rawSpecificTags);
-      const clusterResult = clusters.find((c) => c.cluster.key === matchedCluster.key);
-      const clusterTitle = activeLocale === 'en' ? matchedCluster.name.en : matchedCluster.name.id;
-
-      if (!clusterResult || clusterResult.tags.length === 0) {
-        const emptyMsg = getTelegramMsg('tags_cluster_empty', activeLocale, {
-          icon: matchedCluster.icon,
-          clusterTitle,
-        });
-        await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown' });
-        return { ok: true, action: 'tags_cluster_empty', cluster: matchedCluster.key };
-      }
-
-      const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
-      const count = clusterResult.tags.length;
-      const tagCountLabel =
-        activeLocale === 'en' ? (count === 1 ? '1 tag' : `${count} tags`) : `${count} tag`;
-      const formattedTags = clusterResult.tags
-        .map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`))
-        .join(', ');
-      const exampleTag = clusterResult.tags[0] || 'tag';
-
-      const detailMsg = getTelegramMsg('tags_cluster_detail', activeLocale, {
-        icon: matchedCluster.icon,
-        clusterTitle,
-        tagCountLabel,
-        formattedTags,
-        exampleTag,
-      });
-
-      await sendTelegramMessage(chatId, detailMsg, { parse_mode: 'Markdown' });
-      return { ok: true, action: 'tags_cluster_detail', cluster: matchedCluster.key, count };
-    }
-
-    const targetTag = normalizedArg;
-
-    if (targetTag === 'draft') {
-      const [countResult] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(notes)
-        .where(
-          and(
-            eq(notes.userId, activeKey.userId),
-            eq(notes.category, 'draft'),
-            eq(notes.isEncrypted, false)
-          )
-        );
-      const totalDrafts = Number(countResult?.count || 0);
-
-      const draftMsg = getTelegramMsg('tags_draft_redirect', activeLocale, { totalDrafts });
-      await sendTelegramMessage(chatId, draftMsg, { parse_mode: 'Markdown' });
-
-      return { ok: true, action: 'tags_draft_redirect' };
-    }
+    // Increment counter riwayat pencarian tag user di tag_searches
+    await recordTagSearch(activeKey.userId, targetTag);
 
     // Hitung total catatan yang cocok
     const [countResult] = await db
@@ -1087,6 +1120,49 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     await answerTelegramCallbackQuery(callbackId);
     return { ok: true, action: 'callback_page_tags', page: validPage, totalCount };
+  }
+
+  // 1b. Kembali ke Menu /tags: menu:tags
+  if (data === 'menu:tags') {
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', 'id'),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
+    const overview = await getTagsOverviewData(activeKey.userId);
+
+    const msg = getTelegramMsg('tags_header', activeLocale, {
+      activeTagsText: overview.activeTagsText,
+      recentTagsText: overview.recentTagsText,
+      searchedTagsText: overview.searchedTagsText,
+    });
+
+    const keyboard = buildCategoriesGridKeyboard();
+
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, msg, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard,
+      });
+    }
+
+    await answerTelegramCallbackQuery(callbackId);
+    return { ok: true, action: 'callback_menu_tags' };
   }
 
   // 2. Pagination untuk /search: page:search:<query>:<page_num>

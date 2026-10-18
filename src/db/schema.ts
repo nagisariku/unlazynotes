@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, uniqueIndex } from 'drizzle-orm/pg-core';
 
 // 9 Kategori Wajib
 export const categoryEnum = pgEnum('note_category', [
@@ -118,4 +118,14 @@ export const paymentLogs = pgTable('payment_logs', {
   payloadRaw: jsonb('payload_raw'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const tagSearches = pgTable('tag_searches', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  tag: varchar('tag', { length: 100 }).notNull(),
+  count: integer('count').default(1).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('tag_searches_user_tag_idx').on(t.userId, t.tag),
+]);
 

@@ -1,17 +1,18 @@
 import { heuristicTagNote, sanitizeTags } from '../src/lib/ai';
 import {
-  clusterTags,
-  getTopTags,
-  formatTopTagsMarkdown,
-  formatClustersSummaryMarkdown,
-  findClusterByKeyOrAlias,
-  matchTagToCluster,
-  TAG_CLUSTERS,
-} from '../src/lib/ai/taxonomy';
+  formatTagListHorizontal,
+  buildCategoriesGridKeyboard,
+  buildPaginationKeyboard,
+  recordTagSearch,
+  getTagsOverviewData,
+} from '../src/lib/telegram-handler';
+import { db } from '../src/db';
+import { users, apiKeys, notes, tagSearches } from '../src/db/schema';
+import { eq } from 'drizzle-orm';
 
 async function runTests() {
   console.log('==================================================');
-  console.log('TESTING TAGGING PIPELINE & /TAGS ENHANCEMENTS');
+  console.log('TESTING TAGGING PIPELINE & /TAGS HORIZONTAL OVERHAUL');
   console.log('==================================================\n');
 
   let total = 0;
@@ -104,120 +105,113 @@ async function runTests() {
     `Whitelisted short tags 'ai', 'qa', 'ml' allowed (got ${JSON.stringify(testShortTags)})`
   );
 
-  // --- ITEM 4: 9 Complete Domain Clusters & Reduced False-Others ---
-  console.log('\n--- 4. Testing 9 Complete Domain Clusters Mapping ---');
-  const testSampleTags = [
-    // culinary
-    'cimin', 'seblak', 'kopi', 'martabak', 'cilok', 'nasgor', 'tequila',
-    // work
-    'work', 'client', 'meeting', 'project', 'proposal', 'shirobit', 'demo', 'q4-roadmap', 'deploy', 'hotfix', 'bug', 'evaluasi-sprint', 'follow-up', 'admin',
-    // finance
-    'finance', 'bca', 'rekening', 'qris', 'cash', 'iuran', 'kas-rt', 'crypto-wallet', 'metamask', 'seed-phrase', 'utang', 'piutang', 'fee', 'tax',
-    // tech
-    'tech', 'server', 'vps', 'hetzner', 'ssh-key', 'wifi', 'ssid', 'database', 'drizzle-orm', 'cursor', 'subscription', 'dashboard', 'login', 'user-id',
-    // shopping
-    'shopping', 'shopee', 'uniqlo', 'biore', 'laundry', 'cod', 'jnt', 'delivery', 'paket',
-    // mobility
-    'travel', 'gojek', 'grab', 'motorcycle', 'tire-replacement', 'tubeless', 'sim', 'driver-license', 'ktp', 'parkir', 'bensin',
-    // education
-    'study', 'kuliah', 'itb', 'bimbingan', 'bab', 'skripsi', 'ujian', 'exam', 'tugas', 'materi',
-    // lifestyle
-    'entertainment', 'avatar', 'movie', 'bioskop', 'music', 'spotify', 'sound', 'lofi', 'instagram', 'tiktok', 'post', 'article', 'documentation', 'cats', 'sleep', 'keyboard', 'lube', 'switch',
-    // thoughts
-    'idea', 'quote', 'renungan', 'philosophy', 'nietzsche', 'astronomy',
-    // others (only genuine unmapped unique entities)
-    'pt-karya-maju',
-  ];
-
-  const clusters = clusterTags(testSampleTags);
-  const clusterKeyMap = new Map(clusters.map(c => [c.cluster.key, c.tags]));
-
-  assert(clusterKeyMap.has('culinary'), 'Culinary cluster is present');
-  assert(clusterKeyMap.has('work'), 'Work cluster is present');
-  assert(clusterKeyMap.has('finance'), 'Finance cluster is present');
-  assert(clusterKeyMap.has('tech'), 'Tech cluster is present');
-  assert(clusterKeyMap.has('shopping'), 'Shopping cluster is present');
-  assert(clusterKeyMap.has('mobility'), 'Mobility cluster is present');
-  assert(clusterKeyMap.has('education'), 'Education cluster is present');
-  assert(clusterKeyMap.has('lifestyle'), 'Lifestyle cluster is present');
-  assert(clusterKeyMap.has('thoughts'), 'Thoughts cluster is present');
-  assert(clusterKeyMap.has('others'), 'Others cluster is present for pt-karya-maju');
-
-  // Verify specific mappings requested by user
-  assert(matchTagToCluster('crypto-wallet') === 'finance', 'crypto-wallet mapped to finance');
-  assert(matchTagToCluster('seed-phrase') === 'finance', 'seed-phrase mapped to finance');
-  assert(matchTagToCluster('kas-rt') === 'finance', 'kas-rt mapped to finance');
-  assert(matchTagToCluster('tire-replacement') === 'mobility', 'tire-replacement mapped to mobility');
-  assert(matchTagToCluster('driver-license') === 'mobility', 'driver-license mapped to mobility');
-  assert(matchTagToCluster('evaluasi-sprint') === 'work', 'evaluasi-sprint mapped to work');
-  assert(matchTagToCluster('q4-roadmap') === 'work', 'q4-roadmap mapped to work');
-  assert(matchTagToCluster('drizzle-orm') === 'tech', 'drizzle-orm mapped to tech');
-  assert(matchTagToCluster('ssh-key') === 'tech', 'ssh-key mapped to tech');
-  assert(matchTagToCluster('skripsi') === 'education', 'skripsi mapped to education');
-  assert(matchTagToCluster('spotify') === 'lifestyle', 'spotify mapped to lifestyle');
-  assert(matchTagToCluster('nietzsche') === 'thoughts', 'nietzsche mapped to thoughts');
-
-  // Verify 'others' count is strictly minimal (< 5 tags)
-  const othersTags = clusterKeyMap.get('others') || [];
+  // --- ITEM 4: Horizontal Tags Formatting ---
+  console.log('\n--- 4. Testing Horizontal Tags Formatting ---');
+  assert(formatTagListHorizontal([]) === '-', `Empty tag list formats as '-'`);
   assert(
-    othersTags.length < 5,
-    `Others cluster has < 5 tags (got ${othersTags.length}: ${JSON.stringify(othersTags)})`
+    formatTagListHorizontal(['kopi', 'cimin', 'seblak']) === '#kopi, #cimin, #seblak',
+    `Tag list formats horizontally with # prefix and comma separation`
   );
   assert(
-    othersTags.includes('pt-karya-maju'),
-    `Others cluster contains genuine company entity 'pt-karya-maju'`
+    !formatTagListHorizontal(['kopi']).includes('('),
+    `Horizontal tag list does NOT contain count in parentheses`
   );
 
-  // --- ITEM 5: Compact & Elegant Layout Formatting ---
-  console.log('\n--- 5. Testing Compact Telegram Layout Formatting ---');
-  const rawHistoryTags = [
-    'kopi', 'kopi', 'kopi', 'kopi',
-    'cimin', 'cimin', 'cimin',
-    'bca', 'bca',
-    'cursor', 'cursor',
-    'seblak',
-    'vps',
-    'itb',
-    'avatar',
-    'renungan',
-    'pt-karya-maju',
-  ];
+  // --- ITEM 5: 3x3 Categories Grid Keyboard ---
+  console.log('\n--- 5. Testing 3x3 Categories Grid Keyboard ---');
+  const keyboard = buildCategoriesGridKeyboard();
+  assert(keyboard.inline_keyboard.length === 3, `Keyboard has exactly 3 rows`);
+  assert(keyboard.inline_keyboard[0].length === 3, `Row 1 has 3 buttons`);
+  assert(keyboard.inline_keyboard[1].length === 3, `Row 2 has 3 buttons`);
+  assert(keyboard.inline_keyboard[2].length === 3, `Row 3 has 3 buttons`);
 
-  const top9 = getTopTags(rawHistoryTags, 9);
-  assert(top9.length === 9, `Top 9 tags count should be 9 (got ${top9.length})`);
-  assert(top9[0].tag === 'kopi' && top9[0].count === 4, `Top #1 tag is kopi with 4 count`);
-  assert(top9[1].tag === 'cimin' && top9[1].count === 3, `Top #2 tag is cimin with 3 count`);
+  // Row 1
+  assert(keyboard.inline_keyboard[0][0].text === '💰 Finance', `Row 1 Col 1 is Finance`);
+  assert(keyboard.inline_keyboard[0][0].callback_data === 'page:tags:finance:1', `Finance callback_data is page:tags:finance:1`);
+  assert(keyboard.inline_keyboard[0][1].text === '📋 Todo', `Row 1 Col 2 is Todo`);
+  assert(keyboard.inline_keyboard[0][1].callback_data === 'page:tags:todo:1', `Todo callback_data is page:tags:todo:1`);
+  assert(keyboard.inline_keyboard[0][2].text === '📅 Schedule', `Row 1 Col 3 is Schedule`);
+  assert(keyboard.inline_keyboard[0][2].callback_data === 'page:tags:schedule:1', `Schedule callback_data is page:tags:schedule:1`);
 
-  const topMarkdown = formatTopTagsMarkdown(top9, 'id');
-  assert(topMarkdown.includes('• #kopi (4)'), `Top tags markdown includes • #kopi (4)`);
-  assert(topMarkdown.includes('• #cimin (3)'), `Top tags markdown includes • #cimin (3)`);
+  // Row 2
+  assert(keyboard.inline_keyboard[1][0].text === '🔖 Bookmark', `Row 2 Col 1 is Bookmark`);
+  assert(keyboard.inline_keyboard[1][0].callback_data === 'page:tags:bookmark:1', `Bookmark callback_data is page:tags:bookmark:1`);
+  assert(keyboard.inline_keyboard[1][1].text === '🔐 Credential', `Row 2 Col 2 is Credential`);
+  assert(keyboard.inline_keyboard[1][1].callback_data === 'page:tags:credential:1', `Credential callback_data is page:tags:credential:1`);
+  assert(keyboard.inline_keyboard[1][2].text === '📚 Reference', `Row 2 Col 3 is Reference`);
+  assert(keyboard.inline_keyboard[1][2].callback_data === 'page:tags:reference:1', `Reference callback_data is page:tags:reference:1`);
 
-  const clustersFromHistory = clusterTags(rawHistoryTags);
-  const summaryMarkdown = formatClustersSummaryMarkdown(clustersFromHistory, 'id');
-  assert(summaryMarkdown.includes('• 🍔 Kuliner (3 tag)'), `Summary includes • 🍔 Kuliner (3 tag) (got: \n${summaryMarkdown})`);
-  assert(summaryMarkdown.includes('• 💳 Keuangan & Akun (1 tag)'), `Summary includes • 💳 Keuangan & Akun (1 tag)`);
-  assert(summaryMarkdown.includes('Teknologi & Server (2 tag)'), `Summary includes Teknologi & Server (2 tag)`);
+  // Row 3
+  assert(keyboard.inline_keyboard[2][0].text === '📝 Draft', `Row 3 Col 1 is Draft`);
+  assert(keyboard.inline_keyboard[2][0].callback_data === 'page:tags:draft:1', `Draft callback_data is page:tags:draft:1`);
+  assert(keyboard.inline_keyboard[2][1].text === '💬 Random-yap', `Row 3 Col 2 is Random-yap`);
+  assert(keyboard.inline_keyboard[2][1].callback_data === 'page:tags:random-yap:1', `Random-yap callback_data is page:tags:random-yap:1`);
+  assert(keyboard.inline_keyboard[2][2].text === '🏷 Others', `Row 3 Col 3 is Others`);
+  assert(keyboard.inline_keyboard[2][2].callback_data === 'page:tags:others:1', `Others callback_data is page:tags:others:1`);
 
-  // --- ITEM 6: Sub-Command Exploration Resolver ---
-  console.log('\n--- 6. Testing Sub-Command Exploration Resolver ---');
-  const financeCluster = findClusterByKeyOrAlias('finance');
-  assert(financeCluster !== null && financeCluster.key === 'finance', `findClusterByKeyOrAlias('finance') finds finance cluster`);
+  // Check pagination keyboard has "Kembali ke Tags"
+  const tagsPaginationKb = buildPaginationKeyboard('tags', 'finance', 1, 3);
+  assert(tagsPaginationKb !== undefined, `Tags pagination keyboard generated`);
+  assert(tagsPaginationKb?.inline_keyboard.length === 2, `Tags pagination keyboard has 2 rows (nav + back)`);
+  assert(tagsPaginationKb?.inline_keyboard[1][0].text === '🏷 Kembali ke Tags', `Back button text is '🏷 Kembali ke Tags'`);
+  assert(tagsPaginationKb?.inline_keyboard[1][0].callback_data === 'menu:tags', `Back button callback is 'menu:tags'`);
 
-  const kulinerCluster = findClusterByKeyOrAlias('kuliner');
-  assert(kulinerCluster !== null && kulinerCluster.key === 'culinary', `findClusterByKeyOrAlias('kuliner') maps to culinary cluster`);
+  // --- ITEM 6: Tag Search Tracking & Overview Data ---
+  console.log('\n--- 6. Testing Tag Search Tracking & Overview Data ---');
+  const testUserId = `test_user_tags_${Date.now()}`;
+  await db.insert(users).values({
+    id: testUserId,
+    email: `${testUserId}@example.com`,
+  });
 
-  const techCluster = findClusterByKeyOrAlias('teknologi');
-  assert(techCluster !== null && techCluster.key === 'tech', `findClusterByKeyOrAlias('teknologi') maps to tech cluster`);
+  // Track search
+  await recordTagSearch(testUserId, 'kopi');
+  await recordTagSearch(testUserId, 'kopi');
+  await recordTagSearch(testUserId, 'cimin');
 
-  const regularTag = findClusterByKeyOrAlias('cimin');
-  assert(regularTag === null, `findClusterByKeyOrAlias('cimin') returns null (falls back to note filter)`);
+  // Insert mock notes
+  await db.insert(notes).values([
+    {
+      id: crypto.randomUUID(),
+      userId: testUserId,
+      content: 'ngopi pagi',
+      category: 'others',
+      specificTags: ['kopi', 'pagi'],
+      createdAt: new Date(Date.now() - 3000),
+    },
+    {
+      id: crypto.randomUUID(),
+      userId: testUserId,
+      content: 'jajan cimin dan kopi',
+      category: 'finance',
+      specificTags: ['cimin', 'kopi'],
+      createdAt: new Date(Date.now() - 2000),
+    },
+    {
+      id: crypto.randomUUID(),
+      userId: testUserId,
+      content: 'bayar wifi hetzner',
+      category: 'credential',
+      specificTags: ['hetzner', 'wifi'],
+      createdAt: new Date(Date.now() - 1000),
+    },
+  ]);
+
+  const overview = await getTagsOverviewData(testUserId);
+  assert(overview.hasNotes === true, `Overview detects user notes`);
+  assert(overview.activeTagsText.includes('#kopi'), `Active tags includes #kopi`);
+  assert(overview.recentTagsText.startsWith('#hetzner, #wifi'), `Recent tags starts with newest tags (#hetzner, #wifi)`);
+  assert(overview.searchedTagsText.startsWith('#kopi, #cimin'), `Searched tags starts with #kopi, #cimin`);
+
+  // Cleanup
+  await db.delete(users).where(eq(users.id, testUserId));
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);
   console.log(`==================================================`);
 
   if (passed === total) {
-    console.log('🎉 ALL REVISED /TAGS TESTS PASSED 100%!');
+    console.log('🎉 ALL HORIZONTAL /TAGS TESTS PASSED 100%!');
     process.exit(0);
   } else {
     console.error('❌ SOME TESTS FAILED');

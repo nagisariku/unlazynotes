@@ -58,9 +58,8 @@ export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocal
 • \`/start\` atau \`/help\` - Tampilkan bantuan ini
 • \`/login <api_key>\` - Tautkan akun Telegram secara manual
 • \`/logout\` - Putus tautan akun Telegram ini
-• \`/tags\` - Tampilkan Top 9 tag & ringkasan klaster kategori
-• \`/tags <kategori>\` - Eksplorasi daftar tag dalam klaster tertentu
-• \`/tags <nama_tag>\` - Filter catatan berdasarkan tag tertentu
+• \`/tags\` - Tampilkan menu tag & 9 kategori utama
+• \`/tags <nama_tag>\` - Filter catatan berdasarkan tag atau kategori
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
 • \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
 • \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
@@ -76,9 +75,8 @@ Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami aka
 • \`/start\` or \`/help\` - Show this guide
 • \`/login <api_key>\` - Link your Telegram account manually
 • \`/logout\` - Disconnect this Telegram account
-• \`/tags\` - Display Top 9 tags & category clusters summary
-• \`/tags <category>\` - Explore tag list in a specific cluster
-• \`/tags <tag_name>\` - Filter notes by a specific tag
+• \`/tags\` - Display tag overview & 9 main categories
+• \`/tags <tag_name>\` - Filter notes by tag or category
 • \`/search <keyword>\` - Search notes by keyword
 • \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
 • \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault
@@ -161,13 +159,13 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_empty: {
-    id: `Belum ada catatan atau tag yang tersimpan dalam 30 hari terakhir.`,
-    en: `No saved notes or tags found in the last 30 days.`,
+    id: `Belum ada catatan atau tag yang tersimpan.`,
+    en: `No saved notes or tags found.`,
   },
 
   tags_header: {
-    id: `🏷 *Tag Aktif Anda (30 Hari Terakhir)*\n\n🔥 *Top 9 Tags Teraktif:*\n{topTagsText}\n\n📂 *Ringkasan Klaster Kategori:*\n{clustersSummaryText}\n\n{quotaStatus}\n\n💡 _Tips: Ketik \`/tags <kategori>\` (misal: \`/tags finance\`) untuk melihat tag di kategori tersebut, atau \`/tags <nama_tag>\` untuk memfilter catatan._`,
-    en: `🏷 *Your Active Tags (Last 30 Days)*\n\n🔥 *Top 9 Most Active Tags:*\n{topTagsText}\n\n📂 *Category Clusters Summary:*\n{clustersSummaryText}\n\n{quotaStatus}\n\n💡 _Tip: Type \`/tags <category>\` (e.g. \`/tags finance\`) to explore tags in that category, or \`/tags <tag_name>\` to filter notes._`,
+    id: `🏷 *Tags Anda*\n\n🔥 *Teraktif:* {activeTagsText}\n🕒 *Terakhir:* {recentTagsText}\n🔍 *Sering Dicari:* {searchedTagsText}\n\n_Pilih kategori di bawah untuk membuka catatan, atau ketik \`/tags <nama_tag>\`._`,
+    en: `🏷 *Your Tags*\n\n🔥 *Most Active:* {activeTagsText}\n🕒 *Recent:* {recentTagsText}\n🔍 *Most Searched:* {searchedTagsText}\n\n_Select a category below to browse notes, or type \`/tags <tag_name>\`._`,
   },
 
   tags_cluster_detail: {
