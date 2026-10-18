@@ -7,7 +7,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch**: `main` (Bersih di commit lokal `48755aa`)
+- **Branch**: `main` (Bersih di commit lokal `3b9fe53`)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
@@ -17,7 +17,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 82/82 assertions lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 94/94 assertions lolos (100% PASS)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-intent-classifier.ts`: 31/31 unit test lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
