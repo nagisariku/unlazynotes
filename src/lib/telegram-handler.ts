@@ -298,13 +298,23 @@ export async function recordTagSearch(userId: string, tag: string): Promise<void
         })
         .where(eq(tagSearches.id, existing.id));
     } else {
-      await db.insert(tagSearches).values({
-        id: crypto.randomUUID(),
-        userId,
-        tag: normTag,
-        count: 1,
-        updatedAt: new Date(),
-      });
+      try {
+        await db.insert(tagSearches).values({
+          id: crypto.randomUUID(),
+          userId,
+          tag: normTag,
+          count: 1,
+          updatedAt: new Date(),
+        });
+      } catch {
+        await db
+          .update(tagSearches)
+          .set({
+            count: sql`${tagSearches.count} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(tagSearches.userId, userId), eq(tagSearches.tag, normTag)));
+      }
     }
   } catch (err) {
     console.error('[recordTagSearch] Failed to track tag search:', err);
@@ -314,7 +324,7 @@ export async function recordTagSearch(userId: string, tag: string): Promise<void
 /**
  * Fetches data for the 3 horizontal lines of /tags:
  * 1. Top 15 Active Tags (highest frequency across all user active notes)
- * 2. Top 15 Recent Tags (unique tags from newest notes, deduplicated against Active)
+ * 2. Top 15 Recent Tags (1st tag per newest note, deduplicated against Active and prior Recent)
  * 3. Top 15 Most Searched Tags (from tag_searches, deduplicated against Active and Recent)
  * Numbers are globally consecutive without collision across groups.
  */
@@ -322,6 +332,7 @@ export async function getTagsOverviewData(userId: string) {
   const userNotes = await db
     .select({
       specificTags: notes.specificTags,
+      category: notes.category,
       createdAt: notes.createdAt,
     })
     .from(notes)
@@ -334,22 +345,18 @@ export async function getTagsOverviewData(userId: string) {
     .orderBy(desc(notes.createdAt));
 
   const tagFreq = new Map<string, number>();
-  const recentCandidates: string[] = [];
-  const seenRecent = new Set<string>();
 
   for (const n of userNotes) {
-    if (Array.isArray(n.specificTags)) {
+    if (Array.isArray(n.specificTags) && n.specificTags.length > 0) {
       for (const rawTag of n.specificTags) {
         if (rawTag && typeof rawTag === 'string' && rawTag.trim()) {
           const t = rawTag.trim().toLowerCase();
           tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
-
-          if (!seenRecent.has(t)) {
-            seenRecent.add(t);
-            recentCandidates.push(t);
-          }
         }
       }
+    } else if (n.category && typeof n.category === 'string' && n.category.trim()) {
+      const cat = n.category.trim().toLowerCase();
+      tagFreq.set(cat, (tagFreq.get(cat) || 0) + 1);
     }
   }
 
@@ -358,36 +365,51 @@ export async function getTagsOverviewData(userId: string) {
     .slice(0, 15)
     .map(([t]) => t);
 
-  const usedTagsSet = new Set<string>();
+  const seenTags = new Set<string>();
   const numberToTagMap = new Map<number, string>();
   let currentNumber = 1;
 
-  // 1. Teraktif (1 s/d N, maks 15)
+  // 1. Teraktif: Kumpulkan top 15 tag dengan frekuensi kemunculan terbanyak di DB. Simpan ke seenTags.
   const activeNumbered: string[] = [];
   for (const t of activeTagsSlice) {
-    usedTagsSet.add(t);
+    seenTags.add(t);
     const num = currentNumber++;
     numberToTagMap.set(num, t);
     activeNumbered.push(`(${num})${escapeHtml(t)}`);
   }
 
-  // 2. Terakhir (melanjutkan nomor, maks 15, deduplikasi dari Teraktif)
+  // 2. Terakhir: Loop catatan terbaru (ambil HANYA 1 tag pertama per catatan, specificTags[0] atau fallback category).
+  // Lewati jika tag SUDAH ada di seenTags. Ambil hingga maksimal 15 tag unik.
   const recentNumbered: string[] = [];
-  for (const t of recentCandidates) {
-    if (!usedTagsSet.has(t)) {
-      usedTagsSet.add(t);
+  for (const n of userNotes) {
+    let firstTag: string | null = null;
+    if (Array.isArray(n.specificTags) && n.specificTags.length > 0) {
+      for (const st of n.specificTags) {
+        if (st && typeof st === 'string' && st.trim()) {
+          firstTag = st.trim().toLowerCase();
+          break;
+        }
+      }
+    }
+    if (!firstTag && n.category && typeof n.category === 'string' && n.category.trim()) {
+      firstTag = n.category.trim().toLowerCase();
+    }
+
+    if (firstTag && !seenTags.has(firstTag)) {
+      seenTags.add(firstTag);
       const num = currentNumber++;
-      numberToTagMap.set(num, t);
-      recentNumbered.push(`(${num})${escapeHtml(t)}`);
+      numberToTagMap.set(num, firstTag);
+      recentNumbered.push(`(${num})${escapeHtml(firstTag)}`);
       if (recentNumbered.length >= 15) {
         break;
       }
     }
   }
 
-  // 3. Sering Dicari (melanjutkan nomor, maks 15, deduplikasi dari Teraktif & Terakhir)
+  // 3. Sering Dicari: Ambil tag-tag yang paling sering dibuka/direquest. Lewati jika SUDAH ada di seenTags.
+  // Ambil hanya yang belum pernah muncul di Teraktif maupun Terakhir hingga maksimal 15 tag.
   const searchedRows = await db
-    .select({ tag: tagSearches.tag })
+    .select({ tag: tagSearches.tag, count: tagSearches.count })
     .from(tagSearches)
     .where(eq(tagSearches.userId, userId))
     .orderBy(desc(tagSearches.count), desc(tagSearches.updatedAt))
@@ -396,8 +418,8 @@ export async function getTagsOverviewData(userId: string) {
   const searchedNumbered: string[] = [];
   for (const r of searchedRows) {
     const t = r.tag?.trim().toLowerCase();
-    if (t && !usedTagsSet.has(t)) {
-      usedTagsSet.add(t);
+    if (t && !seenTags.has(t)) {
+      seenTags.add(t);
       const num = currentNumber++;
       numberToTagMap.set(num, t);
       searchedNumbered.push(`(${num})${escapeHtml(t)}`);
@@ -957,7 +979,20 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 6. /tags <nama_tag>
   if (text.startsWith('/tags ')) {
     const rawArg = text.substring(6).trim();
-    const targetTag = normalizeTag(rawArg);
+    let targetTag = normalizeTag(rawArg);
+
+    // Jika argumen berupa angka (misal: /tags 1 atau /tags (1)), cek sesi aktif nomor tag
+    const numMatch = rawArg.match(/^\(?(\d+)\)?$/);
+    if (numMatch) {
+      const digit = parseInt(numMatch[1], 10);
+      const session = tagSessionMap.get(chatId);
+      if (session && session.expiresAt > Date.now()) {
+        const resolved = session.tags.get(digit);
+        if (resolved) {
+          targetTag = resolved;
+        }
+      }
+    }
 
     if (!targetTag) {
       await sendTelegramMessage(chatId, getTelegramMsg('tags_filter_missing', activeLocale), { parse_mode: 'Markdown' });
@@ -1348,6 +1383,9 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       .limit(1);
 
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
+
+    // Increment counter riwayat pencarian/pembukaan tag user di tag_searches
+    await recordTagSearch(activeKey.userId, targetTag);
 
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })

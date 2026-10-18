@@ -8,7 +8,7 @@ import {
 } from '../src/lib/telegram-handler';
 import { db } from '../src/db';
 import { users, apiKeys, notes, tagSearches } from '../src/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 async function runTests() {
   console.log('==================================================');
@@ -340,6 +340,135 @@ async function runTests() {
   assert(kb7?.inline_keyboard[1].length === 2, `Row 2 has 2 buttons for 7 items`);
   assert(kb7?.inline_keyboard[2].length === 2, `Row 3 is pagination nav [1/2] [Next] on page 1`);
   assert(kb7?.inline_keyboard[3][0].text === '🏷 Kembali ke Tags', `Row 4 is back button`);
+
+  // --- ITEM 10: Testing Refined 1-Tag-per-Note Recent, Strict Global Deduplication, and Search Tracking ---
+  console.log('\n--- 10. Testing 1-Tag Recent & Global Deduplication ---');
+  const user10Id = `test_user_item10_${Date.now()}`;
+  await db.insert(users).values({
+    id: user10Id,
+    email: `${user10Id}@example.com`,
+  });
+
+  // Insert notes to saturate Teraktif with 15 unique tags (tag-01 to tag-15) with frequency >= 2
+  const baseTime = Date.now();
+  const notesBatch = [];
+  for (let i = 1; i <= 15; i++) {
+    const pad = String(i).padStart(2, '0');
+    notesBatch.push({
+      id: crypto.randomUUID(),
+      userId: user10Id,
+      content: `Note content ${pad} A`,
+      category: 'others' as const,
+      specificTags: [`tag-${pad}`],
+      createdAt: new Date(baseTime - 100000 + i * 1000),
+    });
+    notesBatch.push({
+      id: crypto.randomUUID(),
+      userId: user10Id,
+      content: `Note content ${pad} B`,
+      category: 'others' as const,
+      specificTags: [`tag-${pad}`],
+      createdAt: new Date(baseTime - 50000 + i * 1000),
+    });
+  }
+  // Extra note with tag-01 to ensure frequency is 3 (top 1)
+  notesBatch.push({
+    id: crypto.randomUUID(),
+    userId: user10Id,
+    content: `Extra note tag-01`,
+    category: 'others' as const,
+    specificTags: ['tag-01'],
+    createdAt: new Date(baseTime - 20000),
+  });
+
+  // Note A (newer): multiple tags ['recent-first', 'recent-second', 'recent-third']
+  // Only 'recent-first' must be taken into Terakhir!
+  notesBatch.push({
+    id: crypto.randomUUID(),
+    userId: user10Id,
+    content: `Recent note with multiple tags`,
+    category: 'others' as const,
+    specificTags: ['recent-first', 'recent-second', 'recent-third'],
+    createdAt: new Date(baseTime - 10000),
+  });
+
+  // Note B (even newer): fallback to category when specificTags is empty
+  notesBatch.push({
+    id: crypto.randomUUID(),
+    userId: user10Id,
+    content: `Note with empty specificTags fallback to category`,
+    category: 'credential' as const,
+    specificTags: [],
+    createdAt: new Date(baseTime - 5000),
+  });
+
+  // Note C (newest!): first tag is 'tag-01' which is ALREADY in Teraktif!
+  // It must be skipped, and MUST NOT pull in 'skip-me'
+  notesBatch.push({
+    id: crypto.randomUUID(),
+    userId: user10Id,
+    content: `Note whose first tag is already active`,
+    category: 'others' as const,
+    specificTags: ['tag-01', 'skip-me'],
+    createdAt: new Date(baseTime - 1000),
+  });
+
+  await db.insert(notes).values(notesBatch);
+
+  // Searches:
+  // 1. 'tag-01' (already in Teraktif)
+  // 2. 'recent-first' (already in Terakhir)
+  // 3. 'searched-unique' (should appear in Sering Dicari)
+  await recordTagSearch(user10Id, 'tag-01');
+  await recordTagSearch(user10Id, 'recent-first');
+  await recordTagSearch(user10Id, 'searched-unique');
+  await recordTagSearch(user10Id, 'searched-unique'); // count 2
+
+  const overview10 = await getTagsOverviewData(user10Id);
+
+  // 1. Teraktif contains 15 tags: (1)tag-01 through (15)tag-15
+  assert(overview10.activeTagsText.includes('(1)tag-01'), `Teraktif starts with (1)tag-01`);
+  assert(overview10.activeTagsText.includes('(15)'), `Teraktif has 15 items ending with (15)`);
+
+  // 2. Terakhir: Note C has 'tag-01' as first tag -> skipped! 'skip-me' is NOT taken.
+  assert(!overview10.recentTagsText.includes('skip-me'), `Terakhir skips note when first tag is active and does NOT take 2nd tag`);
+  // Note B is next newest: empty tags -> fallback 'credential'
+  assert(overview10.recentTagsText.includes('credential'), `Terakhir falls back to category 'credential' when specificTags is empty`);
+  // Note A is next: takes 'recent-first'
+  assert(overview10.recentTagsText.includes('recent-first'), `Terakhir takes only first tag 'recent-first'`);
+  assert(!overview10.recentTagsText.includes('recent-second'), `Terakhir does NOT take second tag 'recent-second'`);
+
+  // 3. Numbering continues sequentially from 16
+  assert(overview10.recentTagsText.includes('(16)'), `Terakhir starts numbering at (16)`);
+  assert(overview10.recentTagsText.includes('(17)'), `Terakhir continues numbering at (17)`);
+
+  // 4. Sering Dicari: 'tag-01' and 'recent-first' skipped because already in seenTags
+  assert(!overview10.searchedTagsText.includes('tag-01'), `Sering Dicari skips tag-01 which is in Teraktif`);
+  assert(!overview10.searchedTagsText.includes('recent-first'), `Sering Dicari skips recent-first which is in Terakhir`);
+  assert(overview10.searchedTagsText.includes('(18)searched-unique'), `Sering Dicari includes searched-unique at (18)`);
+
+  // 5. Test callback query tracks inline tag click
+  const testChatId10 = `chat_btn_${Date.now()}`;
+  await db.insert(apiKeys).values({
+    id: crypto.randomUUID(),
+    userId: user10Id,
+    keyHash: `hash_${Date.now()}`,
+    telegramChatId: testChatId10,
+    isActive: true,
+  });
+
+  const { processTelegramCallbackQuery } = await import('../src/lib/telegram-handler');
+  await processTelegramCallbackQuery({
+    id: 'cb_test_btn',
+    data: 'page:tags:clicked-category:1',
+    from: { id: testChatId10 },
+  });
+
+  const [clickedSearch] = await db
+    .select()
+    .from(tagSearches)
+    .where(and(eq(tagSearches.userId, user10Id), eq(tagSearches.tag, 'clicked-category')));
+  assert(clickedSearch !== undefined && clickedSearch.count >= 1, `Inline tag click recorded in tag_searches table`);
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);
