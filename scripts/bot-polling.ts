@@ -29,6 +29,19 @@ async function main() {
     await bot.api.deleteWebhook({ drop_pending_updates: false });
     console.log('✅ Webhook successfully removed. Polling mode enabled.');
 
+    // 1b. Daftarkan menu perintah resmi Telegram (Hamburger Menu)
+    try {
+      await bot.api.setMyCommands([
+        { command: 'tags', description: '🏷 Buka menu tags & kategori' },
+        { command: 'pin', description: '⭐️ Buka catatan yang dipin' },
+        { command: 'dashboard', description: '🌐 Buka web dashboard' },
+        { command: 'help', description: '💡 Bantuan & panduan bot' },
+      ]);
+      console.log('✅ Bot commands menu successfully registered.');
+    } catch (cmdErr) {
+      console.error('[Bot Commands Registration Error]:', cmdErr);
+    }
+
     // 2. Register message & edited_message handlers
     bot.on('message', async (ctx) => {
       try {

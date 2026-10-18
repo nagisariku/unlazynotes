@@ -43,9 +43,15 @@ export type TelegramMessageKey =
   | 'vault_revealed'
   | 'vault_decryption_failed'
   | 'vault_revealed_multiple_header'
-  | 'callback_unauthenticated';
+  | 'callback_unauthenticated'
+  | 'dashboard_prompt';
 
 export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocale, string>> = {
+  dashboard_prompt: {
+    id: `🌐 Buka Web Dashboard UnlazyNotes Anda untuk mengelola catatan secara leluasa:`,
+    en: `🌐 Open your UnlazyNotes Web Dashboard to manage your notes seamlessly:`,
+  },
+
   security_disclaimer: {
     id: `🔒 *Keamanan & Private Vault:*\nUntuk data rahasia/kredensial, selalu gunakan perintah \`/secure <kunci> <isi>\` agar dienkripsi AES-256-GCM secara terisolasi dari AI.`,
     en: `🔒 *Security & Private Vault:*\nFor confidential data or credentials, always use \`/secure <key> <content>\` to encrypt with AES-256-GCM completely isolated from AI.`,
@@ -60,6 +66,8 @@ export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocal
 • \`/logout\` - Putus tautan akun Telegram ini
 • \`/tags\` - Tampilkan menu tag & 9 kategori utama
 • \`/tags <nama_tag>\` - Filter catatan berdasarkan tag atau kategori
+• \`/pin\` - Buka daftar catatan penting yang dipin
+• \`/dashboard\` - Buka web dashboard UnlazyNotes
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
 • \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
 • \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
@@ -77,6 +85,8 @@ Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami aka
 • \`/logout\` - Disconnect this Telegram account
 • \`/tags\` - Display tag overview & 9 main categories
 • \`/tags <tag_name>\` - Filter notes by tag or category
+• \`/pin\` - Open your pinned/starred notes
+• \`/dashboard\` - Open your UnlazyNotes web dashboard
 • \`/search <keyword>\` - Search notes by keyword
 • \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
 • \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault

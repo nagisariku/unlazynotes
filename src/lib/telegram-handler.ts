@@ -26,6 +26,18 @@ import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/li
 export const PAGE_SIZE = 9;
 export const DEBOUNCE_DELAY_MS = 3000;
 
+export const PERSISTENT_DOCK_KEYBOARD = {
+  keyboard: [
+    [
+      { text: '🏷 Tags' },
+      { text: '⭐️ Pin' },
+      { text: '🌐 Dashboard' },
+    ]
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
 export interface TelegramProcessResult {
   ok: boolean;
   action?: string;
@@ -779,6 +791,30 @@ export async function handlePinList(
 }
 
 /**
+ * Handles /dashboard command and dock menu '🌐 Dashboard': sends prompt with web link.
+ */
+export async function handleDashboardCommand(
+  chatId: string,
+  activeLocale: SupportedLocale = 'id'
+): Promise<TelegramProcessResult> {
+  const dashboardUrl = `${process.env.BETTER_AUTH_URL || 'https://unlazynotes.com'}/dashboard`;
+  const msg = getTelegramMsg('dashboard_prompt', activeLocale);
+  const buttonText = activeLocale === 'id' ? '🚀 Buka Web Dashboard' : '🚀 Open Web Dashboard';
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: buttonText, url: dashboardUrl }]
+    ]
+  };
+
+  await sendTelegramMessage(chatId, msg, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard,
+  });
+
+  return { ok: true, action: 'dashboard_opened' };
+}
+
+/**
  * Core Telegram Message Processor.
  * Shared between Webhook handler and direct VPS Long Polling worker.
  */
@@ -834,8 +870,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   const text = rawText.trim();
 
-  // Jika input adalah command bot ('/'), pastikan catatan di debounce buffer disimpan terlebih dahulu
-  if (text.startsWith('/')) {
+  // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
+  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '🌐 Dashboard';
+  if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
     }
@@ -884,7 +921,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
         const userName = matchedUser?.name || (activeLocale === 'id' ? 'Teman' : 'Friend');
         const welcomeMsg = getTelegramMsg('welcome_connected_brief', activeLocale, { userName });
-        await sendTelegramMessage(chatId, welcomeMsg, { parse_mode: 'Markdown' });
+        await sendTelegramMessage(chatId, welcomeMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: PERSISTENT_DOCK_KEYBOARD,
+        });
         return { ok: true, action: 'start_auto_connected' };
       }
     }
@@ -903,7 +943,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     const secDisc = getTelegramMsg('security_disclaimer', activeLocale);
     const helpMsg = getTelegramMsg('help', activeLocale, { securityDisclaimer: secDisc });
-    await sendTelegramMessage(chatId, helpMsg, { parse_mode: 'Markdown' });
+    await sendTelegramMessage(chatId, helpMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
     return { ok: true, action: 'help' };
   }
 
@@ -969,7 +1012,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     await sendTelegramMessage(
       chatId,
       getTelegramMsg('welcome_connected', activeLocale, { userName, securityDisclaimer: secDisc }),
-      { parse_mode: 'Markdown' }
+      {
+        parse_mode: 'Markdown',
+        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      }
     );
 
     return { ok: true, action: 'login_success' };
@@ -1067,8 +1113,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
   }
 
-  // 5. /tags (tanpa argumen)
-  if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text)) {
+  // 5. /tags (tanpa argumen) atau tombol dock '🏷 Tags'
+  if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '🏷 Tags') {
     const overview = await getTagsOverviewData(activeKey.userId);
 
     if (!overview.hasNotes) {
@@ -1124,9 +1170,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleTagFilter(chatId, activeKey.userId, targetTag, activeLocale);
   }
 
-  // 6b. /pin
-  if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text)) {
+  // 6b. /pin atau tombol dock '⭐️ Pin'
+  if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '⭐️ Pin') {
     return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
+  }
+
+  // 6c. /dashboard atau tombol dock '🌐 Dashboard'
+  if (text === '/dashboard' || /^(\/dashboard)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '🌐 Dashboard') {
+    return await handleDashboardCommand(chatId, activeLocale);
   }
 
   // 7. /search <kata_kunci>
