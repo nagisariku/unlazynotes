@@ -10,7 +10,15 @@ import {
   editTelegramMessage,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
-import { normalizeTag, clusterTags, formatTagClustersMarkdown } from '@/lib/ai';
+import {
+  normalizeTag,
+  clusterTags,
+  formatTagClustersMarkdown,
+  getTopTags,
+  formatTopTagsMarkdown,
+  formatClustersSummaryMarkdown,
+  findClusterByKeyOrAlias,
+} from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import {
@@ -37,6 +45,8 @@ export interface TelegramProcessResult {
   bufferedCount?: number;
   totalCount?: number;
   page?: number;
+  cluster?: string;
+  count?: number;
 }
 
 interface DebounceBufferItem {
@@ -487,11 +497,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'tags_empty' };
     }
 
-    const categoriesSet = new Set<string>();
     const rawSpecificTags: string[] = [];
 
     for (const n of userNotes) {
-      if (n.category) categoriesSet.add(n.category);
       if (Array.isArray(n.specificTags)) {
         for (const t of n.specificTags) {
           if (t && typeof t === 'string' && t.trim()) {
@@ -501,16 +509,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       }
     }
 
-    const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
-
-    const catList =
-      Array.from(categoriesSet)
-        .sort((a, b) => a.localeCompare(b))
-        .map(escapeMd)
-        .join(', ') || '-';
+    const topTags = getTopTags(rawSpecificTags, 9);
+    const topTagsText = formatTopTagsMarkdown(topTags, activeLocale);
 
     const clusters = clusterTags(rawSpecificTags);
-    const clustersText = formatTagClustersMarkdown(clusters, activeLocale);
+    const clustersSummaryText = formatClustersSummaryMarkdown(clusters, activeLocale);
 
     const quotaStatus = quotaInfo.isPro
       ? getTelegramMsg('quota_status_pro', activeLocale)
@@ -519,14 +522,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
           maxQuota: FREE_MONTHLY_QUOTA,
         });
 
-    const emptyClustersText =
-      activeLocale === 'en'
-        ? '_No specific tags recorded in the last 30 days._'
-        : '_Belum ada tag spesifik dalam 30 hari terakhir._';
-
     const msg = getTelegramMsg('tags_header', activeLocale, {
-      catList,
-      clustersText: clustersText || emptyClustersText,
+      topTagsText,
+      clustersSummaryText,
       quotaStatus,
     });
     await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
@@ -534,15 +532,78 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'tags_list' };
   }
 
-  // 6. /tags <nama_tag>
+  // 6. /tags <nama_tag_atau_kategori>
   if (text.startsWith('/tags ')) {
-    const targetTagRaw = text.substring(6).trim();
-    const targetTag = normalizeTag(targetTagRaw);
+    const rawArg = text.substring(6).trim();
+    const normalizedArg = normalizeTag(rawArg);
 
-    if (!targetTag) {
+    if (!normalizedArg) {
       await sendTelegramMessage(chatId, getTelegramMsg('tags_filter_missing', activeLocale), { parse_mode: 'Markdown' });
       return { ok: true, action: 'tags_filter_missing' };
     }
+
+    // Sub-Command Eksplorasi Klaster Kategori (misal: /tags finance, /tags kuliner, /tags tech)
+    const matchedCluster = findClusterByKeyOrAlias(normalizedArg);
+    if (matchedCluster) {
+      const userNotes = await db
+        .select({
+          specificTags: notes.specificTags,
+        })
+        .from(notes)
+        .where(
+          and(
+            eq(notes.userId, activeKey.userId),
+            eq(notes.isEncrypted, false),
+            gte(notes.createdAt, sql`NOW() - INTERVAL '30 days'`)
+          )
+        );
+
+      const rawSpecificTags: string[] = [];
+      for (const n of userNotes) {
+        if (Array.isArray(n.specificTags)) {
+          for (const t of n.specificTags) {
+            if (t && typeof t === 'string' && t.trim()) {
+              rawSpecificTags.push(t.trim());
+            }
+          }
+        }
+      }
+
+      const clusters = clusterTags(rawSpecificTags);
+      const clusterResult = clusters.find((c) => c.cluster.key === matchedCluster.key);
+      const clusterTitle = activeLocale === 'en' ? matchedCluster.name.en : matchedCluster.name.id;
+
+      if (!clusterResult || clusterResult.tags.length === 0) {
+        const emptyMsg = getTelegramMsg('tags_cluster_empty', activeLocale, {
+          icon: matchedCluster.icon,
+          clusterTitle,
+        });
+        await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown' });
+        return { ok: true, action: 'tags_cluster_empty', cluster: matchedCluster.key };
+      }
+
+      const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
+      const count = clusterResult.tags.length;
+      const tagCountLabel =
+        activeLocale === 'en' ? (count === 1 ? '1 tag' : `${count} tags`) : `${count} tag`;
+      const formattedTags = clusterResult.tags
+        .map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`))
+        .join(', ');
+      const exampleTag = clusterResult.tags[0] || 'tag';
+
+      const detailMsg = getTelegramMsg('tags_cluster_detail', activeLocale, {
+        icon: matchedCluster.icon,
+        clusterTitle,
+        tagCountLabel,
+        formattedTags,
+        exampleTag,
+      });
+
+      await sendTelegramMessage(chatId, detailMsg, { parse_mode: 'Markdown' });
+      return { ok: true, action: 'tags_cluster_detail', cluster: matchedCluster.key, count };
+    }
+
+    const targetTag = normalizedArg;
 
     if (targetTag === 'draft') {
       const [countResult] = await db

@@ -17,7 +17,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 23/23 unit test lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 50/50 unit test lolos (100% PASS)
   - `scripts/test-intent-classifier.ts`: 31/31 unit test lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
   - `npm run typecheck`: 0 TypeScript error
@@ -222,13 +222,27 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
    - Mencegah sanitizer memotong digit trailing pada istilah kripto/teknis (`ed25519`, `sha256`, `rsa4096`).
    - Melarang pemotongan tag yang menghasilkan singkatan tanpa makna (seperti `#ed`), memasukkan `ed` ke `BANNED_TAGS`.
    - Membatasi tag < 3 karakter kecuali yang terdaftar di whitelist resmi (`ai`, `db`, `ui`, `ux`, `qa`, `ip`, `os`, `id`, `ml`).
-4. **Overhaul Perintah `/tags` Telegram (Jendela 30 Hari & Kluster Dinamis)**:
-   - Query catatan dibatasi pada 30 hari terakhir (`createdAt >= NOW() - INTERVAL '30 days'`) pada [`src/lib/telegram-handler.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram-handler.ts).
-   - Tag dikelompokkan secara dinamis via root kanonikal payung ke dalam 8 kluster semantik (`culinary`, `work`, `tech`, `shopping`, `mobility`, `wellness`, `thoughts`, `others`) di [`src/lib/ai/taxonomy/clusters.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/taxonomy/clusters.ts).
-   - Tag dalam setiap kluster diurutkan secara alfabetis (A-Z) dan kluster kosong disembunyikan.
+4. **Overhaul Perintah `/tags` Telegram (9 Klaster Komprehensif, Layout Kompak & Eksplorasi Sub-Command)**:
+   - **Perluasan 9 Klaster Lengkap**: Mengatasi *false-others* (>60%) dengan memperluas pemetaan dinamis ke 9 domain klaster terstandarisasi di [`src/lib/ai/taxonomy/clusters.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/ai/taxonomy/clusters.ts):
+     - `culinary` (🍔 Kuliner & Minuman)
+     - `work` (💼 Pekerjaan & Bisnis)
+     - `finance` (💳 Keuangan & Akun)
+     - `tech` (🛠 Teknologi & Server)
+     - `shopping` (🛒 Belanja & Logistik)
+     - `mobility` (🚗 Mobilitas & Kendaraan)
+     - `education` (📚 Kuliah & Belajar)
+     - `lifestyle` (🎬 Hiburan & Gaya Hidup)
+     - `thoughts` (💡 Ide & Renungan)
+     - `others` (🏷 Lainnya): Fallback murni hanya untuk entitas unik (target < 5 tag, misal `pt-karya-maju`).
+   - **Compound Token & Subtoken Matching**: Tag majemuk berslug (seperti `crypto-wallet`, `seed-phrase`, `tire-replacement`, `q4-roadmap`, `evaluasi-sprint`, `drizzle-orm`) otomatis terpetakan akurat ke klaster domainnya via pemecahan subtoken.
+   - **Layout Pesan Ringkas & Elegan**:
+     - *BAGIAN 1*: Top 9 Tags Teraktif beserta frekuensinya (`• #tag (count)`) dari catatan 30 hari terakhir.
+     - *BAGIAN 2*: Ringkasan Klaster Kategori dengan jumlah tag unik (`• 🍔 Kuliner (11 tag)   • 💼 Kerja & Bisnis (8 tag)`).
+     - *BAGIAN 3*: Navigasi tips eksplorasi dan status kuota akun.
+   - **Sub-Command Eksplorasi (`/tags <kategori>`)**: Mengetik `/tags finance`, `/tags kuliner`, `/tags tech`, dsb. menampilkan seluruh daftar tag di klaster tersebut secara alfabetis (A-Z). Jika argumen bukan kategori, otomatis memfilter catatan seperti biasa (`/tags <nama_tag>`).
 5. **Fix IPv6 Happy Eyeballs ETIMEDOUT pada Node.js 22**:
    - Mengatasi `ETIMEDOUT` saat bot memanggil API Telegram pada VPS tanpa rute IPv6 keluar dengan memaksa `dns.setDefaultResultOrder('ipv4first')` dan `https.Agent({ family: 4 })` pada [`src/lib/telegram.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram.ts) dan [`scripts/bot-polling.ts`](file:///home/rikushiro/projects/unlazynotes/scripts/bot-polling.ts).
-6. **Verifikasi Suite**: `scripts/test-enhancements.ts` (23/23 PASS) dan `scripts/test-intent-classifier.ts` (31/31 PASS).
+6. **Verifikasi Suite**: `scripts/test-enhancements.ts` (50/50 PASS), `scripts/test-intent-classifier.ts` (31/31 PASS), dan `scripts/test-tier-quota.ts` (19/19 PASS).
 
 ---
 
