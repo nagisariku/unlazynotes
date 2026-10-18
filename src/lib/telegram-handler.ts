@@ -31,7 +31,6 @@ export const PERSISTENT_DOCK_KEYBOARD = {
     [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }]
   ],
   resize_keyboard: true,
-  is_persistent: true,
 };
 
 export function getWebDashboardUrl(forInlineButton = false): string {

@@ -586,7 +586,7 @@ async function runTests() {
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '🏷 Tags', 'Button 1 is 🏷 Tags');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
   assert(PERSISTENT_DOCK_KEYBOARD.resize_keyboard === true, 'resize_keyboard is true');
-  assert(PERSISTENT_DOCK_KEYBOARD.is_persistent === true, 'is_persistent is true');
+  assert((PERSISTENT_DOCK_KEYBOARD as any).is_persistent === undefined, 'is_persistent is removed to fix back navigation lag');
 
   // 2. handleDashboardCommand direct test
   const dashRes = await handleDashboardCommand(testChatId11, 'id');
