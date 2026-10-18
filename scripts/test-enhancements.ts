@@ -580,12 +580,11 @@ async function runTests() {
     processTelegramMessage,
   } = await import('../src/lib/telegram-handler');
 
-  // 1. Structure of PERSISTENT_DOCK_KEYBOARD
+  // 1. Structure of PERSISTENT_DOCK_KEYBOARD (2 buttons: Tags & Pin)
   assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'PERSISTENT_DOCK_KEYBOARD has keyboard array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 3, 'PERSISTENT_DOCK_KEYBOARD has 3 dock buttons');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'PERSISTENT_DOCK_KEYBOARD has 2 dock buttons');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '🏷 Tags', 'Button 1 is 🏷 Tags');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][2].text === '🌐 Dashboard', 'Button 3 is 🌐 Dashboard');
   assert(PERSISTENT_DOCK_KEYBOARD.resize_keyboard === true, 'resize_keyboard is true');
   assert(PERSISTENT_DOCK_KEYBOARD.is_persistent === true, 'is_persistent is true');
 
@@ -600,34 +599,30 @@ async function runTests() {
   });
   assert(dashMsgRes.ok === true && dashMsgRes.action === 'dashboard_opened', 'Command /dashboard routes to handleDashboardCommand');
 
-  // 4. Routing dock button '🌐 Dashboard'
-  const dashBtnRes = await processTelegramMessage({
-    chat: { id: testChatId11 },
-    text: '🌐 Dashboard',
-  });
-  assert(dashBtnRes.ok === true && dashBtnRes.action === 'dashboard_opened', 'Dock button 🌐 Dashboard routes to handleDashboardCommand');
-
-  // 5. Routing dock button '🏷 Tags'
+  // 4. Routing dock button '🏷 Tags'
   const tagsBtnRes = await processTelegramMessage({
     chat: { id: testChatId11 },
     text: '🏷 Tags',
   });
   assert(tagsBtnRes.ok === true && tagsBtnRes.action === 'tags_list', 'Dock button 🏷 Tags routes to tags_list');
 
-  // 6. Routing dock button '⭐️ Pin'
+  // 5. Routing dock button '⭐️ Pin'
   const pinBtnRes = await processTelegramMessage({
     chat: { id: testChatId11 },
     text: '⭐️ Pin',
   });
   assert(pinBtnRes.ok === true && pinBtnRes.action === 'pin_list', 'Dock button ⭐️ Pin routes to pin_list');
 
-  // 7. i18n Help & Dashboard prompt checks
+  // 6. i18n Help & Dashboard prompt checks (no security disclaimer, contains dashboardUrl)
   const helpId = getTelegramMsg('help', 'id');
   const helpEn = getTelegramMsg('help', 'en');
-  assert(helpId.includes('/pin') && helpId.includes('/dashboard'), 'help.id contains /pin and /dashboard commands');
-  assert(helpEn.includes('/pin') && helpEn.includes('/dashboard'), 'help.en contains /pin and /dashboard commands');
-  assert(getTelegramMsg('dashboard_prompt', 'id').includes('Dashboard'), 'dashboard_prompt.id is configured');
-  assert(getTelegramMsg('dashboard_prompt', 'en').includes('Dashboard'), 'dashboard_prompt.en is configured');
+  assert(helpId.includes('/pin') && helpId.includes('{dashboardUrl}'), 'help.id contains /pin and {dashboardUrl}');
+  assert(helpEn.includes('/pin') && helpEn.includes('{dashboardUrl}'), 'help.en contains /pin and {dashboardUrl}');
+  assert(!helpId.includes('{securityDisclaimer}'), 'help.id does not contain {securityDisclaimer}');
+  assert(!helpEn.includes('{securityDisclaimer}'), 'help.en does not contain {securityDisclaimer}');
+
+  const renderedHelp = getTelegramMsg('help', 'id', { dashboardUrl: 'https://unlazynotes.com/dashboard' });
+  assert(renderedHelp.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.id renders Web Dashboard link properly');
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);

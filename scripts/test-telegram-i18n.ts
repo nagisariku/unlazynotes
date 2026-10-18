@@ -65,19 +65,19 @@ async function runTests() {
   // Parameter replacement check
   const welcomeId = getTelegramMsg('welcome_connected', 'id', {
     userName: 'Riku',
-    securityDisclaimer: 'DISCLAIMER_TEST',
+    dashboardUrl: 'https://unlazynotes.com/dashboard',
   });
   assert(
-    welcomeId.includes('Halo Riku!') && welcomeId.includes('DISCLAIMER_TEST'),
+    welcomeId.includes('Halo Riku!') && welcomeId.includes('https://unlazynotes.com/dashboard'),
     'Interpolation in ID welcome_connected'
   );
 
   const welcomeEn = getTelegramMsg('welcome_connected', 'en', {
     userName: 'Riku',
-    securityDisclaimer: 'DISCLAIMER_TEST',
+    dashboardUrl: 'https://unlazynotes.com/dashboard',
   });
   assert(
-    welcomeEn.includes('Hello Riku!') && welcomeEn.includes('DISCLAIMER_TEST'),
+    welcomeEn.includes('Hello Riku!') && welcomeEn.includes('https://unlazynotes.com/dashboard'),
     'Interpolation in EN welcome_connected'
   );
 

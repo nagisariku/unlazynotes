@@ -61,51 +61,41 @@ export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocal
     id: `🤖 *UnlazyNotes Bot* – Tangkap ide kilat langsung dari chat!
 
 *Daftar Perintah:*
-• \`/start\` atau \`/help\` - Tampilkan bantuan ini
-• \`/login <api_key>\` - Tautkan akun Telegram secara manual
-• \`/logout\` - Putus tautan akun Telegram ini
-• \`/tags\` - Tampilkan menu tag & 9 kategori utama
-• \`/tags <nama_tag>\` - Filter catatan berdasarkan tag atau kategori
-• \`/pin\` - Buka daftar catatan penting yang dipin
-• \`/dashboard\` - Buka web dashboard UnlazyNotes
-• \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
-• \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
-• \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
-• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia atau lihat daftar kunci Private Vault Anda
+• \`/start\` atau \`/help\` - Tampilkan panduan ini
+• \`/tags\` - Buka menu tags & kelola kategori
+• \`/pin\` - Lihat seluruh catatan yang Anda tandai/pin
+• \`/search <kata_kunci>\` - Cari catatan dengan kata kunci
+• \`/login <api_key>\` - Tautkan akun Telegram
+• \`/logout\` - Putus tautan akun Telegram
 
 *Cara Penggunaan:*
-Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami akan otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
+Kirim pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
 
-{securityDisclaimer}`,
+🌐 Web Dashboard: {dashboardUrl}`,
     en: `🤖 *UnlazyNotes Bot* – Capture lightning-fast notes directly from chat!
 
 *Command List:*
 • \`/start\` or \`/help\` - Show this guide
-• \`/login <api_key>\` - Link your Telegram account manually
-• \`/logout\` - Disconnect this Telegram account
-• \`/tags\` - Display tag overview & 9 main categories
-• \`/tags <tag_name>\` - Filter notes by tag or category
-• \`/pin\` - Open your pinned/starred notes
-• \`/dashboard\` - Open your UnlazyNotes web dashboard
+• \`/tags\` - Open tags menu & manage categories
+• \`/pin\` - View all your pinned/starred notes
 • \`/search <keyword>\` - Search notes by keyword
-• \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
-• \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault
-• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secrets or view your Private Vault keys
+• \`/login <api_key>\` - Link your Telegram account
+• \`/logout\` - Disconnect this Telegram account
 
 *How to Use:*
 Simply send any text message or link directly to this bot. Our AI will automatically categorize and tag your notes in seconds!
 
-{securityDisclaimer}`,
+🌐 Web Dashboard: {dashboardUrl}`,
   },
 
   welcome_connected: {
-    id: `🎉 *Halo {userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.\n\n{securityDisclaimer}`,
-    en: `🎉 *Hello {userName}!* Your Telegram account has been successfully linked to UnlazyNotes. You can now send any note directly here.\n\n{securityDisclaimer}`,
+    id: `🎉 *Halo {userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.\n\n🌐 Web Dashboard: {dashboardUrl}`,
+    en: `🎉 *Hello {userName}!* Your Telegram account has been successfully linked to UnlazyNotes. You can now send any note directly here.\n\n🌐 Web Dashboard: {dashboardUrl}`,
   },
 
   welcome_connected_brief: {
-    id: `🎉 *Halo {userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.`,
-    en: `🎉 *Hello {userName}!* Your Telegram account has been successfully linked to UnlazyNotes. You can now send any note directly here.`,
+    id: `🎉 *Halo {userName}!* Akun Telegram Anda berhasil terhubung dengan UnlazyNotes. Anda kini bisa langsung mengirim catatan apa saja ke sini.\n\n🌐 Web Dashboard: {dashboardUrl}`,
+    en: `🎉 *Hello {userName}!* Your Telegram account has been successfully linked to UnlazyNotes. You can now send any note directly here.\n\n🌐 Web Dashboard: {dashboardUrl}`,
   },
 
   security_tip: {

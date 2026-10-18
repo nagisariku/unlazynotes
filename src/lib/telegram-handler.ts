@@ -28,15 +28,19 @@ export const DEBOUNCE_DELAY_MS = 3000;
 
 export const PERSISTENT_DOCK_KEYBOARD = {
   keyboard: [
-    [
-      { text: '🏷 Tags' },
-      { text: '⭐️ Pin' },
-      { text: '🌐 Dashboard' },
-    ]
+    [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }]
   ],
   resize_keyboard: true,
   is_persistent: true,
 };
+
+export function getWebDashboardUrl(forInlineButton = false): string {
+  const envUrl = process.env.BETTER_AUTH_URL;
+  if (forInlineButton && (!envUrl || envUrl.includes('localhost') || envUrl.includes('127.0.0.1'))) {
+    return 'https://unlazynotes.com/dashboard';
+  }
+  return (envUrl || 'https://unlazynotes.com').replace(/\/$/, '') + '/dashboard';
+}
 
 export interface TelegramProcessResult {
   ok: boolean;
@@ -797,7 +801,7 @@ export async function handleDashboardCommand(
   chatId: string,
   activeLocale: SupportedLocale = 'id'
 ): Promise<TelegramProcessResult> {
-  const dashboardUrl = `${process.env.BETTER_AUTH_URL || 'https://unlazynotes.com'}/dashboard`;
+  const dashboardUrl = getWebDashboardUrl(true);
   const msg = getTelegramMsg('dashboard_prompt', activeLocale);
   const buttonText = activeLocale === 'id' ? '🚀 Buka Web Dashboard' : '🚀 Open Web Dashboard';
   const keyboard = {
@@ -871,7 +875,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '🌐 Dashboard';
+  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -920,7 +924,10 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
         const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
         const userName = matchedUser?.name || (activeLocale === 'id' ? 'Teman' : 'Friend');
-        const welcomeMsg = getTelegramMsg('welcome_connected_brief', activeLocale, { userName });
+        const welcomeMsg = getTelegramMsg('welcome_connected_brief', activeLocale, {
+          userName,
+          dashboardUrl: getWebDashboardUrl(),
+        });
         await sendTelegramMessage(chatId, welcomeMsg, {
           parse_mode: 'Markdown',
           reply_markup: PERSISTENT_DOCK_KEYBOARD,
@@ -941,8 +948,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       activeLocale = detectTelegramLocale(message, u?.preferredLocale);
     }
 
-    const secDisc = getTelegramMsg('security_disclaimer', activeLocale);
-    const helpMsg = getTelegramMsg('help', activeLocale, { securityDisclaimer: secDisc });
+    const helpMsg = getTelegramMsg('help', activeLocale, {
+      dashboardUrl: getWebDashboardUrl(),
+    });
     await sendTelegramMessage(chatId, helpMsg, {
       parse_mode: 'Markdown',
       reply_markup: PERSISTENT_DOCK_KEYBOARD,
@@ -1008,10 +1016,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
     const userName = matchedUser?.name || (activeLocale === 'id' ? 'Teman' : 'Friend');
-    const secDisc = getTelegramMsg('security_disclaimer', activeLocale);
     await sendTelegramMessage(
       chatId,
-      getTelegramMsg('welcome_connected', activeLocale, { userName, securityDisclaimer: secDisc }),
+      getTelegramMsg('welcome_connected', activeLocale, {
+        userName,
+        dashboardUrl: getWebDashboardUrl(),
+      }),
       {
         parse_mode: 'Markdown',
         reply_markup: PERSISTENT_DOCK_KEYBOARD,
@@ -1175,8 +1185,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
   }
 
-  // 6c. /dashboard atau tombol dock '🌐 Dashboard'
-  if (text === '/dashboard' || /^(\/dashboard)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '🌐 Dashboard') {
+  // 6c. /dashboard
+  if (text === '/dashboard' || /^(\/dashboard)(@[a-zA-Z0-9_]+)?$/.test(text)) {
     return await handleDashboardCommand(chatId, activeLocale);
   }
 

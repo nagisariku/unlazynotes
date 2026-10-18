@@ -243,12 +243,13 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
    - List cuplikan catatan menampilkan ikon `📌⭐️` untuk catatan berstatus pin dan `📌` untuk catatan standar.
    - Perintah `/pin` menyajikan daftar catatan yang dipin secara kronologis terbaru.
    - Tampilan detail catatan menyajikan tombol aksi Inline Keyboard: `[ 📌 Pin / 📍 Unpin ]`, `[ 📋 Salin ]`, `[ 🗑 Hapus ]`, dan `[ ◀️ Kembali ]`.
-6. **Hamburger Menu, Persistent Dock Menu, Command `/dashboard`, & Panduan `/help`**:
-   - **Hamburger Menu Resmi (`setMyCommands`)**: Didaftarkan otomatis saat bot start (`/tags`, `/pin`, `/dashboard`, `/help`). Perintah `/search` ditiadakan dari menu agar tidak membingungkan pengguna.
-   - **Persistent Dock Menu (`PERSISTENT_DOCK_KEYBOARD`)**: 3 tombol akses cepat `[ 🏷 Tags ] [ ⭐️ Pin ] [ 🌐 Dashboard ]` (`resize_keyboard: true`, `is_persistent: true`) yang dipasangkan otomatis pada respon `/start`, `/help`, dan `/login`.
-   - **Routing Dock Buttons & `/dashboard`**: Tombol dock diteruskan langsung ke handler masing-masing. Perintah `/dashboard` membalas pesan interaktif dengan tombol URL langsung ke web dashboard.
-   - **Panduan `/help` Dwibahasa**: Diperbarui dengan informasi perintah `/pin` dan `/dashboard` untuk ID dan EN.
-7. **Verifikasi Suite**: `scripts/test-enhancements.ts` (126/126 PASS), `scripts/test-intent-classifier.ts` (31/31 PASS), dan `scripts/test-tier-quota.ts` (19/19 PASS).
+6. **Penyederhanaan Hamburger Menu, 2-Button Dock Menu, & Pembaruan Pesan `/start` & `/help`**:
+   - **Hamburger Menu Minimalis (`setMyCommands`)**: Disederhanakan menjadi HANYA perintah `/help` (`💡 Bantuan & panduan bot`), menjaga fokus menu tetap bersih dan mudah dipahami pengguna.
+   - **Persistent Dock Menu 2 Tombol (`PERSISTENT_DOCK_KEYBOARD`)**: Reply keyboard dibuat kompak dengan 2 tombol berdampingan: `[ 🏷 Tags ] [ ⭐️ Pin ]` (`resize_keyboard: true`, `is_persistent: true`), dipasangkan otomatis pada respon `/start`, `/help`, dan `/login`.
+   - **Pemberian Tautan Web Dashboard & Eliminasi Security Disclaimer**:
+     - Menghapus teks `{securityDisclaimer}` yang memakan tempat di bagian bawah pesan `/help`, `/start`, dan `/login`.
+     - Menggantikannya dengan tautan langsung ke Web Dashboard: `🌐 Web Dashboard: {dashboardUrl}`.
+7. **Verifikasi Suite**: `scripts/test-enhancements.ts` (125/125 PASS), `scripts/test-telegram-i18n.ts` (33/33 PASS), dan `scripts/test-intent-classifier.ts` (31/31 PASS).
 
 ---
 
