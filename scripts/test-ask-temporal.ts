@@ -18,15 +18,39 @@ async function run() {
   console.log('TESTING TEMPORAL ANCHORING & /ASK ENHANCEMENT');
   console.log('==================================================\n');
 
-  // 1. Verify Category Classifier for 'tuweeb 2, tanggal 16'
-  console.log('--- 1. Testing Schedule Classifier ---');
+  // 1. Verify Category Classifier & Concrete Entity Tagging for 'tuweeb 2, tanggal 16'
+  console.log('--- 1. Testing Schedule Classifier & Anti-Meta Tagging ---');
   const catResult = heuristicTagNote('tuweeb 2, tanggal 16');
-  console.log('Input: "tuweeb 2, tanggal 16" -> Category:', catResult.category);
+  console.log('Input: "tuweeb 2, tanggal 16" -> Category:', catResult.category, '| Tags:', catResult.specific_tags);
   if (catResult.category !== 'schedule') {
     console.error('❌ FAILED: Expected schedule, got', catResult.category);
     process.exit(1);
   }
-  console.log('✅ PASS: Categorized as schedule!');
+  if (!catResult.specific_tags.includes('tuweeb')) {
+    console.error('❌ FAILED: Expected concrete tag "tuweeb", got', catResult.specific_tags);
+    process.exit(1);
+  }
+  const hasMetaTag = catResult.specific_tags.some(t => /(-reference|-item|-info|-marker|date-reference|time|note)/i.test(t));
+  if (hasMetaTag) {
+    console.error('❌ FAILED: Found forbidden meta-descriptor tag:', catResult.specific_tags);
+    process.exit(1);
+  }
+  console.log('✅ PASS: Categorized as schedule with concrete tag and zero meta-descriptors!');
+
+  // 1b. Test Dynamic Anti-Meta Sanitizer
+  const { sanitizeTags } = await import('../src/lib/ai/sanitizer');
+  const rawTestTags = ['tuweb-item', 'date-reference', 'time', 'descriptor', 'meeting-marker'];
+  const cleanedTags = sanitizeTags(rawTestTags, 'schedule', 'tuweb meeting jam 10');
+  console.log('Sanitizer raw:', rawTestTags, '-> Cleaned:', cleanedTags);
+  if (cleanedTags.includes('date-reference') || cleanedTags.includes('time') || cleanedTags.includes('descriptor')) {
+    console.error('❌ FAILED: Sanitizer failed to strip meta-descriptors:', cleanedTags);
+    process.exit(1);
+  }
+  if (!cleanedTags.includes('tuweb')) {
+    console.error('❌ FAILED: Sanitizer did not clean "tuweb-item" to "tuweb":', cleanedTags);
+    process.exit(1);
+  }
+  console.log('✅ PASS: Dynamic Anti-Meta Filter cleanly stripped structural descriptors!');
 
   // 2. Setup mock notes in DB for testing /ask
   console.log('\n--- 2. Testing /ask AI Pipeline with Temporal Context ---');

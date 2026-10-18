@@ -647,7 +647,7 @@ PRIMARY INTENT CATEGORIES:
 - credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), Token/API Key.
   CRITICAL ID CARD GUARD: Words like "ktp", "sim", "paspor", "passport", "nik" ONLY trigger "credential" if accompanied by actual identity numbers/digits. Administrative tasks or procedures (e.g. "perpanjang sim a... bawa fotokopi ktp", "urus paspor") are actionable tasks and MUST be classified as "todo", NOT "credential"!
 - finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price. MUST ALWAYS retain the specific entity as Tag 1 (e.g. "cimin 12k" -> ["cimin", "food"]).
-- schedule: Notes that WAJIB have a specific calendar date, time, or clock marker (e.g. "meeting jam 14.00", "besok jam 9 pagi ke dokter", "meeting desain jam 3 sore", "demo produk client selasa jam 10 pagi", "flight jumat 20 okt", "nonton avatar di cgv sabtu malam jam 21.15"). Note: Non-meeting schedules like cinema/movies MUST NOT be tagged as 'meeting'; use 'entertainment'!
+- schedule: Notes that have a specific calendar date, day, clock time, or relative calendar anchor (e.g., 'tanggal 16', '16 okt', 'meeting jam 14.00', 'besok sore ke dokter', 'flight rabu depan', 'demo produk client selasa jam 10 pagi', 'nonton avatar di cgv sabtu malam jam 21.15'). Even without a clock hour, any note with an explicit calendar date MUST be categorized as 'schedule' (NOT 'todo'). Note: Non-meeting schedules like cinema/movies MUST NOT be tagged as 'meeting'; use 'entertainment'!
 - todo: Action tasks, commands, chores, food orders, multi-line shopping lists, or research/comparison tasks (e.g. "cari info...", "bandingin harga...", "survei...", "perpanjang sim...", "urus berkas...").
 - random-yap: Casual thoughts, uneg-uneg, venting, shower thoughts, and life musings without action (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...", "kenapa ya tiap senin rasanya...", "curhat capek banget..."). WAJIB use "random-yap" (NOT "others") for personal reflections, curhat, and shower thoughts!
 - reference: Religious scriptures, Quranic verses, hadith, prayers (doa), quotes, recipes, code snippets. SCRIPTURES & QUOTES ARE NEVER TODO!
@@ -655,6 +655,8 @@ PRIMARY INTENT CATEGORIES:
 - others: Specific non-action structured logs: health symptoms & medication logs (e.g. "migrain minum paracetamol"), gym/workout logs ("squat 60kg"), raw feature/business ideas ("ide fitur: ...").
 
 CORE TAGGING PRINCIPLES:
+0. Concrete Domain Entity Rule (Strict Anti-Meta):
+   - Tags MUST strictly represent concrete domain entities, real-world topics, brands, tools, projects, or subjects (e.g., 'tuweb', 'kuliah', 'shirobit', 'laundry'). NEVER extract meta-structural descriptors of the note itself (e.g., NEVER produce tags ending in '-reference', '-item', '-info', '-marker' or generic terms like 'date-reference', 'time', 'note').
 1. High-Level Universal Root Umbrella:
    - Tag payung (Domain Umbrella) HARUS selalu berupa kata dasar tingkat tertinggi dalam bahasa Inggris (Single universal English root word):
      food, drink, tech, work, meeting, entertainment, pet, music, gaming, health, travel, finance, subscription, shopping, quran, quote.
@@ -674,6 +676,8 @@ CORE TAGGING PRINCIPLES:
    - DILARANG Tag Halusinasi Makanan: Jangan berikan tag "food" untuk sabun, odol, kemeja, pakaian, atau obat!
 ${userTagContext}
 Examples:
+0. Schedule with Calendar Date (Explicit Anchor):
+   - "tuweeb 2, tanggal 16" -> {"category": "schedule", "specific_tags": ["tuweeb"]}
 1. Food & Drink (Always Retain Specific Food Entity):
    - "cimin 12k" -> {"category": "finance", "specific_tags": ["cimin", "food"]}
    - "jajan cilok 5rebu" -> {"category": "finance", "specific_tags": ["cilok", "food"]}

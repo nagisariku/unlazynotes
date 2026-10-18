@@ -1,5 +1,6 @@
 import { resolveCanonicalTag, extractTagsFromContent } from './taxonomy';
 import type { Category } from './types';
+import { CATEGORIES } from '../constants';
 
 export const BANNED_TAGS = new Set([
   'read-later',
@@ -17,6 +18,10 @@ export const BANNED_TAGS = new Set([
   'bill-payment',
   'note',
   'notes',
+  'date',
+  'time',
+  'datetime',
+  'calendar',
   'daily-spending',
   'spending',
   'general',
@@ -164,6 +169,10 @@ export function normalizeTag(tag: string): string {
     .replace(/[^a-z0-9-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '');
+
+  // Dynamic Anti-Meta Filter (Zero-Hardcoding):
+  // Clean tags matching meta-structural descriptor patterns (e.g. date-reference -> date, tuweb-item -> tuweb)
+  t = t.replace(/-?(reference|descriptor|marker|meta|item|info)$/i, '').replace(/^-+|-+$/g, '');
 
   // 1. Prevent truncated words: resolve words > 20 chars to their clean base form without arbitrary chopping
   if (t.length > 20) {
@@ -386,6 +395,7 @@ export function sanitizeTags(
     }
 
     if (t === catNormalized) continue;
+    if ((CATEGORIES as readonly string[]).includes(t)) continue;
     if (BANNED_TAGS.has(t)) continue;
 
     // 5. Anti-Redundancy & Twin Synonym Guard

@@ -43,7 +43,20 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         else if (lower.includes('flight')) tags.push('flight');
       }
 
-      if (tags.length === 0) tags.push('event');
+      if (tags.length === 0) {
+        // Extract concrete topic entity from schedule text if any (e.g. "tuweeb 2, tanggal 16" -> "tuweeb")
+        const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+        const nonTimeWords = words.filter(w =>
+          w.length >= 3 &&
+          !/^\d+$/.test(w) &&
+          !/^(jam|pukul|pagi|siang|sore|malam|besok|lusa|kemarin|tanggal|tgl|jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|senin|selasa|rabu|kamis|jumat|sabtu|minggu|hari|minggu|bulan|tahun)$/i.test(w)
+        );
+        if (nonTimeWords.length > 0) {
+          tags.push(...nonTimeWords.slice(0, 2));
+        } else {
+          tags.push('event');
+        }
+      }
 
       return {
         category: 'schedule',
