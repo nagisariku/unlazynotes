@@ -102,6 +102,7 @@ export const notes = pgTable('notes', {
   source: varchar('source', { length: 100 }), // youtube, instagram, twitter, etc.
   isEncrypted: boolean('is_encrypted').default(false).notNull(),
   vaultKey: varchar('vault_key', { length: 100 }),
+  isPinned: boolean('is_pinned').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 

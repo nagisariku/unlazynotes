@@ -8,6 +8,7 @@ import {
   hashApiKey,
   sendTelegramMessage,
   editTelegramMessage,
+  editTelegramReplyMarkup,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
 import { normalizeTag } from '@/lib/ai';
@@ -141,7 +142,7 @@ export function getActiveDebounceCount(chatId: string): number {
  * - Clean pin list: 📌 Content (truncated up to 140 chars)
  */
 export function formatSnippetPage(
-  items: Array<{ content: string; createdAt: Date; category: string; specificTags?: string[] | null }>,
+  items: Array<{ content: string; createdAt: Date; category: string; specificTags?: string[] | null; isPinned?: boolean }>,
   totalCount: number,
   page: number,
   pageSize: number,
@@ -161,7 +162,6 @@ export function formatSnippetPage(
 
   interface DateGroup {
     date: Date;
-    tags: Set<string>;
     snippets: string[];
   }
 
@@ -176,35 +176,23 @@ export function formatSnippetPage(
     if (!group) {
       group = {
         date: itemDate,
-        tags: new Set<string>(),
         snippets: [],
       };
       groupsMap.set(dateKey, group);
     }
 
-    if (n.category && typeof n.category === 'string' && n.category.trim()) {
-      group.tags.add(n.category.trim());
-    }
-    if (Array.isArray(n.specificTags)) {
-      for (const t of n.specificTags) {
-        if (t && typeof t === 'string' && t.trim()) {
-          group.tags.add(t.trim());
-        }
-      }
-    }
-
     const rawClean = n.content.replace(/\s+/g, ' ').trim();
     const clean = rawClean || defaultTitle;
     const snippet = clean.length > 140 ? `${clean.slice(0, 140)}...` : clean;
-    group.snippets.push(`(${noteIndex}) 📌 ${snippet}`);
+    const pinIcon = n.isPinned ? '📌⭐️' : '📌';
+    group.snippets.push(`(${noteIndex}) ${pinIcon} ${snippet}`);
     noteIndex++;
   }
 
   const groupBlocks: string[] = [];
   for (const [, group] of groupsMap) {
-    const dateStr = format(group.date, 'EEE dd/MM/yy');
-    const tagsList = Array.from(group.tags);
-    const headerLine = tagsList.length > 0 ? `📅 ${dateStr} • Tags: ${tagsList.join(', ')}` : `📅 ${dateStr}`;
+    const dateStr = format(group.date, 'EEE, dd/MM/yyyy');
+    const headerLine = `📅 ${dateStr}`;
     const itemsLines = group.snippets.join('\n');
     groupBlocks.push(`${headerLine}\n${itemsLines}`);
   }
@@ -508,7 +496,7 @@ export async function handleTagFilter(
 /**
  * In-memory map to store navigation context for note detail view when callback_data is long.
  */
-export const noteNavMap = new Map<string, { type: 'tags' | 'search'; queryVal: string; page: number }>();
+export const noteNavMap = new Map<string, { type: 'tags' | 'search' | 'pin'; queryVal: string; page: number }>();
 
 /**
  * In-memory session state for active note snippets list on a chat.
@@ -518,7 +506,7 @@ export const noteListSessionMap = new Map<
   string,
   {
     items: Array<{ id: string; content: string }>;
-    type: 'tags' | 'search';
+    type: 'tags' | 'search' | 'pin';
     queryVal: string;
     page: number;
     expiresAt: number;
@@ -526,15 +514,33 @@ export const noteListSessionMap = new Map<
 >();
 
 /**
- * Renders pure note content detail with navigation buttons:
- * - [ ⬅️ Kembali ke Daftar ]
- * - [ 🏷 Menu Tags ]
+ * Formats note date and time to WIB (Asia/Jakarta): "EEE, dd/MM/yyyy • HH:mm WIB"
+ */
+export function formatNoteDateWib(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return `${p.weekday}, ${p.day}/${p.month}/${p.year} • ${p.hour}:${p.minute} WIB`;
+}
+
+/**
+ * Renders full note content detail with metadata (WIB date, tags) and action buttons:
+ * - Row 1: [ 📌 Pin ] / [ ⭐️ Lepas Pin ], [ 📋 Salin ], [ 🗑 Hapus ]
+ * - Row 2: [ ⬅️ Kembali ke Daftar ], [ 🏷 Menu Tags ]
  */
 export async function displayNoteDetail(
   chatId: string,
   messageId: number | undefined,
   noteId: string,
-  type: 'tags' | 'search',
+  type: 'tags' | 'search' | 'pin',
   queryVal: string,
   currentPage: number
 ): Promise<TelegramProcessResult> {
@@ -548,9 +554,50 @@ export async function displayNoteDetail(
     return { ok: false, error: 'note_not_found' };
   }
 
-  const detailText = `📌 ${note.content.trim()}`;
+  noteNavMap.set(note.id, { type, queryVal, page: currentPage });
+
+  const pinIcon = note.isPinned ? '📌⭐️' : '📌';
+  const dateTimeStr = formatNoteDateWib(new Date(note.createdAt));
+
+  const tagsSet = new Set<string>();
+  if (note.category && typeof note.category === 'string' && note.category.trim()) {
+    tagsSet.add(note.category.trim());
+  }
+  if (Array.isArray(note.specificTags)) {
+    for (const t of note.specificTags) {
+      if (t && typeof t === 'string' && t.trim()) {
+        tagsSet.add(t.trim());
+      }
+    }
+  }
+  const tagsStr = tagsSet.size > 0 ? Array.from(tagsSet).join(', ') : '-';
+
+  const detailText = `${pinIcon} ${note.content.trim()}\n\n${dateTimeStr}\nTags: ${tagsStr}`;
+
+  // Action Buttons
+  const pinText = note.isPinned ? '⭐️ Lepas Pin' : '📌 Pin';
+  const rawPinCb = `note:pin:${note.id}:${type}:${queryVal}:${currentPage}`;
+  const pinCb = rawPinCb.length <= 64 ? rawPinCb : `note:pin:${note.id}`;
+
+  const rawDelCb = `note:delete_confirm:${note.id}:${type}:${queryVal}:${currentPage}`;
+  const delCb = rawDelCb.length <= 64 ? rawDelCb : `note:delete_confirm:${note.id}`;
+
   const detailKeyboard = {
     inline_keyboard: [
+      [
+        {
+          text: pinText,
+          callback_data: pinCb,
+        },
+        {
+          text: '📋 Salin',
+          copy_text: { text: note.content.slice(0, 4096) },
+        },
+        {
+          text: '🗑 Hapus',
+          callback_data: delCb,
+        },
+      ],
       [
         {
           text: '⬅️ Kembali ke Daftar',
@@ -584,7 +631,7 @@ export async function displayNoteDetail(
  * - Menu row: [ 🏷 Kembali ke Tags ]
  */
 export function buildPaginationKeyboard(
-  type: 'tags' | 'search',
+  type: 'tags' | 'search' | 'pin',
   queryVal: string,
   currentPage: number,
   totalPages: number,
@@ -640,7 +687,7 @@ export function buildPaginationKeyboard(
   }
 
   // 3. Baris Menu
-  if (type === 'tags') {
+  if (type === 'tags' || type === 'pin') {
     rows.push([
       {
         text: '🏷 Kembali ke Tags',
@@ -654,6 +701,83 @@ export function buildPaginationKeyboard(
   return {
     inline_keyboard: rows,
   };
+}
+
+/**
+ * Handles /pin command and page:pin pagination: retrieves all pinned notes.
+ */
+export async function handlePinList(
+  chatId: string,
+  userId: string,
+  page: number,
+  activeLocale: SupportedLocale,
+  messageId?: number
+): Promise<TelegramProcessResult> {
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isPinned, true),
+        eq(notes.isEncrypted, false)
+      )
+    );
+  const totalCount = Number(countResult?.count || 0);
+
+  if (totalCount === 0) {
+    const emptyMsg = '📌 Anda belum memiliki catatan yang dipin. Buka detail catatan dan tekan tombol "📌 Pin" untuk menandainya.';
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, emptyMsg, { parse_mode: 'Markdown' });
+    } else {
+      await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown' });
+    }
+    return { ok: true, action: 'pin_empty' };
+  }
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const validPage = Math.min(Math.max(1, page), totalPages);
+  const offset = (validPage - 1) * PAGE_SIZE;
+
+  const pinnedNotes = await db
+    .select()
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isPinned, true),
+        eq(notes.isEncrypted, false)
+      )
+    )
+    .orderBy(desc(notes.createdAt))
+    .limit(PAGE_SIZE)
+    .offset(offset);
+
+  const headerTitle = '⭐️ *Catatan yang Dipin*';
+  const reply = formatSnippetPage(pinnedNotes, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
+  const keyboard = buildPaginationKeyboard('pin', 'all', validPage, totalPages, pinnedNotes);
+
+  noteListSessionMap.set(chatId, {
+    items: pinnedNotes.map((n) => ({ id: n.id, content: n.content })),
+    type: 'pin',
+    queryVal: 'all',
+    page: validPage,
+    expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+  });
+
+  if (messageId) {
+    await editTelegramMessage(chatId, messageId, reply, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  } else {
+    await sendTelegramMessage(chatId, reply, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
+
+  return { ok: true, action: 'pin_list', page: validPage, totalCount };
 }
 
 /**
@@ -1000,6 +1124,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
 
     return await handleTagFilter(chatId, activeKey.userId, targetTag, activeLocale);
+  }
+
+  // 6b. /pin
+  if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text)) {
+    return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
   }
 
   // 7. /search <kata_kunci>
@@ -1443,14 +1572,147 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
   if (data.startsWith('note:view:')) {
     const parts = data.split(':');
     const noteId = parts[2];
-    const type = (parts[3] as 'tags' | 'search') || 'tags';
-    const pageNum = parseInt(parts[parts.length - 1], 10) || 1;
-    let queryVal = parts.slice(4, parts.length - 1).join(':');
-    if (!queryVal) {
-      queryVal = noteNavMap.get(noteId)?.queryVal || '';
-    }
+    const nav = noteNavMap.get(noteId);
+    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
+    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
 
     const res = await displayNoteDetail(chatId, messageId, noteId, type, queryVal, pageNum);
+    await answerTelegramCallbackQuery(callbackId);
+    return res;
+  }
+
+  // 1d. Toggle Pin Catatan: note:pin:<noteId>:<type>:<queryVal>:<page>
+  if (data.startsWith('note:pin:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const nav = noteNavMap.get(noteId);
+    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
+    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+
+    const [note] = await db
+      .select()
+      .from(notes)
+      .where(eq(notes.id, noteId))
+      .limit(1);
+
+    if (!note) {
+      await answerTelegramCallbackQuery(callbackId, { text: 'Catatan tidak ditemukan' });
+      return { ok: false, error: 'note_not_found' };
+    }
+
+    const newPinned = !note.isPinned;
+    await db
+      .update(notes)
+      .set({ isPinned: newPinned })
+      .where(eq(notes.id, noteId));
+
+    await answerTelegramCallbackQuery(callbackId, {
+      text: newPinned ? '📌 Catatan berhasil dipin!' : '⭐️ Pin catatan dilepas!',
+    });
+
+    return await displayNoteDetail(chatId, messageId, noteId, type, queryVal, pageNum);
+  }
+
+  // 1e. Konfirmasi Hapus Catatan: note:delete_confirm:<noteId>:<type>:<queryVal>:<page>
+  if (data.startsWith('note:delete_confirm:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const nav = noteNavMap.get(noteId);
+    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
+    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+
+    const rawExecCb = `note:delete_exec:${noteId}:${type}:${queryVal}:${pageNum}`;
+    const execCb = rawExecCb.length <= 64 ? rawExecCb : `note:delete_exec:${noteId}`;
+
+    const rawCancelCb = `note:view:${noteId}:${type}:${queryVal}:${pageNum}`;
+    const cancelCb = rawCancelCb.length <= 64 ? rawCancelCb : `note:view:${noteId}`;
+
+    const confirmKeyboard = {
+      inline_keyboard: [
+        [
+          { text: '⚠️ Yakin Hapus?', callback_data: execCb },
+          { text: '❌ Batal', callback_data: cancelCb },
+        ],
+      ],
+    };
+
+    if (messageId) {
+      await editTelegramReplyMarkup(chatId, messageId, confirmKeyboard);
+    }
+
+    await answerTelegramCallbackQuery(callbackId);
+    return { ok: true, action: 'note_delete_confirm', noteId };
+  }
+
+  // 1f. Eksekusi Hapus Catatan: note:delete_exec:<noteId>:<type>:<queryVal>:<page>
+  if (data.startsWith('note:delete_exec:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const nav = noteNavMap.get(noteId);
+    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
+    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+
+    await db.delete(notes).where(eq(notes.id, noteId));
+    noteNavMap.delete(noteId);
+
+    const deletedText = '🗑 Catatan telah berhasil dihapus!';
+    const backKeyboard = {
+      inline_keyboard: [
+        [
+          {
+            text: '⬅️ Kembali ke Daftar',
+            callback_data: `page:${type}:${queryVal}:${pageNum}`,
+          },
+        ],
+      ],
+    };
+
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, deletedText, {
+        reply_markup: backKeyboard,
+      });
+    } else {
+      await sendTelegramMessage(chatId, deletedText, {
+        reply_markup: backKeyboard,
+      });
+    }
+
+    await answerTelegramCallbackQuery(callbackId, { text: '🗑 Catatan dihapus' });
+    return { ok: true, action: 'note_deleted', noteId };
+  }
+
+  // 1g. Pagination untuk /pin: page:pin:<queryVal>:<page_num>
+  if (data.startsWith('page:pin:')) {
+    const parts = data.split(':');
+    const pageNum = parseInt(parts[3] || '1', 10) || 1;
+
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
+
+    const res = await handlePinList(chatId, activeKey.userId, pageNum, activeLocale, messageId);
     await answerTelegramCallbackQuery(callbackId);
     return res;
   }

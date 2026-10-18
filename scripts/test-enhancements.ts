@@ -281,18 +281,21 @@ async function runTests() {
       content: 'dapet transferan dp website klien 2.5jt pt karya maju',
       category: 'finance',
       specificTags: ['client'],
+      isPinned: true,
       createdAt: new Date('2026-10-17T15:00:00Z'),
     },
     {
       content: 'coffee break with client discuss Q4 roadmap jam 4 sore',
       category: 'schedule',
       specificTags: ['q4-roadmap', 'meeting', 'client'],
+      isPinned: false,
       createdAt: new Date('2026-10-17T10:00:00Z'),
     },
     {
       content: 'demo produk client selasa jam 10 pagi',
       category: 'schedule',
       specificTags: ['demo', 'meeting', 'client'],
+      isPinned: false,
       createdAt: new Date('2026-10-16T09:00:00Z'),
     },
   ];
@@ -301,24 +304,14 @@ async function runTests() {
   console.log('Sample Output:\n' + timelineOutput + '\n');
 
   assert(timelineOutput.includes('🏷 Catatan dengan label [client] (Hal. 1/1 • Total: 3)'), `Header includes title and pagination info`);
-  assert(timelineOutput.includes('📅 Sat 17/10/26 • Tags:'), `Groups by date 'Sat 17/10/26'`);
-  assert(timelineOutput.includes('📅 Fri 16/10/26 • Tags:'), `Groups by date 'Fri 16/10/26'`);
-  assert(timelineOutput.includes('(1) 📌 dapet transferan dp website klien 2.5jt pt karya maju'), `Displays locally numbered note 1`);
-  assert(timelineOutput.includes('(2) 📌 coffee break with client discuss Q4 roadmap jam 4 sore'), `Displays locally numbered note 2`);
-  assert(timelineOutput.includes('(3) 📌 demo produk client selasa jam 10 pagi'), `Displays locally numbered note 3`);
+  assert(timelineOutput.includes('📅 Sat, 17/10/2026'), `Groups by date 'Sat, 17/10/2026'`);
+  assert(!timelineOutput.includes('• Tags:'), `Date header does NOT contain '• Tags:'`);
+  assert(timelineOutput.includes('📅 Fri, 16/10/2026'), `Groups by date 'Fri, 16/10/2026'`);
+  assert(timelineOutput.includes('(1) 📌⭐️ dapet transferan dp website klien 2.5jt pt karya maju'), `Displays locally numbered note 1 with pin icon 📌⭐️`);
+  assert(timelineOutput.includes('(2) 📌 coffee break with client discuss Q4 roadmap jam 4 sore'), `Displays locally numbered note 2 with pin icon 📌`);
+  assert(timelineOutput.includes('(3) 📌 demo produk client selasa jam 10 pagi'), `Displays locally numbered note 3 with pin icon 📌`);
   assert(!timelineOutput.includes('*1.*'), `No obsolete item numbering (*1.*) in output`);
   assert(!timelineOutput.includes('*2.*'), `No obsolete item numbering (*2.*) in output`);
-
-  // Verify tags consolidated per day
-  const satSection = timelineOutput.split('📅 Fri 16/10/26')[0];
-  assert(
-    satSection.includes('finance') &&
-    satSection.includes('client') &&
-    satSection.includes('schedule') &&
-    satSection.includes('q4-roadmap') &&
-    satSection.includes('meeting'),
-    `Saturday header consolidates unique tags from all Saturday notes`
-  );
 
   // --- ITEM 9: Note Detail Inline Buttons (1-Tap Note Detail) ---
   console.log('\n--- 9. Testing Note Detail Buttons & displayNoteDetail ---');
@@ -469,6 +462,103 @@ async function runTests() {
     .from(tagSearches)
     .where(and(eq(tagSearches.userId, user10Id), eq(tagSearches.tag, 'clicked-category')));
   assert(clickedSearch !== undefined && clickedSearch.count >= 1, `Inline tag click recorded in tag_searches table`);
+
+  // --- ITEM 11: Testing Pin Feature, Note Actions (Copy & Delete), and /pin Command ---
+  console.log('\n--- 11. Testing Pin, Copy, Delete, and /pin Command ---');
+  const user11Id = `test_user_item11_${Date.now()}`;
+  const testChatId11 = `chat_pin_${Date.now()}`;
+  await db.insert(users).values({
+    id: user11Id,
+    email: `${user11Id}@example.com`,
+  });
+  await db.insert(apiKeys).values({
+    id: crypto.randomUUID(),
+    userId: user11Id,
+    keyHash: `hash_pin_${Date.now()}`,
+    telegramChatId: testChatId11,
+    isActive: true,
+  });
+
+  const { formatNoteDateWib, handlePinList, displayNoteDetail } = await import('../src/lib/telegram-handler');
+
+  // 1. Test formatNoteDateWib
+  const testDate = new Date('2026-10-17T07:30:00Z');
+  const wibFormatted = formatNoteDateWib(testDate);
+  assert(wibFormatted === 'Sat, 17/10/2026 • 14:30 WIB', `formatNoteDateWib outputs 'Sat, 17/10/2026 • 14:30 WIB' (got: ${wibFormatted})`);
+
+  // 2. Test handlePinList empty state
+  const emptyPinRes = await handlePinList(testChatId11, user11Id, 1, 'id');
+  assert(emptyPinRes.ok === true && emptyPinRes.action === 'pin_empty', `handlePinList returns pin_empty when no notes pinned`);
+
+  // 3. Insert mock notes (1 pinned, 1 unpinned)
+  const pinnedNoteId = crypto.randomUUID();
+  const unpinnedNoteId = crypto.randomUUID();
+  await db.insert(notes).values([
+    {
+      id: pinnedNoteId,
+      userId: user11Id,
+      content: 'laundry kiloan 4.5kg 32rb ambil besok lusa',
+      category: 'reference',
+      specificTags: ['laundry', 'laundry-kiloan'],
+      isPinned: true,
+      createdAt: testDate,
+    },
+    {
+      id: unpinnedNoteId,
+      userId: user11Id,
+      content: 'beli susu uht 1 liter',
+      category: 'finance',
+      specificTags: ['groceries'],
+      isPinned: false,
+      createdAt: new Date('2026-10-16T08:00:00Z'),
+    },
+  ]);
+
+  // 4. Test handlePinList with pinned note
+  const populatedPinRes = await handlePinList(testChatId11, user11Id, 1, 'id');
+  assert(populatedPinRes.ok === true && populatedPinRes.action === 'pin_list', `handlePinList returns pin_list when pinned notes exist`);
+  assert(populatedPinRes.totalCount === 1, `handlePinList totalCount is 1`);
+
+  // 5. Test displayNoteDetail for pinned note
+  const pinnedDetailRes = await displayNoteDetail(testChatId11, undefined, pinnedNoteId, 'tags', 'laundry', 1);
+  assert(pinnedDetailRes.ok === true && pinnedDetailRes.action === 'note_detail_view', `displayNoteDetail executed successfully for pinned note`);
+
+  // 6. Test toggle pin via processTelegramCallbackQuery (note:pin:pinnedNoteId...)
+  await processTelegramCallbackQuery({
+    id: 'cb_pin_toggle',
+    data: `note:pin:${pinnedNoteId}:tags:laundry:1`,
+    from: { id: testChatId11 },
+  });
+  const [unpinnedAfter] = await db.select().from(notes).where(eq(notes.id, pinnedNoteId)).limit(1);
+  assert(unpinnedAfter.isPinned === false, `note:pin successfully toggled isPinned from true to false`);
+
+  // 7. Toggle back to pinned
+  await processTelegramCallbackQuery({
+    id: 'cb_pin_toggle_2',
+    data: `note:pin:${pinnedNoteId}:tags:laundry:1`,
+    from: { id: testChatId11 },
+  });
+  const [pinnedAgain] = await db.select().from(notes).where(eq(notes.id, pinnedNoteId)).limit(1);
+  assert(pinnedAgain.isPinned === true, `note:pin successfully toggled isPinned from false to true`);
+
+  // 8. Test delete confirmation step (note:delete_confirm)
+  const delConfirmRes = await processTelegramCallbackQuery({
+    id: 'cb_del_confirm',
+    data: `note:delete_confirm:${unpinnedNoteId}:tags:groceries:1`,
+    from: { id: testChatId11 },
+  });
+  assert(delConfirmRes.ok === true && delConfirmRes.action === 'note_delete_confirm', `note:delete_confirm returns note_delete_confirm action`);
+
+  // 9. Test delete execution step (note:delete_exec)
+  const delExecRes = await processTelegramCallbackQuery({
+    id: 'cb_del_exec',
+    data: `note:delete_exec:${unpinnedNoteId}:tags:groceries:1`,
+    from: { id: testChatId11 },
+  });
+  assert(delExecRes.ok === true && delExecRes.action === 'note_deleted', `note:delete_exec returns note_deleted action`);
+
+  const [deletedNoteCheck] = await db.select().from(notes).where(eq(notes.id, unpinnedNoteId)).limit(1);
+  assert(deletedNoteCheck === undefined, `Note was permanently deleted from DB`);
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);

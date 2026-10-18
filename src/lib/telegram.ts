@@ -135,6 +135,31 @@ export async function editTelegramMessage(
 }
 
 /**
+ * Edit an existing message reply_markup in-place in Telegram chat.
+ */
+export async function editTelegramReplyMarkup(
+  chatId: string | number,
+  messageId: number,
+  replyMarkup?: any
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Edit Markup] Message ${messageId} in Chat ID ${chatId}`);
+    return true;
+  }
+
+  try {
+    await bot.api.editMessageReplyMarkup(chatId, messageId, {
+      reply_markup: replyMarkup,
+    });
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to edit markup for message ${messageId} in ${chatId}:`, error);
+    return false;
+  }
+}
+
+/**
  * Answer a callback query from an inline keyboard to dismiss the loading state.
  */
 export async function answerTelegramCallbackQuery(
