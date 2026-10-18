@@ -191,10 +191,10 @@ async function runTests() {
     },
   ];
   const emptySnippetId = formatSnippetPage(emptyNoteItem, 1, 1, 5, 'Header', 'id');
-  assert(emptySnippetId.includes('📌 *Catatan*'), 'Empty content title in ID defaults to "Catatan"');
+  assert(emptySnippetId.includes('📌 Catatan'), 'Empty content title in ID defaults to "Catatan"');
 
   const emptySnippetEn = formatSnippetPage(emptyNoteItem, 1, 1, 5, 'Header', 'en');
-  assert(emptySnippetEn.includes('📌 *Note*'), 'Empty content title in EN defaults to "Note"');
+  assert(emptySnippetEn.includes('📌 Note'), 'Empty content title in EN defaults to "Note"');
 
   console.log('\n================================================================');
   console.log(`SUMMARY: ${passed}/${total} TESTS PASSED`);

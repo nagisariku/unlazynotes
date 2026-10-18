@@ -273,6 +273,53 @@ async function runTests() {
   tagSessionMap.delete(mockChatId);
   await db.delete(users).where(eq(users.id, testUserId));
 
+  // --- ITEM 8: Timeline Grouping formatSnippetPage ---
+  console.log('\n--- 8. Testing Timeline Grouping formatSnippetPage ---');
+  const { formatSnippetPage } = await import('../src/lib/telegram-handler');
+  const sampleTimelineNotes = [
+    {
+      content: 'dapet transferan dp website klien 2.5jt pt karya maju',
+      category: 'finance',
+      specificTags: ['client'],
+      createdAt: new Date('2026-10-17T15:00:00Z'),
+    },
+    {
+      content: 'coffee break with client discuss Q4 roadmap jam 4 sore',
+      category: 'schedule',
+      specificTags: ['q4-roadmap', 'meeting', 'client'],
+      createdAt: new Date('2026-10-17T10:00:00Z'),
+    },
+    {
+      content: 'demo produk client selasa jam 10 pagi',
+      category: 'schedule',
+      specificTags: ['demo', 'meeting', 'client'],
+      createdAt: new Date('2026-10-16T09:00:00Z'),
+    },
+  ];
+
+  const timelineOutput = formatSnippetPage(sampleTimelineNotes, 3, 1, 5, '🏷 Catatan dengan label [client]', 'id');
+  console.log('Sample Output:\n' + timelineOutput + '\n');
+
+  assert(timelineOutput.includes('🏷 Catatan dengan label [client] (Hal. 1/1 • Total: 3)'), `Header includes title and pagination info`);
+  assert(timelineOutput.includes('📅 Sat 17/10/26 • Tags:'), `Groups by date 'Sat 17/10/26'`);
+  assert(timelineOutput.includes('📅 Fri 16/10/26 • Tags:'), `Groups by date 'Fri 16/10/26'`);
+  assert(timelineOutput.includes('📌 dapet transferan dp website klien 2.5jt pt karya maju'), `Displays clean pin note 1`);
+  assert(timelineOutput.includes('📌 coffee break with client discuss Q4 roadmap jam 4 sore'), `Displays clean pin note 2`);
+  assert(timelineOutput.includes('📌 demo produk client selasa jam 10 pagi'), `Displays clean pin note 3`);
+  assert(!timelineOutput.includes('*1.*'), `No item numbering (*1.*) in output`);
+  assert(!timelineOutput.includes('*2.*'), `No item numbering (*2.*) in output`);
+
+  // Verify tags consolidated per day
+  const satSection = timelineOutput.split('📅 Fri 16/10/26')[0];
+  assert(
+    satSection.includes('finance') &&
+    satSection.includes('client') &&
+    satSection.includes('schedule') &&
+    satSection.includes('q4-roadmap') &&
+    satSection.includes('meeting'),
+    `Saturday header consolidates unique tags from all Saturday notes`
+  );
+
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);
   console.log(`==================================================`);

@@ -136,10 +136,9 @@ export function getActiveDebounceCount(chatId: string): number {
 }
 
 /**
- * Format notes snippet page for Telegram message.
- * - Bold first line as title
- * - Truncated snippet up to 120 chars with ellipsis
- * - Date and tags badge
+ * Format notes snippet page for Telegram message grouped by day (Timeline Grouping).
+ * - Timeline header: 📅 EEE dd/MM/yy • Tags: tag1, tag2, ...
+ * - Clean pin list: 📌 Content (truncated up to 140 chars)
  */
 export function formatSnippetPage(
   items: Array<{ content: string; createdAt: Date; category: string; specificTags?: string[] | null }>,
@@ -159,28 +158,56 @@ export function formatSnippetPage(
   }
 
   const defaultTitle = getTelegramMsg('default_note_title', locale);
-  for (let i = 0; i < items.length; i++) {
-    const n = items[i];
-    const itemIndex = (page - 1) * pageSize + (i + 1);
 
-    // Ambil baris pertama sebagai judul bold (bersihkan karakter markdown formatting mentah)
-    const rawLines = n.content.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-    const firstLine = rawLines[0] || defaultTitle;
-    const cleanTitle = firstLine.replace(/[*_`[\]]/g, '');
-    const title = cleanTitle.length > 50 ? `${cleanTitle.slice(0, 50)}...` : cleanTitle;
-
-    // Potong teks konten maksimal 120 karakter diikuti ellipsis
-    const cleanFull = n.content.replace(/\s+/g, ' ').trim();
-    const snippet = cleanFull.length > 120 ? `${cleanFull.slice(0, 120)}...` : cleanFull;
-
-    const dateStr = format(new Date(n.createdAt), 'dd MMM yyyy, HH:mm');
-    const tagsStr = [n.category, ...(n.specificTags || [])].join(', ');
-
-    text += `*${itemIndex}.* 📌 *${title}*\n`;
-    text += `${snippet}\n`;
-    text += `   📅 _${dateStr}_ • _Tags: ${tagsStr}_\n\n`;
+  interface DateGroup {
+    date: Date;
+    tags: Set<string>;
+    snippets: string[];
   }
 
+  const groupsMap = new Map<string, DateGroup>();
+
+  for (const n of items) {
+    const itemDate = new Date(n.createdAt);
+    const dateKey = format(itemDate, 'yyyy-MM-dd');
+
+    let group = groupsMap.get(dateKey);
+    if (!group) {
+      group = {
+        date: itemDate,
+        tags: new Set<string>(),
+        snippets: [],
+      };
+      groupsMap.set(dateKey, group);
+    }
+
+    if (n.category && typeof n.category === 'string' && n.category.trim()) {
+      group.tags.add(n.category.trim());
+    }
+    if (Array.isArray(n.specificTags)) {
+      for (const t of n.specificTags) {
+        if (t && typeof t === 'string' && t.trim()) {
+          group.tags.add(t.trim());
+        }
+      }
+    }
+
+    const rawClean = n.content.replace(/\s+/g, ' ').trim();
+    const clean = rawClean || defaultTitle;
+    const snippet = clean.length > 140 ? `${clean.slice(0, 140)}...` : clean;
+    group.snippets.push(snippet);
+  }
+
+  const groupBlocks: string[] = [];
+  for (const [, group] of groupsMap) {
+    const dateStr = format(group.date, 'EEE dd/MM/yy');
+    const tagsList = Array.from(group.tags);
+    const headerLine = tagsList.length > 0 ? `📅 ${dateStr} • Tags: ${tagsList.join(', ')}` : `📅 ${dateStr}`;
+    const itemsLines = group.snippets.map((s) => `📌 ${s}`).join('\n');
+    groupBlocks.push(`${headerLine}\n${itemsLines}`);
+  }
+
+  text += groupBlocks.join('\n\n');
   return text.trim();
 }
 
