@@ -38,6 +38,7 @@ export interface TelegramProcessResult {
   page?: number;
   cluster?: string;
   count?: number;
+  tag?: string;
 }
 
 interface DebounceBufferItem {
@@ -209,6 +210,13 @@ export function buildCategoriesGridKeyboard() {
 }
 
 /**
+ * In-memory session state for /tags numbered shortcuts.
+ * Key: chatId, Value: mapping of number -> tag and expiry timestamp.
+ */
+export const tagSessionMap = new Map<string, { tags: Map<number, string>; expiresAt: number }>();
+export const TAG_SESSION_TTL_MS = 5 * 60 * 1000; // 5 menit
+
+/**
  * Format tag list horizontally separated by commas (#tag1, #tag2, ...).
  * If empty, returns '-'.
  */
@@ -216,6 +224,15 @@ export function formatTagListHorizontal(tags: string[]): string {
   if (tags.length === 0) return '-';
   const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
   return tags.map((t) => (t.startsWith('#') ? escapeMd(t) : `#${escapeMd(t)}`)).join(', ');
+}
+
+/**
+ * Format numbered tag list horizontally separated by commas (1.tag1, 2.tag2, ...).
+ * If empty, returns '-'.
+ */
+export function formatTagNumberedHorizontal(items: string[]): string {
+  if (items.length === 0) return '-';
+  return items.join(', ');
 }
 
 /**
@@ -256,9 +273,10 @@ export async function recordTagSearch(userId: string, tag: string): Promise<void
 
 /**
  * Fetches data for the 3 horizontal lines of /tags:
- * 1. Top 9 Active Tags (highest frequency across all user active notes)
- * 2. Top 9 Recent Tags (unique tags from newest notes)
- * 3. Top 9 Most Searched Tags (from tag_searches)
+ * 1. Top 15 Active Tags (highest frequency across all user active notes)
+ * 2. Top 15 Recent Tags (unique tags from newest notes, deduplicated against Active)
+ * 3. Top 15 Most Searched Tags (from tag_searches, deduplicated against Active and Recent)
+ * Numbers are globally consecutive without collision across groups.
  */
 export async function getTagsOverviewData(userId: string) {
   const userNotes = await db
@@ -276,8 +294,8 @@ export async function getTagsOverviewData(userId: string) {
     .orderBy(desc(notes.createdAt));
 
   const tagFreq = new Map<string, number>();
-  const recentTagsList: string[] = [];
-  const recentTagsSet = new Set<string>();
+  const recentCandidates: string[] = [];
+  const seenRecent = new Set<string>();
 
   for (const n of userNotes) {
     if (Array.isArray(n.specificTags)) {
@@ -286,35 +304,137 @@ export async function getTagsOverviewData(userId: string) {
           const t = rawTag.trim().toLowerCase();
           tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
 
-          if (!recentTagsSet.has(t) && recentTagsList.length < 9) {
-            recentTagsSet.add(t);
-            recentTagsList.push(t);
+          if (!seenRecent.has(t)) {
+            seenRecent.add(t);
+            recentCandidates.push(t);
           }
         }
       }
     }
   }
 
-  const activeTagsList = Array.from(tagFreq.entries())
+  const activeTagsSlice = Array.from(tagFreq.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 9)
+    .slice(0, 15)
     .map(([t]) => t);
 
+  const usedTagsSet = new Set<string>();
+  const numberToTagMap = new Map<number, string>();
+  let currentNumber = 1;
+
+  const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
+
+  // 1. Teraktif (1 s/d N, maks 15)
+  const activeNumbered: string[] = [];
+  for (const t of activeTagsSlice) {
+    usedTagsSet.add(t);
+    const num = currentNumber++;
+    numberToTagMap.set(num, t);
+    activeNumbered.push(`${num}.${escapeMd(t)}`);
+  }
+
+  // 2. Terakhir (melanjutkan nomor, maks 15, deduplikasi dari Teraktif)
+  const recentNumbered: string[] = [];
+  for (const t of recentCandidates) {
+    if (!usedTagsSet.has(t)) {
+      usedTagsSet.add(t);
+      const num = currentNumber++;
+      numberToTagMap.set(num, t);
+      recentNumbered.push(`${num}.${escapeMd(t)}`);
+      if (recentNumbered.length >= 15) {
+        break;
+      }
+    }
+  }
+
+  // 3. Sering Dicari (melanjutkan nomor, maks 15, deduplikasi dari Teraktif & Terakhir)
   const searchedRows = await db
     .select({ tag: tagSearches.tag })
     .from(tagSearches)
     .where(eq(tagSearches.userId, userId))
     .orderBy(desc(tagSearches.count), desc(tagSearches.updatedAt))
-    .limit(9);
+    .limit(50);
 
-  const searchedTagsList = searchedRows.map((r) => r.tag);
+  const searchedNumbered: string[] = [];
+  for (const r of searchedRows) {
+    const t = r.tag?.trim().toLowerCase();
+    if (t && !usedTagsSet.has(t)) {
+      usedTagsSet.add(t);
+      const num = currentNumber++;
+      numberToTagMap.set(num, t);
+      searchedNumbered.push(`${num}.${escapeMd(t)}`);
+      if (searchedNumbered.length >= 15) {
+        break;
+      }
+    }
+  }
 
   return {
     hasNotes: userNotes.length > 0,
-    activeTagsText: formatTagListHorizontal(activeTagsList),
-    recentTagsText: formatTagListHorizontal(recentTagsList),
-    searchedTagsText: formatTagListHorizontal(searchedTagsList),
+    activeTagsText: formatTagNumberedHorizontal(activeNumbered),
+    recentTagsText: formatTagNumberedHorizontal(recentNumbered),
+    searchedTagsText: formatTagNumberedHorizontal(searchedNumbered),
+    numberToTagMap,
   };
+}
+
+/**
+ * Executes note filtering for a tag or category, sends snippets with pagination keyboard.
+ */
+export async function handleTagFilter(
+  chatId: string,
+  userId: string,
+  targetTag: string,
+  activeLocale: SupportedLocale
+): Promise<TelegramProcessResult> {
+  // Increment counter riwayat pencarian tag user di tag_searches
+  await recordTagSearch(userId, targetTag);
+
+  // Hitung total catatan yang cocok
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isEncrypted, false),
+        sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
+      )
+    );
+  const totalCount = Number(countResult?.count || 0);
+
+  if (totalCount === 0) {
+    await sendTelegramMessage(chatId, getTelegramMsg('tags_none_found', activeLocale, { tag: targetTag }), {
+      parse_mode: 'Markdown',
+    });
+    return { ok: true, action: 'tags_none_found', tag: targetTag };
+  }
+
+  const matchedNotes = await db
+    .select()
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isEncrypted, false),
+        sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
+      )
+    )
+    .orderBy(desc(notes.createdAt))
+    .limit(PAGE_SIZE)
+    .offset(0);
+
+  const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
+  const reply = formatSnippetPage(matchedNotes, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const keyboard = buildPaginationKeyboard('tags', targetTag, 1, totalPages);
+
+  await sendTelegramMessage(chatId, reply, {
+    parse_mode: 'Markdown',
+    reply_markup: keyboard,
+  });
+
+  return { ok: true, action: 'tags_filtered', totalCount, tag: targetTag };
 }
 
 /**
@@ -619,6 +739,21 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
 
+  // 4b. Shortcut Penomoran Tag: Jika pesan berupa angka murni (/^\d+$/) dan sesi /tags aktif
+  if (/^\d+$/.test(text)) {
+    const session = tagSessionMap.get(chatId);
+    if (session && session.expiresAt > Date.now()) {
+      const tagNum = parseInt(text, 10);
+      const targetTag = session.tags.get(tagNum);
+      if (targetTag) {
+        if (debounceMap.has(chatId)) {
+          await flushDebounceBuffer(chatId);
+        }
+        return await handleTagFilter(chatId, activeKey.userId, targetTag, activeLocale);
+      }
+    }
+  }
+
   // 5. /tags (tanpa argumen)
   if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text)) {
     const overview = await getTagsOverviewData(activeKey.userId);
@@ -627,6 +762,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale));
       return { ok: true, action: 'tags_empty' };
     }
+
+    // Simpan session mapping nomor tag untuk chatId ini
+    tagSessionMap.set(chatId, {
+      tags: overview.numberToTagMap,
+      expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+    });
 
     const msg = getTelegramMsg('tags_header', activeLocale, {
       activeTagsText: overview.activeTagsText,
@@ -654,54 +795,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'tags_filter_missing' };
     }
 
-    // Increment counter riwayat pencarian tag user di tag_searches
-    await recordTagSearch(activeKey.userId, targetTag);
-
-    // Hitung total catatan yang cocok
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(notes)
-      .where(
-        and(
-          eq(notes.userId, activeKey.userId),
-          eq(notes.isEncrypted, false),
-          sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
-        )
-      );
-    const totalCount = Number(countResult?.count || 0);
-
-    if (totalCount === 0) {
-      await sendTelegramMessage(chatId, getTelegramMsg('tags_none_found', activeLocale, { tag: targetTag }), {
-        parse_mode: 'Markdown',
-      });
-      return { ok: true, action: 'tags_none_found' };
-    }
-
-    const matchedNotes = await db
-      .select()
-      .from(notes)
-      .where(
-        and(
-          eq(notes.userId, activeKey.userId),
-          eq(notes.isEncrypted, false),
-          sql`(${notes.category}::text = ${targetTag} OR ${notes.specificTags} @> ${JSON.stringify([targetTag])}::jsonb)`
-        )
-      )
-      .orderBy(desc(notes.createdAt))
-      .limit(PAGE_SIZE)
-      .offset(0);
-
-    const headerTitle = getTelegramMsg('tags_snippet_header', activeLocale, { tag: targetTag });
-    const reply = formatSnippetPage(matchedNotes, totalCount, 1, PAGE_SIZE, headerTitle, activeLocale);
-    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-    const keyboard = buildPaginationKeyboard('tags', targetTag, 1, totalPages);
-
-    await sendTelegramMessage(chatId, reply, {
-      parse_mode: 'Markdown',
-      reply_markup: keyboard,
-    });
-
-    return { ok: true, action: 'tags_filtered', totalCount };
+    return await handleTagFilter(chatId, activeKey.userId, targetTag, activeLocale);
   }
 
   // 7. /search <kata_kunci>
@@ -1145,6 +1239,12 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
     const overview = await getTagsOverviewData(activeKey.userId);
+
+    // Perbarui session state nomor tag untuk chatId ini
+    tagSessionMap.set(chatId, {
+      tags: overview.numberToTagMap,
+      expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+    });
 
     const msg = getTelegramMsg('tags_header', activeLocale, {
       activeTagsText: overview.activeTagsText,
