@@ -238,9 +238,17 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
      - Baris 2: `[ 🔖 Bookmark ] [ 🔐 Credential ] [ 📚 Reference ]`
      - Baris 3: `[ 📝 Draft ] [ 💬 Random-yap ] [ 🏷 Others ]`
      - Tombol mengarah ke callback `page:tags:<category>:1` yang menampilkan cuplikan catatan dan navigasi pagination `[ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]` serta tombol `[ 🏷 Kembali ke Tags ]`.
-5. **Fix IPv6 Happy Eyeballs ETIMEDOUT pada Node.js 22**:
-   - Mengatasi `ETIMEDOUT` saat bot memanggil API Telegram pada VPS tanpa rute IPv6 keluar dengan memaksa `dns.setDefaultResultOrder('ipv4first')` dan `https.Agent({ family: 4 })` pada [`src/lib/telegram.ts`](file:///home/rikushiro/projects/unlazynotes/src/lib/telegram.ts) dan [`scripts/bot-polling.ts`](file:///home/rikushiro/projects/unlazynotes/scripts/bot-polling.ts).
-6. **Verifikasi Suite**: `scripts/test-enhancements.ts` (47/47 PASS), `scripts/test-intent-classifier.ts` (31/31 PASS), dan `scripts/test-tier-quota.ts` (19/19 PASS).
+5. **Fitur Pin, Note Actions (Salin & Hapus), dan Perintah `/pin`**:
+   - Kolom `isPinned: boolean('is_pinned').default(false).notNull()` di tabel `notes`.
+   - List cuplikan catatan menampilkan ikon `📌⭐️` untuk catatan berstatus pin dan `📌` untuk catatan standar.
+   - Perintah `/pin` menyajikan daftar catatan yang dipin secara kronologis terbaru.
+   - Tampilan detail catatan menyajikan tombol aksi Inline Keyboard: `[ 📌 Pin / 📍 Unpin ]`, `[ 📋 Salin ]`, `[ 🗑 Hapus ]`, dan `[ ◀️ Kembali ]`.
+6. **Hamburger Menu, Persistent Dock Menu, Command `/dashboard`, & Panduan `/help`**:
+   - **Hamburger Menu Resmi (`setMyCommands`)**: Didaftarkan otomatis saat bot start (`/tags`, `/pin`, `/dashboard`, `/help`). Perintah `/search` ditiadakan dari menu agar tidak membingungkan pengguna.
+   - **Persistent Dock Menu (`PERSISTENT_DOCK_KEYBOARD`)**: 3 tombol akses cepat `[ 🏷 Tags ] [ ⭐️ Pin ] [ 🌐 Dashboard ]` (`resize_keyboard: true`, `is_persistent: true`) yang dipasangkan otomatis pada respon `/start`, `/help`, dan `/login`.
+   - **Routing Dock Buttons & `/dashboard`**: Tombol dock diteruskan langsung ke handler masing-masing. Perintah `/dashboard` membalas pesan interaktif dengan tombol URL langsung ke web dashboard.
+   - **Panduan `/help` Dwibahasa**: Diperbarui dengan informasi perintah `/pin` dan `/dashboard` untuk ID dan EN.
+7. **Verifikasi Suite**: `scripts/test-enhancements.ts` (126/126 PASS), `scripts/test-intent-classifier.ts` (31/31 PASS), dan `scripts/test-tier-quota.ts` (19/19 PASS).
 
 ---
 
