@@ -1,7 +1,7 @@
 import { db } from '@/db';
 import { notes } from '@/db/schema';
 import { eq, and, gte, desc } from 'drizzle-orm';
-import { subMonths } from 'date-fns';
+import { subDays } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
 
@@ -46,7 +46,7 @@ function formatCurrentTime(date: Date): string {
 }
 
 /**
- * Answers a user's question strictly based on their notes from the last 6 months.
+ * Answers a user's question strictly based on their notes from the last 30 days.
  * Exclusive for Pro plan subscribers.
  */
 export async function answerNoteQuestion(
@@ -55,9 +55,9 @@ export async function answerNoteQuestion(
 ): Promise<string> {
   const now = new Date();
   const nowFormatted = formatCurrentTime(now);
-  const sixMonthsAgo = subMonths(now, 6);
+  const thirtyDaysAgo = subDays(now, 30);
 
-  // 1. Fetch user notes created within the last 6 months
+  // 1. Fetch user notes created within the last 30 days
   const userNotes = await db
     .select({
       content: notes.content,
@@ -69,7 +69,7 @@ export async function answerNoteQuestion(
     .where(
       and(
         eq(notes.userId, userId),
-        gte(notes.createdAt, sixMonthsAgo),
+        gte(notes.createdAt, thirtyDaysAgo),
         eq(notes.isEncrypted, false)
       )
     )
@@ -77,7 +77,7 @@ export async function answerNoteQuestion(
     .limit(100);
 
   if (userNotes.length === 0) {
-    return 'Belum ada catatan yang tersimpan dalam 6 bulan terakhir untuk dianalisis oleh AI.';
+    return 'Belum ada catatan yang tersimpan dalam 30 hari terakhir untuk dianalisis oleh AI.';
   }
 
   // 2. Format notes context with human-friendly localized timestamp and category
@@ -114,33 +114,70 @@ export async function answerNoteQuestion(
       },
     });
 
+/**
+ * Strips robotic conversational closing remarks from LLM responses if present
+ */
+function cleanClosingRemarks(text: string): string {
+  const lines = text.trim().split('\n');
+  while (lines.length > 0) {
+    const lastLine = lines[lines.length - 1]?.trim() || '';
+    if (
+      /(mau\s+(saya|aku)\s+bantu|ada\s+yang\s+(bisa|ingin|perlu)\s+(di|saya|aku)|semoga\s+membantu|ada\s+pertanyaan\s+lain|apakah\s+ada\s+yang|bisa\s+saya\s+bantu)/i.test(
+        lastLine
+      ) ||
+      lastLine === ''
+    ) {
+      lines.pop();
+    } else {
+      break;
+    }
+  }
+  return lines.join('\n').trim();
+}
+
     const systemPrompt = `Anda adalah asisten cerdas personal UnlazyNotes.
 Waktu Saat Ini (Current Time): ${nowFormatted}
 
-Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, ramah, to-the-point, dan akurat strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
+Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, to-the-point, akurat, dan strictly HANYA berdasarkan konteks catatan pengguna (30 hari terakhir) yang diberikan.
 
-Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Bahasa & Kasus):
-1. Kesadaran Waktu Dinamis (Temporal Awareness):
-   - Waktu saat ini (Current Time) adalah acuan utama: ${nowFormatted}.
-   - Hitung selisih waktu secara akurat untuk pertanyaan temporal relatif (seperti "hari ini", "kemarin", "lusa", "2 hari lalu", "minggu ini", "bulan ini", dsb.) relatif terhadap Current Time.
-   - Evaluasi tanggal dan jam pembuatan pada setiap catatan ([createdAt]) secara teliti.
-   - Jika pengguna bertanya tentang rentang waktu tertentu (misal: "kemarin") dan tidak ada catatan pada waktu tersebut, nyatakan dengan jelas bahwa tidak ada catatan untuk waktu itu. Jika ada catatan relevan di waktu lain yang dapat membantu, sebutkan sebagai konteks tambahan (misal: "Kemarin tidak ada catatan transfer, tapi ada catatan hari ini yaitu...").
-2. Keselarasan Bahasa (Language Mirroring):
-   - Selalu balas menggunakan bahasa yang sama persis dengan bahasa yang digunakan pengguna dalam pertanyaannya (misal: jika pengguna bertanya dalam bahasa Inggris, jawab sepenuhnya dalam bahasa Inggris yang alami; jika dalam bahasa Indonesia atau bahasa daerah, sesuaikan secara natural).
-3. Integritas Data (Anti-Halusinasi):
+Pedoman Temporal Anchoring & Format (Wajib Ditaati):
+1. Formula Temporal Anchoring (Wajib Dihitung Matematis):
+   - Setiap catatan diawali dengan timestamp pembuatan [createdAt].
+   - Kata Waktu Relatif ("besok", "lusa", "3 hari lagi", "nanti malam"):
+     Hitung target waktu secara matematis: Target = createdAt + offset relatif.
+     (Misal: Catatan dibuat Sabtu 17 Okt "ambil laundry lusa" -> Target = Senin 19 Okt. Jika Current Time Minggu 18 Okt, maka tugas ini MASIH MENDATANG, BELUM LEWAT).
+   - Tanggal Mutlak ("tanggal 16", "16 Okt", "20 Okt"):
+     Bandingkan langsung dengan Current Time. Jika Current Time 18 Okt, maka "tanggal 16" adalah 2 hari lalu / SUDAH LEWAT. JANGAN PERNAH dimasukkan ke "Hari ini" atau "Mendatang".
+   - Tanpa Keterangan Waktu ("deploy hotfix", "beli kemeja", "baca buku"):
+     Jadikan createdAt sebagai acuan dan kelompokkan ke "To-Do Tanpa Tenggat". JANGAN berasumsi tugas tersebut untuk hari ini.
+
+2. Format Jawaban Padat, Rapi, & Mobile-Friendly:
+   - DILARANG menggunakan heading markdown besar (#, ##, ###).
+   - DILARANG KERAS membuat penutup basa-basi atau tawaran bantuan di akhir respons (seperti: "Mau saya bantu...", "Ada yang perlu dibantu lagi?", "Semoga membantu!", dsb.). Akhiri jawaban tepat setelah data/poin terakhir tanpa kalimat penutup tambahan apapun.
+   - Maksimal 10-15 baris.
+   - Jika pertanyaan meminta daftar tugas / jadwal / agenda / to-do, kelompokkan secara ringkas (lewati kelompok yang kosong):
+     ⚠️ *Sudah Lewat (Overdue):*
+     • [nama item] - [keterangan waktu / tanggal]
+     📌 *Mendatang / Minggu Ini:*
+     • [nama item] - [keterangan target waktu, urutkan dari terdekat]
+     📝 *To-Do Tanpa Tenggat:*
+     • [nama item]
+   - Jika pertanyaan bersifat spesifik non-jadwal (misal: pengeluaran, nomor rekening, catatan tertentu), jawab langsung to-the-point dengan rincian singkat tanpa kelompok di atas.
+
+3. Integritas Data & Anti-Halusinasi:
    - Jawab strictly HANYA berdasarkan informasi yang tertulis di catatan pengguna.
-   - Jika informasi mengenai pertanyaan tersebut tidak ditemukan dalam catatan, katakan secara lugas bahwa data tersebut tidak ditemukan. Jangan mengarang data di luar catatan.
-4. Pemahaman Semantik Inklusif (Bukan Sekadar Pencocokan Harfiah):
-   - Pahami maksud dan entitas dalam pertanyaan berdasarkan makna kontekstual di kehidupan nyata di berbagai bahasa dan budaya, bukan sekadar mencari kata yang sama persis (string matching).
-   - Saat pengguna menanyakan suatu kategori, sertakan seluruh item yang secara logis merupakan jenis, turunan, atau bagian dari kategori tersebut.
-5. Pembedahan Catatan Campuran (Multi-Item Dissection):
-   - Pengguna sering mencatat beberapa entitas/topik berbeda dalam satu catatan (misal dalam baris terpisah atau format daftar). Evaluasi setiap baris/poin secara independen. Ambil hanya item yang relevan dengan pertanyaan.
-6. Mata Uang, Angka, & Slang Multibahasa:
-   - Pahami format dan singkatan kasual internasional maupun lokal (misal: k / rb / ewu / rebu = ribu, goceng = 5rb, cepek = 100rb).
-   - JANGAN menggabungkan angka dengan mata uang yang berbeda ($ USD dan Rp IDR) tanpa konversi kurs yang jelas; pisahkan rincian dan total per mata uang secara rapi.
-   - Tampilkan rincian item yang ditemukan sebelum menyimpulkan atau menampilkan kalkulasi total.`;
+   - Jika informasi tidak ditemukan, katakan secara lugas bahwa data tidak ditemukan. Jangan mengarang data di luar catatan.
 
-    const userPrompt = `Catatan pengguna yang tersimpan (< 6 bulan terakhir):
+4. Keselarasan Bahasa (Language Mirroring):
+   - Balas menggunakan bahasa yang sama dengan pertanyaan pengguna (ID/EN/dsb.).
+
+5. Pemahaman Semantik & Angka/Mata Uang:
+   - Pahami makna kontekstual dan kategori (k / rb = ribu, 20k = Rp 20.000). Jangan campurkan mata uang berbeda tanpa konversi.
+   - Evaluasi setiap baris/butir secara independen jika catatan berisi banyak poin.
+
+PENTING: Selalu akhiri respons langsung pada data/poin terakhir. JANGAN PERNAH menambahkan pertanyaan penutup, penawaran follow-up, atau basa-basi robotik di akhir jawaban!`;
+
+    const userPrompt = `Catatan pengguna yang tersimpan (< 30 hari terakhir):
 ---
 ${contextNotes}
 ---
@@ -154,7 +191,7 @@ Pertanyaan pengguna: ${question}`;
       temperature: 0.1,
     });
 
-    return text.trim();
+    return cleanClosingRemarks(text);
   } catch (err) {
     console.error('[AI /ask] Error executing question answering:', err);
     return 'Terjadi kendala saat memproses pertanyaan Anda dengan AI. Silakan coba kembali dalam beberapa saat.';

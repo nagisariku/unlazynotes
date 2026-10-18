@@ -47,6 +47,21 @@ async function runTests() {
     `Movie note tags should have avatar, cgv, entertainment (got ${JSON.stringify(movieHeuristic.specific_tags)})`
   );
 
+  // Calendar date pattern schedule tests
+  const tuwebNote = 'tuweeb 2, tanggal 16';
+  const tuwebHeuristic = heuristicTagNote(tuwebNote);
+  assert(
+    tuwebHeuristic.category === 'schedule',
+    `Calendar date note 'tuweeb 2, tanggal 16' category should be 'schedule' (got '${tuwebHeuristic.category}')`
+  );
+
+  const calMonthNote = 'ujian akhir semester 25 okt';
+  const calMonthHeuristic = heuristicTagNote(calMonthNote);
+  assert(
+    calMonthHeuristic.category === 'schedule',
+    `Calendar month note 'ujian akhir semester 25 okt' category should be 'schedule' (got '${calMonthHeuristic.category}')`
+  );
+
   // --- ITEM 2: 5-Tag Max & Multi-Entity Enrichment ---
   console.log('\n--- 2. Testing 5-Tag Max & Multi-Entity Enrichment ---');
   const multiEntityNote = 'dapet transferan dp website klien 2.5jt pt karya maju';
