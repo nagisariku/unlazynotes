@@ -12,6 +12,7 @@ import { eq } from 'drizzle-orm';
 import { heuristicTagNote } from '../src/lib/ai';
 import { answerNoteQuestion } from '../src/lib/ask';
 import { subDays } from 'date-fns';
+import assert from 'node:assert';
 
 async function run() {
   console.log('==================================================');
@@ -192,7 +193,17 @@ async function run() {
       process.exit(1);
     }
   }
-  console.log('✅ PASS: Future dates (21 & 24 Okt) are correctly placed in upcoming schedule, not overdue!');
+  // 6. Test Targeted Query (Dynamic Scope)
+  console.log('\n--- Testing Targeted Query ("jadwal ganti oli kapan?") ---');
+  const targetedResponse = await answerNoteQuestion(testUserId, 'jadwal ganti oli kapan?');
+  console.log('\n--- TARGETED AI RESPONSE ---');
+  console.log(targetedResponse);
+  console.log('----------------------------\n');
+
+  assert(targetedResponse.toLowerCase().includes('ahass') || targetedResponse.toLowerCase().includes('oli'), 'Mentions AHASS or oli');
+  assert(!targetedResponse.toLowerCase().includes('ganti ban'), 'Targeted response does not dump unrelated ganti ban');
+  assert(!targetedResponse.toLowerCase().includes('proposal'), 'Targeted response does not dump unrelated proposal');
+  console.log('✅ PASS: Targeted query answered with laser focus without dumping unrelated agendas!');
 
   // Clean up
   await db.delete(notes).where(eq(notes.userId, testUserId));

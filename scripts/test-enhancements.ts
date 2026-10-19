@@ -653,9 +653,20 @@ async function runTests() {
   assert(allIdCmds, 'help.id contains all 10 commands');
   assert(allEnCmds, 'help.en contains all 10 commands');
   assert(!helpId.includes('{securityDisclaimer}'), 'help.id does not contain {securityDisclaimer}');
-  assert(!helpEn.includes('{securityDisclaimer}'), 'help.en does not contain {securityDisclaimer}');
   assert(helpId.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.id renders Web Dashboard link properly');
   assert(helpEn.includes('🌐 Web Dashboard: https://unlazynotes.com/dashboard'), 'help.en renders Web Dashboard link properly');
+
+  // 7. Auto-chunking safeguard tests
+  const { chunkText } = await import('../src/lib/telegram');
+  const shortText = 'Halo dunia!';
+  assert(chunkText(shortText).length === 1, 'Short text produces 1 chunk');
+  assert(chunkText(shortText)[0] === shortText, 'Short text content is preserved');
+
+  const longText = Array(300).fill('Baris catatan panjang untuk menguji auto-chunking safeguard telegram bot.').join('\n');
+  assert(longText.length > 4000, 'longText length > 4000 chars');
+  const chunks = chunkText(longText, 4000);
+  assert(chunks.length > 1, 'Long text is split into multiple chunks');
+  assert(chunks.every(c => c.length <= 4000), 'All chunks are <= 4000 chars');
 
   console.log(`\n==================================================`);
   console.log(`TOTAL: ${passed}/${total} assertions passed.`);

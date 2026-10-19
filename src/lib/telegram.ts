@@ -67,24 +67,36 @@ export interface TelegramSendOptions {
 }
 
 /**
- * Send a message back to Telegram user with graceful error handling.
+ * Splits long text into safe chunks <= limit characters, preserving newline boundaries where possible.
  */
-export async function sendTelegramMessage(
+export function chunkText(text: string, limit = 4000): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= limit) {
+      chunks.push(remaining);
+      break;
+    }
+    let splitIdx = remaining.lastIndexOf('\n', limit);
+    if (splitIdx === -1 || splitIdx < limit / 2) {
+      splitIdx = limit;
+    }
+    chunks.push(remaining.slice(0, splitIdx));
+    remaining = remaining.slice(splitIdx).trimStart();
+  }
+  return chunks;
+}
+
+async function sendSingleTelegramMessage(
   chatId: string | number,
   text: string,
   options?: TelegramSendOptions
 ): Promise<boolean> {
-  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
-    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
-    return true;
-  }
-
   try {
     await bot.api.sendMessage(chatId, text, options);
     return true;
   } catch (error: any) {
-    // Jika gagal karena formatting markdown/HTML dari respons LLM, kirim ulang sebagai plain text
     if (options?.parse_mode) {
       try {
         await bot.api.sendMessage(chatId, text, {
@@ -98,6 +110,39 @@ export async function sendTelegramMessage(
     console.error(`[Telegram] Failed to send message to ${chatId}:`, error);
     return false;
   }
+}
+
+/**
+ * Send a message back to Telegram user with graceful error handling and auto-chunking safeguard (>4000 chars).
+ */
+export async function sendTelegramMessage(
+  chatId: string | number,
+  text: string,
+  options?: TelegramSendOptions
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
+    return true;
+  }
+
+  const chunks = chunkText(text, 4000);
+  if (chunks.length > 1) {
+    let allOk = true;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkOptions: TelegramSendOptions | undefined = options
+        ? {
+            ...options,
+            reply_markup: i === chunks.length - 1 ? options.reply_markup : undefined,
+          }
+        : undefined;
+      const ok = await sendSingleTelegramMessage(chatId, chunks[i], chunkOptions);
+      if (!ok) allOk = false;
+    }
+    return allOk;
+  }
+
+  return sendSingleTelegramMessage(chatId, text, options);
 }
 
 /**
