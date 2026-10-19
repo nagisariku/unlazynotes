@@ -823,9 +823,9 @@ export async function handleDashboardCommand(
   return { ok: true, action: 'dashboard_opened' };
 }
 
-const syncCooldownMap = new Map<string, number>();
-const syncInProgressSet = new Set<string>();
-const SYNC_COOLDOWN_MS = 5000;
+export const syncCooldownMap = new Map<string, number>();
+export const syncInProgressSet = new Set<string>();
+export const SYNC_COOLDOWN_MS = 5000;
 
 /**
  * Handles /sync, /organize, /rapikan or dock menu '🔄 Sync' trigger
@@ -835,12 +835,9 @@ export async function handleSyncCommand(
   userId: string,
   activeLocale: SupportedLocale = 'id'
 ): Promise<TelegramProcessResult> {
-  // Anti-Spam: Cek apakah proses sinkronisasi sedang berjalan untuk user ini
-  if (syncInProgressSet.has(userId)) {
-    const inProgressMsg =
-      activeLocale === 'en'
-        ? 'Synchronization is already in progress, please wait... ⏳'
-        : 'Sinkronisasi sedang berlangsung, mohon tunggu sebentar... ⏳';
+  // Anti-Spam: Cek apakah proses sinkronisasi sedang berjalan untuk user/chat ini
+  if (syncInProgressSet.has(userId) || syncInProgressSet.has(chatId)) {
+    const inProgressMsg = getTelegramMsg('sync_lock_active', activeLocale);
 
     await sendTelegramMessage(chatId, inProgressMsg, {
       parse_mode: 'Markdown',
@@ -867,6 +864,10 @@ export async function handleSyncCommand(
   }
 
   syncInProgressSet.add(userId);
+  syncInProgressSet.add(chatId);
+
+  let loadingInterval: NodeJS.Timeout | null = null;
+  let loadingMsgId: number | undefined;
 
   try {
     // 1. Flush any pending debounced messages for this user first
@@ -895,18 +896,39 @@ export async function handleSyncCommand(
 
     // 4. Jika ada catatan yang belum dirapikan di DB (dbUnorganizedCount > 0):
     if (dbUnorganizedCount > 0) {
+      // Dynamic loading message dengan animated dots (Syncronizing... / Menyinkronkan...)
+      const baseText = getTelegramMsg('sync_loading_base', activeLocale);
+      let dotCount = 1;
+      const loadingResult = await sendTelegramMessageWithId(chatId, `${baseText}.`);
+      loadingMsgId = loadingResult.messageId;
+
+      if (loadingMsgId) {
+        loadingInterval = setInterval(() => {
+          dotCount = (dotCount % 3) + 1;
+          const dots = '.'.repeat(dotCount);
+          editTelegramMessage(chatId, loadingMsgId!, `${baseText}${dots}`).catch(() => {});
+        }, 1200);
+      }
+
       // Kirim catatan ke AI untuk dirapikan secara batch
       await organizeUserNotes(userId);
+
+      // Hentikan animasi loading & hapus pesan loading
+      if (loadingInterval) {
+        clearInterval(loadingInterval);
+        loadingInterval = null;
+      }
+      if (loadingMsgId) {
+        await deleteTelegramMessage(chatId, loadingMsgId).catch(() => {});
+        loadingMsgId = undefined;
+      }
 
       // Pastikan cache ter-update dan counter di-reset ke 0
       resetUnorganizedCount(userId);
       invalidateUserTagsCache(userId);
 
-      // Respons bersih tanpa ringkasan cantik: "sinkronasi selesai!"
-      const successMsg =
-        activeLocale === 'en'
-          ? 'Synchronization complete!'
-          : 'Sinkronisasi selesai!';
+      // Respons bersih tanpa ringkasan cantik: "Sinkronisasi selesai!"
+      const successMsg = getTelegramMsg('sync_completed', activeLocale);
 
       await sendTelegramMessage(chatId, successMsg, {
         parse_mode: 'Markdown',
@@ -915,11 +937,8 @@ export async function handleSyncCommand(
 
       return { ok: true, action: 'sync_completed', count: dbUnorganizedCount };
     } else {
-      // 5. Jika tidak ada catatan baru: "belum ada catatan baru!"
-      const emptyMsg =
-        activeLocale === 'en'
-          ? 'No new notes!'
-          : 'Belum ada catatan baru!';
+      // 5. Jika tidak ada catatan baru: "Belum ada catatan baru!"
+      const emptyMsg = getTelegramMsg('sync_empty', activeLocale);
 
       await sendTelegramMessage(chatId, emptyMsg, {
         parse_mode: 'Markdown',
@@ -930,13 +949,21 @@ export async function handleSyncCommand(
     }
   } catch (err) {
     console.error(`[Sync Error] User ${userId}:`, err);
-    await sendTelegramMessage(chatId, 'Gagal melakukan sinkronisasi catatan.', {
+    const failMsg = getTelegramMsg('sync_failed', activeLocale);
+    await sendTelegramMessage(chatId, failMsg, {
       parse_mode: 'Markdown',
       reply_markup: PERSISTENT_DOCK_KEYBOARD,
     });
     return { ok: false, error: 'sync_failed' };
   } finally {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+    }
+    if (loadingMsgId) {
+      await deleteTelegramMessage(chatId, loadingMsgId).catch(() => {});
+    }
     syncInProgressSet.delete(userId);
+    syncInProgressSet.delete(chatId);
     syncCooldownMap.set(userId, Date.now());
   }
 }
@@ -958,6 +985,17 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   }
 
   const chatId = String(message.chat.id);
+
+  // 0b. Lock Barrier: Jika proses sync sedang berjalan untuk chatId ini, tolak pesan / command baru
+  if (syncInProgressSet.has(chatId)) {
+    const senderLocale = detectTelegramLocale(message, null);
+    const lockMsg = getTelegramMsg('sync_lock_active', senderLocale);
+    await sendTelegramMessage(chatId, lockMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
+    return { ok: true, action: 'blocked_during_sync' };
+  }
 
   // 1. Deteksi file / media (foto, dokumen, video, audio, voice, sticker, dsb.)
   const isMedia = Boolean(
@@ -1230,6 +1268,16 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
 
   const quotaInfo = await checkUserQuotaAndTier(activeKey.userId);
+
+  // 4a. Lock Barrier: Jika proses sync sedang berjalan untuk userId ini
+  if (syncInProgressSet.has(activeKey.userId)) {
+    const lockMsg = getTelegramMsg('sync_lock_active', activeLocale);
+    await sendTelegramMessage(chatId, lockMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
+    return { ok: true, action: 'blocked_during_sync' };
+  }
 
   // 4b. Shortcut Penomoran: Jika pesan berupa angka langsung atau berkurung (misal: 1 atau (1))
   const numMatch = text.match(/^\(?(\d+)\)?$/);
@@ -1720,6 +1768,16 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
   const data: string = callbackQuery.data || '';
   const chatId = String(callbackQuery.message?.chat?.id || callbackQuery.from?.id);
   const messageId = callbackQuery.message?.message_id;
+
+  // Lock Barrier: Tolak callback query jika proses sync sedang berjalan untuk chatId ini
+  if (syncInProgressSet.has(chatId)) {
+    const senderLocale = detectTelegramLocale(callbackQuery, null);
+    await answerTelegramCallbackQuery(callbackId, {
+      text: getTelegramMsg('sync_lock_active', senderLocale),
+      show_alert: true,
+    });
+    return { ok: true, action: 'blocked_during_sync' };
+  }
 
   if (data === 'noop') {
     await answerTelegramCallbackQuery(callbackId);

@@ -46,7 +46,12 @@ export type TelegramMessageKey =
   | 'vault_decryption_failed'
   | 'vault_revealed_multiple_header'
   | 'callback_unauthenticated'
-  | 'dashboard_prompt';
+  | 'dashboard_prompt'
+  | 'sync_loading_base'
+  | 'sync_lock_active'
+  | 'sync_completed'
+  | 'sync_empty'
+  | 'sync_failed';
 
 export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocale, string>> = {
   dashboard_prompt: {
@@ -312,6 +317,31 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   callback_unauthenticated: {
     id: `Sesi akun Telegram belum terhubung.`,
     en: `Telegram account session is not connected.`,
+  },
+
+  sync_loading_base: {
+    id: `🔄 Menyinkronkan`,
+    en: `🔄 Synchronizing`,
+  },
+
+  sync_lock_active: {
+    id: `Sedang menyinkronkan catatan... Mohon tunggu sebentar sampai proses selesai sebelum mengirim pesan atau perintah baru. ⏳`,
+    en: `Synchronizing notes... Please wait until the process completes before sending new messages or commands. ⏳`,
+  },
+
+  sync_completed: {
+    id: `Sinkronisasi selesai!`,
+    en: `Synchronization complete!`,
+  },
+
+  sync_empty: {
+    id: `Belum ada catatan baru!`,
+    en: `No new notes!`,
+  },
+
+  sync_failed: {
+    id: `Gagal melakukan sinkronisasi catatan.`,
+    en: `Failed to synchronize notes.`,
   },
 };
 
