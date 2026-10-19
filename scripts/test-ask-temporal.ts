@@ -122,36 +122,77 @@ async function run() {
     isEncrypted: false,
   });
 
+  // Note 4: Future date (21 Okt)
+  await db.insert(notes).values({
+    id: crypto.randomUUID(),
+    userId: testUserId,
+    content: 'ganti ban mobil rabu tgl 21 jam 14.00',
+    category: 'schedule',
+    specificTags: ['mobil', 'bengkel'],
+    createdAt: dateYesterday,
+    isEncrypted: false,
+  });
+
+  // Note 5: Future date (24 Okt)
+  await db.insert(notes).values({
+    id: crypto.randomUUID(),
+    userId: testUserId,
+    content: 'ganti oli motul di ahass sabtu tgl 24 jam 11.00',
+    category: 'schedule',
+    specificTags: ['oli', 'motor', 'ahass'],
+    createdAt: dateYesterday,
+    isEncrypted: false,
+  });
+
   console.log('Executing answerNoteQuestion...');
-  const response = await answerNoteQuestion(testUserId, 'list tugas yg paling dekat minggu ini apa');
+  const response = await answerNoteQuestion(testUserId, 'list tugas dan jadwal terdekat');
   console.log('\n--- AI RESPONSE ---');
   console.log(response);
   console.log('-------------------\n');
 
   // Validations:
-  // 1. No large headers (# or ##)
-  const hasBigHeaders = /^(#{1,3})\s+/m.test(response);
+  // 1. No markdown tables (|---|)
+  const hasMarkdownTable = /\|(\s*[-:]+\s*\|)+/.test(response);
+  if (hasMarkdownTable) {
+    console.error('❌ FAILED: Response contains markdown table syntax (|---|)');
+    process.exit(1);
+  }
+  console.log('✅ PASS: Zero markdown tables found.');
+
+  // 2. No large headers (# or ##)
+  const hasBigHeaders = /^(#{1,6})\s+/m.test(response);
   if (hasBigHeaders) {
     console.error('❌ FAILED: Response contains markdown headers (# or ##)');
     process.exit(1);
   }
   console.log('✅ PASS: No large markdown headers found.');
 
-  // 2. No conversational closing questions
-  const hasConversationalClose = /(mau aku bantu|ada yang ingin|bisa saya bantu|butuh bantuan)/i.test(response);
+  // 3. No conversational closing questions
+  const hasConversationalClose = /(mau aku bantu|ada yang ingin|bisa saya bantu|butuh bantuan|semoga membantu)/i.test(response);
   if (hasConversationalClose) {
     console.error('❌ FAILED: Response contains conversational closing remarks');
     process.exit(1);
   }
   console.log('✅ PASS: No conversational closing questions.');
 
-  // 4. No fabricated 'Lanjutkan tugas' or placing past date (tuweeb 16 okt) as today's task
+  // 4. No fabricated 'Lanjutkan tugas'
   const hasFabricatedContinuation = /lanjutkan\s+tugas/i.test(response);
   if (hasFabricatedContinuation) {
     console.error('❌ FAILED: Response fabricated "Lanjutkan tugas" phrase:', response);
     process.exit(1);
   }
   console.log('✅ PASS: No fabricated "Lanjutkan tugas" found.');
+
+  // 5. Future dates (21 Okt & 24 Okt) must NOT be categorized as overdue / sudah lewat
+  const overdueSectionMatch = response.match(/(?:sudah lewat|overdue)[\s\S]*?(?:\*📝|\*📌|$)/i);
+  if (overdueSectionMatch) {
+    const overdueText = overdueSectionMatch[0].toLowerCase();
+    if (overdueText.includes('21 okt') || overdueText.includes('24 okt') || overdueText.includes('ganti ban') || overdueText.includes('ganti oli')) {
+      console.error('❌ FAILED: Future dates (21/24 Okt) wrongly categorized as overdue:', overdueText);
+      process.exit(1);
+    }
+  }
+  console.log('✅ PASS: Future dates (21 & 24 Okt) are correctly placed in upcoming schedule, not overdue!');
 
   // Clean up
   await db.delete(notes).where(eq(notes.userId, testUserId));
