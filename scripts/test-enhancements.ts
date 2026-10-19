@@ -3,11 +3,10 @@ import {
   formatTagListHorizontal,
   buildCategoriesGridKeyboard,
   buildPaginationKeyboard,
-  recordTagSearch,
   getTagsOverviewData,
 } from '../src/lib/telegram-handler';
 import { db } from '../src/db';
-import { users, apiKeys, notes, tagSearches } from '../src/db/schema';
+import { users, apiKeys, notes } from '../src/db/schema';
 import { eq, and } from 'drizzle-orm';
 
 async function runTests() {
@@ -138,16 +137,17 @@ async function runTests() {
     `escapeHtml properly escapes HTML special characters`
   );
 
-  // --- ITEM 5: 3x3 Categories Grid Keyboard ---
-  console.log('\n--- 5. Testing 3x3 Categories Grid Keyboard ---');
-  const keyboard = buildCategoriesGridKeyboard();
+  // --- ITEM 5: Categories Grid Keyboard & Dynamic Active Category Filtering ---
+  console.log('\n--- 5. Testing Categories Grid Keyboard & Dynamic Active Category Filtering ---');
+  const keyboard = buildCategoriesGridKeyboard()!;
+  assert(keyboard !== undefined, `Keyboard is generated`);
   assert(keyboard.inline_keyboard.length === 3, `Keyboard has exactly 3 rows`);
   assert(keyboard.inline_keyboard[0].length === 3, `Row 1 has 3 buttons`);
   assert(keyboard.inline_keyboard[1].length === 3, `Row 2 has 3 buttons`);
   assert(keyboard.inline_keyboard[2].length === 3, `Row 3 has 3 buttons`);
 
   // Row 1
-  assert(keyboard.inline_keyboard[0][0].text === '💰 Finance', `Row 1 Col 1 is Finance`);
+  assert(keyboard.inline_keyboard[0][0].text === '💲 Finance', `Row 1 Col 1 is Finance (💲)`);
   assert(keyboard.inline_keyboard[0][0].callback_data === 'page:tags:finance:1', `Finance callback_data is page:tags:finance:1`);
   assert(keyboard.inline_keyboard[0][1].text === '📋 Todo', `Row 1 Col 2 is Todo`);
   assert(keyboard.inline_keyboard[0][1].callback_data === 'page:tags:todo:1', `Todo callback_data is page:tags:todo:1`);
@@ -155,7 +155,7 @@ async function runTests() {
   assert(keyboard.inline_keyboard[0][2].callback_data === 'page:tags:schedule:1', `Schedule callback_data is page:tags:schedule:1`);
 
   // Row 2
-  assert(keyboard.inline_keyboard[1][0].text === '🔖 Bookmark', `Row 2 Col 1 is Bookmark`);
+  assert(keyboard.inline_keyboard[1][0].text === '🖇🔗 Bookmark', `Row 2 Col 1 is Bookmark (🖇🔗)`);
   assert(keyboard.inline_keyboard[1][0].callback_data === 'page:tags:bookmark:1', `Bookmark callback_data is page:tags:bookmark:1`);
   assert(keyboard.inline_keyboard[1][1].text === '🔐 Credential', `Row 2 Col 2 is Credential`);
   assert(keyboard.inline_keyboard[1][1].callback_data === 'page:tags:credential:1', `Credential callback_data is page:tags:credential:1`);
@@ -167,8 +167,17 @@ async function runTests() {
   assert(keyboard.inline_keyboard[2][0].callback_data === 'page:tags:draft:1', `Draft callback_data is page:tags:draft:1`);
   assert(keyboard.inline_keyboard[2][1].text === '💬 Random-yap', `Row 3 Col 2 is Random-yap`);
   assert(keyboard.inline_keyboard[2][1].callback_data === 'page:tags:random-yap:1', `Random-yap callback_data is page:tags:random-yap:1`);
-  assert(keyboard.inline_keyboard[2][2].text === '🏷 Others', `Row 3 Col 3 is Others`);
+  assert(keyboard.inline_keyboard[2][2].text === 'Others', `Row 3 Col 3 is Others (no emoji)`);
   assert(keyboard.inline_keyboard[2][2].callback_data === 'page:tags:others:1', `Others callback_data is page:tags:others:1`);
+
+  // Dynamic filter: only show categories with >= 1 notes
+  const activeSet = new Set(['finance', 'todo']);
+  const filteredKb = buildCategoriesGridKeyboard(activeSet)!;
+  assert(filteredKb !== undefined, `Filtered keyboard is generated`);
+  assert(filteredKb.inline_keyboard.length === 1, `Filtered keyboard has 1 row`);
+  assert(filteredKb.inline_keyboard[0].length === 2, `Filtered row has 2 buttons`);
+  assert(filteredKb.inline_keyboard[0][0].text === '💲 Finance', `First button is Finance`);
+  assert(filteredKb.inline_keyboard[0][1].text === '📋 Todo', `Second button is Todo`);
 
   // Check pagination keyboard has "Kembali ke Tags"
   const tagsPaginationKb = buildPaginationKeyboard('tags', 'finance', 1, 3);
@@ -177,19 +186,13 @@ async function runTests() {
   assert(tagsPaginationKb?.inline_keyboard[1][0].text === '🏷 Kembali ke Tags', `Back button text is '🏷 Kembali ke Tags'`);
   assert(tagsPaginationKb?.inline_keyboard[1][0].callback_data === 'menu:tags', `Back button callback is 'menu:tags'`);
 
-  // --- ITEM 6: Tag Search Tracking, 15-Tag Limit, Capsule Numbering & Deduplication ---
+  // --- ITEM 6: 15-Tag Limit, Capsule Numbering & Deduplication ---
   console.log('\n--- 6. Testing 15-Tag Limit, Capsule Numbering & Deduplication ---');
   const testUserId = `test_user_tags_${Date.now()}`;
   await db.insert(users).values({
     id: testUserId,
     email: `${testUserId}@example.com`,
   });
-
-  // Track search: 'kopi' (sudah ada di notes), 'crypto' (belum ada di notes), 'investasi' (belum ada di notes)
-  await recordTagSearch(testUserId, 'kopi');
-  await recordTagSearch(testUserId, 'kopi');
-  await recordTagSearch(testUserId, 'crypto');
-  await recordTagSearch(testUserId, 'investasi');
 
   // Insert mock notes
   await db.insert(notes).values([
@@ -231,27 +234,33 @@ async function runTests() {
   assert(!overview.recentTagsText.includes(')kopi'), `Recent tags deduplicates 'kopi' which is already in Active (got: ${overview.recentTagsText})`);
   assert(!overview.recentTagsText.startsWith('(1)'), `Recent tags continues global numbering and does NOT restart from (1) (got: ${overview.recentTagsText})`);
 
-  // Sering Dicari harus melanjutkan nomor urut berikutnya, TIDAK mengandung 'kopi', tapi mengandung 'crypto' dan 'investasi'
-  assert(!overview.searchedTagsText.includes(')kopi'), `Searched tags deduplicates 'kopi' (got: ${overview.searchedTagsText})`);
-  assert(overview.searchedTagsText.includes('(6)investasi'), `Searched tags contains (6)investasi (got: ${overview.searchedTagsText})`);
-  assert(overview.searchedTagsText.includes('(7)crypto'), `Searched tags contains (7)crypto (got: ${overview.searchedTagsText})`);
+  // Existing categories detected correctly
+  assert(overview.existingCategories.has('others'), `Existing categories contains 'others'`);
+  assert(overview.existingCategories.has('finance'), `Existing categories contains 'finance'`);
+  assert(overview.existingCategories.has('credential'), `Existing categories contains 'credential'`);
+  assert(!overview.existingCategories.has('bookmark'), `Existing categories does NOT contain 'bookmark'`);
 
   // Validasi numberToTagMap
   assert(overview.numberToTagMap.get(1) === 'kopi', `numberToTagMap key 1 resolves to 'kopi'`);
   const tagForFirstRecent = overview.numberToTagMap.get(overview.numberToTagMap.size);
   assert(Boolean(tagForFirstRecent), `numberToTagMap contains mapping for all consecutive numbers`);
 
-  // --- ITEM 7: HTML i18n & Bracketed Number Shortcut Resolution ---
-  console.log('\n--- 7. Testing HTML i18n & Bracketed Number Shortcut Resolution ---');
+  // --- ITEM 7: HTML i18n & Quick Commands Info ---
+  console.log('\n--- 7. Testing HTML i18n & Quick Commands Info ---');
   const { getTelegramMsg } = await import('../src/lib/i18n/telegram');
   const htmlMsg = getTelegramMsg('tags_header', 'id', {
     activeTagsText: overview.activeTagsText,
     recentTagsText: overview.recentTagsText,
-    searchedTagsText: overview.searchedTagsText,
   });
 
   assert(htmlMsg.includes('<b>Tags Anda</b>'), `i18n tags_header uses HTML <b> tags for title`);
   assert(htmlMsg.includes('<b>Teraktif:</b>'), `i18n tags_header uses HTML <b> tags for Teraktif`);
+  assert(htmlMsg.includes('<b>Perintah Cepat:</b>'), `i18n tags_header includes Quick Commands header`);
+  assert(htmlMsg.includes('/pin'), `i18n tags_header includes /pin command info`);
+  assert(htmlMsg.includes('/vault'), `i18n tags_header includes /vault command info`);
+  assert(htmlMsg.includes('/search'), `i18n tags_header includes /search command info`);
+  assert(htmlMsg.includes('/ask'), `i18n tags_header includes /ask command info`);
+  assert(!htmlMsg.includes('Sering Dicari'), `i18n tags_header does NOT include Sering Dicari`);
   assert(htmlMsg.includes('&lt;nama_tag&gt;'), `i18n tags_header escapes HTML brackets properly`);
 
   // Uji regex input shortcut: baik '1' maupun '(1)'
@@ -435,15 +444,6 @@ async function runTests() {
 
   await db.insert(notes).values(notesBatch);
 
-  // Searches:
-  // 1. 'tag-01' (already in Teraktif)
-  // 2. 'recent-first' (already in Terakhir)
-  // 3. 'searched-unique' (should appear in Sering Dicari)
-  await recordTagSearch(user10Id, 'tag-01');
-  await recordTagSearch(user10Id, 'recent-first');
-  await recordTagSearch(user10Id, 'searched-unique');
-  await recordTagSearch(user10Id, 'searched-unique'); // count 2
-
   const overview10 = await getTagsOverviewData(user10Id);
 
   // 1. Teraktif contains 15 tags: (1)tag-01 through (15)tag-15
@@ -462,34 +462,6 @@ async function runTests() {
   assert(overview10.recentTagsText.includes('(16)'), `Terakhir starts numbering at (16)`);
   assert(overview10.recentTagsText.includes('(17)'), `Terakhir continues numbering at (17)`);
 
-  // 4. Sering Dicari: 'tag-01' and 'recent-first' skipped because already in seenTags
-  assert(!overview10.searchedTagsText.includes('tag-01'), `Sering Dicari skips tag-01 which is in Teraktif`);
-  assert(!overview10.searchedTagsText.includes('recent-first'), `Sering Dicari skips recent-first which is in Terakhir`);
-  assert(overview10.searchedTagsText.includes('(18)searched-unique'), `Sering Dicari includes searched-unique at (18)`);
-
-  // 5. Test callback query tracks inline tag click
-  const testChatId10 = `chat_btn_${Date.now()}`;
-  await db.insert(apiKeys).values({
-    id: crypto.randomUUID(),
-    userId: user10Id,
-    keyHash: `hash_${Date.now()}`,
-    telegramChatId: testChatId10,
-    isActive: true,
-  });
-
-  const { processTelegramCallbackQuery } = await import('../src/lib/telegram-handler');
-  await processTelegramCallbackQuery({
-    id: 'cb_test_btn',
-    data: 'page:tags:clicked-category:1',
-    from: { id: testChatId10 },
-  });
-
-  const [clickedSearch] = await db
-    .select()
-    .from(tagSearches)
-    .where(and(eq(tagSearches.userId, user10Id), eq(tagSearches.tag, 'clicked-category')));
-  assert(clickedSearch !== undefined && clickedSearch.count >= 1, `Inline tag click recorded in tag_searches table`);
-
   // --- ITEM 11: Testing Pin Feature, Note Actions (Copy & Delete), and /pin Command ---
   console.log('\n--- 11. Testing Pin, Copy, Delete, and /pin Command ---');
   const user11Id = `test_user_item11_${Date.now()}`;
@@ -506,7 +478,7 @@ async function runTests() {
     isActive: true,
   });
 
-  const { formatNoteDateWib, handlePinList, displayNoteDetail } = await import('../src/lib/telegram-handler');
+  const { formatNoteDateWib, handlePinList, displayNoteDetail, processTelegramCallbackQuery } = await import('../src/lib/telegram-handler');
 
   // 1. Test formatNoteDateWib
   const testDate = new Date('2026-10-17T07:30:00Z');
@@ -595,16 +567,21 @@ async function runTests() {
     processTelegramMessage,
   } = await import('../src/lib/telegram-handler');
 
-  // 1. Structure of PERSISTENT_DOCK_KEYBOARD (2 rows: [Tags, Pin] and [Tutup Menu])
+  // 1. Structure of PERSISTENT_DOCK_KEYBOARD (1 row: [Tags, Pin], no Tutup Menu)
   assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'PERSISTENT_DOCK_KEYBOARD has keyboard array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 2, 'PERSISTENT_DOCK_KEYBOARD has 2 rows');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 1, 'PERSISTENT_DOCK_KEYBOARD has 1 row');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row 1 has 2 dock buttons');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '🏷 Tags', 'Button 1 is 🏷 Tags');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1].length === 1, 'Row 2 has 1 button');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1][0].text === '❌ Tutup Menu', 'Row 2 button is ❌ Tutup Menu');
   assert(PERSISTENT_DOCK_KEYBOARD.resize_keyboard === true, 'resize_keyboard is true');
   assert((PERSISTENT_DOCK_KEYBOARD as any).is_persistent === undefined, 'is_persistent is removed to fix back navigation lag');
+
+  // Test invalid command guard
+  const invalidCmdRes = await processTelegramMessage({
+    chat: { id: testChatId11 },
+    text: '/unknowncommand',
+  });
+  assert(invalidCmdRes.ok === true && invalidCmdRes.action === 'invalid_command', 'Unrecognized command routes to invalid_command');
 
   // 2. handleDashboardCommand direct test
   const dashRes = await handleDashboardCommand(testChatId11, 'id');

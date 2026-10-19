@@ -317,13 +317,46 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - Inferensi menghasilkan penalaran temporal yang lebih presisi, perhitungan jam lampau yang akurat, dan zero halusinasi.
 
 ### Z. Status Verifikasi Test Suite & Standar Branch Kolaborasi
-- `scripts/test-enhancements.ts`: 137/137 assertions passed (100% PASS)
+- `scripts/test-phase4-polishes.ts`: 32/32 skenario lolos (100% PASS)
+- `scripts/test-enhancements.ts`: 145/145 assertions passed (100% PASS)
 - `scripts/test-ask-temporal.ts`: 100% PASS (Broad overview, Targeted laser query, Anchor Time Math, Claude Haiku 5.5)
 - `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
 - `scripts/test-telegram-i18n.ts`: 33/33 tests passed (100% PASS)
 - `scripts/test-tier-quota.ts`: 19/19 skenario passed (100% PASS)
 - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
 - **Branching Rule**: Seluruh pengembangan Agent Gamma diisolasi pada branch `gamma/dev`. Branch `main` diproteksi ketat dan DILARANG di-push langsung.
+
+### AA. Phase 4.1 UX & System Polishes (Telegram Bot & AI Guardrails)
+1. **Dock Menu Minimalis (1-Row Safe Navigation)**:
+   - Disederhanakan menjadi 1 baris murni: `[ 🏷 Tags ] [ ⭐️ Pin ]`.
+   - Tombol `❌ Tutup Menu` dihapus sepenuhnya agar tampilan keyboard pengguna tetap bersih.
+2. **Kategori Dinamis `/tags` & Pembaruan Emoji**:
+   - **Filter Catatan Aktif (Lightweight $O(N)$ in-memory)**: Tombol kategori yang ditampilkan HANYA yang memiliki $\ge 1$ catatan milik user. Jika kategori belum memiliki catatan (0 catatan), tombol tidak ditampilkan.
+   - **Pembaruan Emoji Tombol**:
+     * Finance: menggunakan `💲 Finance`.
+     * Bookmark: menggunakan `🖇🔗 Bookmark`.
+     * Others: menggunakan `Others` (murni tanpa emoji).
+   - **Pembersihan Logika "Sering Dicari"**:
+     * Kategori "Sering Dicari" beserta logic tracking-nya dihapus dari `/tags`. Konten `/tags` kini ringkas dan fokus hanya pada `🔥 Teraktif` dan `🕒 Terakhir`.
+     * Ditambahkan blok `💡 Perintah Cepat:` (`/pin`, `/vault`, `/search`, `/ask`) tepat sebelum instruksi nomor tag.
+3. **Invalid Command Guard**:
+   - Pesan yang diawali karakter `/` namun tidak cocok dengan perintah terdaftar mana pun otomatis membalas pesan singkat: `invalid command` dan tidak disimpan ke database sebagai catatan.
+4. **Dokumentasi `/vault` (Tanpa Kunci) di `/help`**:
+   - Menambahkan petunjuk penggunaan perintah `/vault` (tanpa parameter kunci) bagi pengguna yang ingin melihat seluruh daftar kredensial tersimpan saat lupa nama kuncinya.
+5. **Perbaikan Bug Detail Catatan Panjang & Re-styling Tombol**:
+   - **Root Cause & Fix Bug Catatan Panjang**: Telegram API membatasi parameter `copy_text` pada `CopyTextButton` maksimal **256 karakter**. Catatan panjang sebelumnya memicu error `400 Bad Request: BUTTON_COPY_TEXT_INVALID`. Sistem diperbaiki dengan auto-switch: jika catatan $\le 256$ karakter menggunakan native `copy_text`, jika $> 256$ karakter menggunakan callback `note:copy:<id>` yang mengirim teks catatan mentah ke chat untuk disalin langsung.
+   - **Auto-Chunking Safeguard**: Detail teks $> 4000$ karakter otomatis dikirim menggunakan `sendTelegramMessage` chunking alih-alih `editMessageText` yang gagal pada batas 4096 karakter Telegram.
+   - **Re-styling Tombol Detail**:
+     * Pin: menggunakan ikon bintang `⭐ Pin` / `⭐ Lepas Pin`.
+     * Salin: tombol `Salin` tanpa emoji.
+     * Hapus: tombol `Hapus` tanpa emoji.
+   - **Format Konten Baru**:
+     `📌` (diikuti break space / baris baru), `{isi notes...}`, (diikuti double break space / baris kosong), `{EEE, dd/MM/yyyy • HH:mm WIB}`, dan `Tags: {kategori, specific_tags}`.
+6. **Optimasi `/ask`: Pembersihan Loading & Anti-Abuse AI Guardrails**:
+   - **Pembersihan Pesan Loading**: Pesan `🤖 Sedang menganalisis catatan Anda...` dilacak dengan `message_id` dan otomatis dihapus (`deleteMessage`) setelah jawaban AI terkirim (atau saat terjadi kegagalan).
+   - **Penanganan Error**: Jika pemrosesan AI gagal, bot menampilkan pesan error yang ramah pengguna.
+   - **System Prompt Anti-Abuse**: AI diinstruksikan menolak dengan tegas dan sopan segala pertanyaan/perintah di luar konteks catatan pengguna (coding/pemrograman, penulisan esai, matematika umum, dll.).
+   - **Identitas AI**: Jika pengguna menanyakan model AI yang digunakan, AI menjawab secara konsisten `"Model UnlazyNotesLLM-v1"` dan dilarang membocorkan rincian arsitektur atau vendor internal sistem.
 
 ---
 

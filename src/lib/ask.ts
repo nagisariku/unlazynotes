@@ -95,6 +95,9 @@ export async function answerNoteQuestion(
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   if (!apiKey || apiKey.startsWith('mock-')) {
+    if (/model\s+(ai|apa)|pakai\s+model\s+apa/i.test(question)) {
+      return 'Model UnlazyNotesLLM-v1';
+    }
     // Basic heuristic search fallback if no LLM key
     const match = userNotes.find((n) =>
       n.content.toLowerCase().includes(question.toLowerCase())
@@ -237,7 +240,15 @@ Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
 6. Format Output Mobile-First:
    - DILARANG menggunakan tabel Markdown (|---|). Gunakan format bullet points yang rapi di smartphone.
    - DILARANG menggunakan heading Markdown besar (# atau ##). Gunakan teks tebal (bold).
-   - Tanpa kata pengantar dan tanpa basa-basi penutup robotik.`;
+   - Tanpa kata pengantar dan tanpa basa-basi penutup robotik.
+
+7. Batasan Domain & Pencegahan Penyalahgunaan (Anti-Abuse Guardrail):
+   - Anda HANYA berfungsi sebagai asisten cerdas personal UnlazyNotes untuk menganalisis, mencari, dan merangkum catatan pengguna yang ada di UnlazyNotes.
+   - TOLAK secara tegas dan sopan segala pertanyaan atau permintaan di luar konteks catatan pengguna (seperti permintaan coding/pemrograman, penulisan esai/artikel bebas, matematika umum, obrolan santai di luar catatan, dsb.) agar AI tidak disalahgunakan.
+   - Contoh respons penolakan: "Maaf, asisten UnlazyNotes hanya dapat menjawab pertanyaan seputar catatan pribadi Anda."
+   - Pertanyaan Mengenai Model AI & Sistem:
+     * Apabila pengguna bertanya mengenai model AI apa yang digunakan oleh notes/aplikasi ini (misal: "kamu pakai model apa?", "model AI apa yang digunakan notes ini?"), jawab HANYA: "Model UnlazyNotesLLM-v1".
+     * DILARANG KERAS membeberkan atau memberi clue/detail teknis apapun mengenai arsitektur sistem, vendor/provider, nama model dasar (seperti Claude, Anthropic, Haiku, OpenAI, GPT, Cosmoshub, dsb.), database, server, atau sistem internal UnlazyNotes.`;
 
     const userPrompt = `Waktu Saat Ini (Current Time): ${nowFormatted}
 
@@ -266,6 +277,6 @@ PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
     return postProcessAskResponse(text);
   } catch (err) {
     console.error('[AI /ask] Error executing question answering:', err);
-    return 'Terjadi kendala saat memproses pertanyaan Anda dengan AI. Silakan coba kembali dalam beberapa saat.';
+    throw err;
   }
 }

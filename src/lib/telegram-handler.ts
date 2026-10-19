@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { users, apiKeys, notes, tagSearches } from '@/db/schema';
+import { users, apiKeys, notes } from '@/db/schema';
 import { eq, and, desc, sql, ilike } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
@@ -7,6 +7,8 @@ import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import {
   hashApiKey,
   sendTelegramMessage,
+  sendTelegramMessageWithId,
+  deleteTelegramMessage,
   editTelegramMessage,
   editTelegramReplyMarkup,
   answerTelegramCallbackQuery,
@@ -29,7 +31,6 @@ export const DEBOUNCE_DELAY_MS = 3000;
 export const PERSISTENT_DOCK_KEYBOARD = {
   keyboard: [
     [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
-    [{ text: '❌ Tutup Menu' }]
   ],
   resize_keyboard: true,
 };
@@ -217,28 +218,41 @@ export function formatSnippetPage(
   return text.trim();
 }
 
+export const ALL_CATEGORIES = [
+  { key: 'finance', label: '💲 Finance' },
+  { key: 'todo', label: '📋 Todo' },
+  { key: 'schedule', label: '📅 Schedule' },
+  { key: 'bookmark', label: '🖇🔗 Bookmark' },
+  { key: 'credential', label: '🔐 Credential' },
+  { key: 'reference', label: '📚 Reference' },
+  { key: 'draft', label: '📝 Draft' },
+  { key: 'random-yap', label: '💬 Random-yap' },
+  { key: 'others', label: 'Others' },
+];
+
 /**
- * Builds Telegram Inline Keyboard for 9 main categories (Grid 3x3).
+ * Builds Telegram Inline Keyboard for categories with at least 1 note.
  */
-export function buildCategoriesGridKeyboard() {
+export function buildCategoriesGridKeyboard(availableCategories?: Set<string>) {
+  const categoriesToDisplay = availableCategories
+    ? ALL_CATEGORIES.filter((c) => availableCategories.has(c.key))
+    : ALL_CATEGORIES;
+
+  if (categoriesToDisplay.length === 0) return undefined;
+
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+  const chunkSize = categoriesToDisplay.length <= 4 ? 2 : 3;
+  for (let i = 0; i < categoriesToDisplay.length; i += chunkSize) {
+    rows.push(
+      categoriesToDisplay.slice(i, i + chunkSize).map((cat) => ({
+        text: cat.label,
+        callback_data: `page:tags:${cat.key}:1`,
+      }))
+    );
+  }
+
   return {
-    inline_keyboard: [
-      [
-        { text: '💰 Finance', callback_data: 'page:tags:finance:1' },
-        { text: '📋 Todo', callback_data: 'page:tags:todo:1' },
-        { text: '📅 Schedule', callback_data: 'page:tags:schedule:1' },
-      ],
-      [
-        { text: '🔖 Bookmark', callback_data: 'page:tags:bookmark:1' },
-        { text: '🔐 Credential', callback_data: 'page:tags:credential:1' },
-        { text: '📚 Reference', callback_data: 'page:tags:reference:1' },
-      ],
-      [
-        { text: '📝 Draft', callback_data: 'page:tags:draft:1' },
-        { text: '💬 Random-yap', callback_data: 'page:tags:random-yap:1' },
-        { text: '🏷 Others', callback_data: 'page:tags:others:1' },
-      ],
-    ],
+    inline_keyboard: rows,
   };
 }
 
@@ -280,57 +294,8 @@ export function formatTagNumberedHorizontal(items: string[]): string {
 }
 
 /**
- * Upsert increment search counter for a tag in tag_searches table.
- */
-export async function recordTagSearch(userId: string, tag: string): Promise<void> {
-  const normTag = tag.trim().toLowerCase();
-  if (!normTag) return;
-
-  try {
-    const [existing] = await db
-      .select({ id: tagSearches.id, count: tagSearches.count })
-      .from(tagSearches)
-      .where(and(eq(tagSearches.userId, userId), eq(tagSearches.tag, normTag)))
-      .limit(1);
-
-    if (existing) {
-      await db
-        .update(tagSearches)
-        .set({
-          count: sql`${tagSearches.count} + 1`,
-          updatedAt: new Date(),
-        })
-        .where(eq(tagSearches.id, existing.id));
-    } else {
-      try {
-        await db.insert(tagSearches).values({
-          id: crypto.randomUUID(),
-          userId,
-          tag: normTag,
-          count: 1,
-          updatedAt: new Date(),
-        });
-      } catch {
-        await db
-          .update(tagSearches)
-          .set({
-            count: sql`${tagSearches.count} + 1`,
-            updatedAt: new Date(),
-          })
-          .where(and(eq(tagSearches.userId, userId), eq(tagSearches.tag, normTag)));
-      }
-    }
-  } catch (err) {
-    console.error('[recordTagSearch] Failed to track tag search:', err);
-  }
-}
-
-/**
- * Fetches data for the 3 horizontal lines of /tags:
- * 1. Top 15 Active Tags (highest frequency across all user active notes)
- * 2. Top 15 Recent Tags (1st tag per newest note, deduplicated against Active and prior Recent)
- * 3. Top 15 Most Searched Tags (from tag_searches, deduplicated against Active and Recent)
- * Numbers are globally consecutive without collision across groups.
+ * Fetches data for the 2 horizontal lines of /tags (Teraktif & Terakhir)
+ * and collects existing categories with >= 1 note.
  */
 export async function getTagsOverviewData(userId: string) {
   const userNotes = await db
@@ -349,8 +314,13 @@ export async function getTagsOverviewData(userId: string) {
     .orderBy(desc(notes.createdAt));
 
   const tagFreq = new Map<string, number>();
+  const existingCategories = new Set<string>();
 
   for (const n of userNotes) {
+    if (n.category && typeof n.category === 'string' && n.category.trim()) {
+      existingCategories.add(n.category.trim().toLowerCase());
+    }
+
     if (Array.isArray(n.specificTags) && n.specificTags.length > 0) {
       for (const rawTag of n.specificTags) {
         if (rawTag && typeof rawTag === 'string' && rawTag.trim()) {
@@ -410,34 +380,11 @@ export async function getTagsOverviewData(userId: string) {
     }
   }
 
-  // 3. Sering Dicari: Ambil tag-tag yang paling sering dibuka/direquest. Lewati jika SUDAH ada di seenTags.
-  // Ambil hanya yang belum pernah muncul di Teraktif maupun Terakhir hingga maksimal 15 tag.
-  const searchedRows = await db
-    .select({ tag: tagSearches.tag, count: tagSearches.count })
-    .from(tagSearches)
-    .where(eq(tagSearches.userId, userId))
-    .orderBy(desc(tagSearches.count), desc(tagSearches.updatedAt))
-    .limit(50);
-
-  const searchedNumbered: string[] = [];
-  for (const r of searchedRows) {
-    const t = r.tag?.trim().toLowerCase();
-    if (t && !seenTags.has(t)) {
-      seenTags.add(t);
-      const num = currentNumber++;
-      numberToTagMap.set(num, t);
-      searchedNumbered.push(`(${num})${escapeHtml(t)}`);
-      if (searchedNumbered.length >= 15) {
-        break;
-      }
-    }
-  }
-
   return {
     hasNotes: userNotes.length > 0,
     activeTagsText: formatTagNumberedHorizontal(activeNumbered),
     recentTagsText: formatTagNumberedHorizontal(recentNumbered),
-    searchedTagsText: formatTagNumberedHorizontal(searchedNumbered),
+    existingCategories,
     numberToTagMap,
   };
 }
@@ -451,9 +398,6 @@ export async function handleTagFilter(
   targetTag: string,
   activeLocale: SupportedLocale
 ): Promise<TelegramProcessResult> {
-  // Increment counter riwayat pencarian tag user di tag_searches
-  await recordTagSearch(userId, targetTag);
-
   // Hitung total catatan yang cocok
   const [countResult] = await db
     .select({ count: sql<number>`count(*)` })
@@ -588,15 +532,27 @@ export async function displayNoteDetail(
   }
   const tagsStr = tagsSet.size > 0 ? Array.from(tagsSet).join(', ') : '-';
 
-  const detailText = `${pinIcon} ${note.content.trim()}\n\n${dateTimeStr}\nTags: ${tagsStr}`;
+  const detailText = `${pinIcon}\n${note.content.trim()}\n\n${dateTimeStr}\nTags: ${tagsStr}`;
 
-  // Action Buttons
-  const pinText = note.isPinned ? '⭐️ Lepas Pin' : '📌 Pin';
+  // Action Buttons: pin (⭐), salin (no emoji), hapus (no emoji)
+  const pinText = note.isPinned ? '⭐ Lepas Pin' : '⭐ Pin';
   const rawPinCb = `note:pin:${note.id}:${type}:${queryVal}:${currentPage}`;
   const pinCb = rawPinCb.length <= 64 ? rawPinCb : `note:pin:${note.id}`;
 
   const rawDelCb = `note:delete_confirm:${note.id}:${type}:${queryVal}:${currentPage}`;
   const delCb = rawDelCb.length <= 64 ? rawDelCb : `note:delete_confirm:${note.id}`;
+
+  // Telegram copy_text is strictly limited to 1-256 characters. For longer notes, use callback_data fallback.
+  const copyButton =
+    note.content.length <= 256
+      ? {
+          text: 'Salin',
+          copy_text: { text: note.content },
+        }
+      : {
+          text: 'Salin',
+          callback_data: `note:copy:${note.id}`,
+        };
 
   const detailKeyboard = {
     inline_keyboard: [
@@ -605,12 +561,9 @@ export async function displayNoteDetail(
           text: pinText,
           callback_data: pinCb,
         },
+        copyButton,
         {
-          text: '📋 Salin',
-          copy_text: { text: note.content.slice(0, 4096) },
-        },
-        {
-          text: '🗑 Hapus',
+          text: 'Hapus',
           callback_data: delCb,
         },
       ],
@@ -627,10 +580,15 @@ export async function displayNoteDetail(
     ],
   };
 
-  if (messageId) {
-    await editTelegramMessage(chatId, messageId, detailText, {
+  if (messageId && detailText.length <= 4000) {
+    const edited = await editTelegramMessage(chatId, messageId, detailText, {
       reply_markup: detailKeyboard,
     });
+    if (!edited) {
+      await sendTelegramMessage(chatId, detailText, {
+        reply_markup: detailKeyboard,
+      });
+    }
   } else {
     await sendTelegramMessage(chatId, detailText, {
       reply_markup: detailKeyboard,
@@ -875,7 +833,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '❌ Tutup Menu';
+  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '❌ Tutup Menu';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -1161,10 +1119,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const msg = getTelegramMsg('tags_header', activeLocale, {
       activeTagsText: overview.activeTagsText,
       recentTagsText: overview.recentTagsText,
-      searchedTagsText: overview.searchedTagsText,
     });
 
-    const keyboard = buildCategoriesGridKeyboard();
+    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories);
 
     await sendTelegramMessage(chatId, msg, {
       parse_mode: 'HTML',
@@ -1200,8 +1157,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleTagFilter(chatId, activeKey.userId, targetTag, activeLocale);
   }
 
-  // 6b. /pin atau tombol dock '⭐️ Pin'
-  if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '⭐️ Pin') {
+  // 6b. /pin atau tombol dock '⭐️ Pin' / '⭐ Pin'
+  if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '⭐️ Pin' || text === '⭐ Pin') {
     return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
   }
 
@@ -1302,7 +1259,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'ask_requires_pro' };
     }
 
-    await sendTelegramMessage(chatId, getTelegramMsg('ask_analyzing', activeLocale));
+    const loadingResult = await sendTelegramMessageWithId(chatId, getTelegramMsg('ask_analyzing', activeLocale));
+    const loadingMsgId = loadingResult.messageId;
 
     (async () => {
       try {
@@ -1310,8 +1268,17 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         await sendTelegramMessage(chatId, getTelegramMsg('ask_answer_header', activeLocale, { answer }), {
           parse_mode: 'Markdown',
         });
+        if (loadingMsgId) {
+          await deleteTelegramMessage(chatId, loadingMsgId);
+        }
       } catch (err) {
         console.error('[Telegram /ask Background] Error answering question:', err);
+        await sendTelegramMessage(chatId, getTelegramMsg('ask_failed', activeLocale), {
+          parse_mode: 'Markdown',
+        });
+        if (loadingMsgId) {
+          await deleteTelegramMessage(chatId, loadingMsgId);
+        }
       }
     })();
 
@@ -1483,6 +1450,12 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'vault_revealed_multiple' };
   }
 
+  // 10b. Invalid Command Guard (pesan berawalan '/' tanpa command yang cocok)
+  if (text.startsWith('/')) {
+    await sendTelegramMessage(chatId, getTelegramMsg('invalid_command', activeLocale));
+    return { ok: true, action: 'invalid_command' };
+  }
+
   // 11. Core Note Capture Quota Enforcement
   if (!quotaInfo.allowed) {
     const quotaMsg = getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL, activeLocale);
@@ -1592,9 +1565,6 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
-    // Increment counter riwayat pencarian/pembukaan tag user di tag_searches
-    await recordTagSearch(activeKey.userId, targetTag);
-
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(notes)
@@ -1659,6 +1629,29 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const res = await displayNoteDetail(chatId, messageId, noteId, type, queryVal, pageNum);
     await answerTelegramCallbackQuery(callbackId);
     return res;
+  }
+
+  // 1c2. Salin Teks Catatan Panjang: note:copy:<noteId>
+  if (data.startsWith('note:copy:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const [note] = await db
+      .select()
+      .from(notes)
+      .where(eq(notes.id, noteId))
+      .limit(1);
+
+    if (note) {
+      await sendTelegramMessage(chatId, note.content);
+      await answerTelegramCallbackQuery(callbackId, {
+        text: 'Catatan dikirim ke chat agar bisa disalin.',
+      });
+    } else {
+      await answerTelegramCallbackQuery(callbackId, {
+        text: 'Catatan tidak ditemukan.',
+      });
+    }
+    return { ok: true, action: 'note_copied', noteId };
   }
 
   // 1d. Toggle Pin Catatan: note:pin:<noteId>:<type>:<queryVal>:<page>
@@ -1829,10 +1822,9 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const msg = getTelegramMsg('tags_header', activeLocale, {
       activeTagsText: overview.activeTagsText,
       recentTagsText: overview.recentTagsText,
-      searchedTagsText: overview.searchedTagsText,
     });
 
-    const keyboard = buildCategoriesGridKeyboard();
+    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories);
 
     if (messageId) {
       await editTelegramMessage(chatId, messageId, msg, {

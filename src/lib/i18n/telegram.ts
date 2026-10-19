@@ -35,6 +35,8 @@ export type TelegramMessageKey =
   | 'ask_missing_question'
   | 'ask_analyzing'
   | 'ask_answer_header'
+  | 'ask_failed'
+  | 'invalid_command'
   | 'secure_missing_params'
   | 'secure_saved'
   | 'vault_empty'
@@ -70,7 +72,7 @@ Daftar Perintah:
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
 • \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
 • \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
-• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia atau lihat daftar kunci Private Vault Anda
+• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia; gunakan \`/vault\` (tanpa kunci) jika lupa kuncinya untuk melihat daftar kredensial tersimpan
 
 Cara Penggunaan:
 Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami akan otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
@@ -89,7 +91,7 @@ Command List:
 • \`/search <keyword>\` - Search notes by keyword
 • \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
 • \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault
-• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secrets or view your Private Vault keys
+• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secret; use \`/vault\` (without key) if you forgot the key to view all stored credential keys
 
 How to Use:
 Simply send any text message or link directly to this bot. Our AI will automatically categorize and tag your notes in seconds!
@@ -173,8 +175,8 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_header: {
-    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n🔍 <b>Sering Dicari:</b>\n{searchedTagsText}\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
-    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n🔍 <b>Most Searched:</b>\n{searchedTagsText}\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
+    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
+    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
   },
 
   tags_cluster_detail: {
@@ -255,6 +257,16 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   ask_answer_header: {
     id: `💡 *Jawaban AI:*\n\n{answer}`,
     en: `💡 *AI Answer:*\n\n{answer}`,
+  },
+
+  ask_failed: {
+    id: `❌ Maaf, gagal menganalisis catatan Anda. Silakan coba beberapa saat lagi.`,
+    en: `❌ Sorry, failed to analyze your notes. Please try again in a moment.`,
+  },
+
+  invalid_command: {
+    id: `invalid command`,
+    en: `invalid command`,
   },
 
   secure_missing_params: {

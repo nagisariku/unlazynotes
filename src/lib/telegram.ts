@@ -146,6 +146,62 @@ export async function sendTelegramMessage(
 }
 
 /**
+ * Send a single Telegram message and return its message ID if successful.
+ */
+export async function sendTelegramMessageWithId(
+  chatId: string | number,
+  text: string,
+  options?: TelegramSendOptions
+): Promise<{ ok: boolean; messageId?: number }> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
+    return { ok: true, messageId: 999999 };
+  }
+
+  try {
+    const sent = await bot.api.sendMessage(chatId, text, options);
+    return { ok: true, messageId: sent.message_id };
+  } catch (error: any) {
+    if (options?.parse_mode) {
+      try {
+        const sent = await bot.api.sendMessage(chatId, text, {
+          reply_markup: options.reply_markup,
+        });
+        return { ok: true, messageId: sent.message_id };
+      } catch (retryErr) {
+        console.error(`[Telegram] Retry plain text send failed:`, retryErr);
+      }
+    }
+    console.error(`[Telegram] Failed to send message with ID to ${chatId}:`, error);
+    return { ok: false };
+  }
+}
+
+/**
+ * Delete a Telegram message by ID.
+ */
+export async function deleteTelegramMessage(
+  chatId: string | number,
+  messageId: number
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Delete] Message ${messageId} in Chat ID ${chatId}`);
+    return true;
+  }
+
+  try {
+    await bot.api.deleteMessage(chatId, messageId);
+    return true;
+  } catch (err) {
+    console.error(`[Telegram] Failed to delete message ${messageId} in ${chatId}:`, err);
+    return false;
+  }
+}
+
+
+/**
  * Edit an existing message in-place in Telegram chat.
  */
 export async function editTelegramMessage(
