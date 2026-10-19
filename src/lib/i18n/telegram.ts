@@ -48,6 +48,7 @@ export type TelegramMessageKey =
   | 'callback_unauthenticated'
   | 'dashboard_prompt'
   | 'sync_loading_base'
+  | 'sync_started'
   | 'sync_lock_active'
   | 'sync_cooldown'
   | 'sync_completed'
@@ -329,9 +330,14 @@ Simply send any text message or link directly to this bot. Our AI will automatic
     en: `🔄 Synchronizing`,
   },
 
+  sync_started: {
+    id: `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`,
+    en: `🔄 Organizing {count} notes in the background... You can keep writing notes as usual!`,
+  },
+
   sync_lock_active: {
-    id: `Sedang menyinkronkan catatan... Mohon tunggu sebentar sampai proses selesai sebelum mengirim pesan atau perintah baru. ⏳`,
-    en: `Synchronizing notes... Please wait until the process completes before sending new messages or commands. ⏳`,
+    id: `⏳ Sinkronisasi sedang berlangsung di latar belakang... Tunggu sebentar ya!`,
+    en: `⏳ Synchronization is currently running in the background... Please wait a moment!`,
   },
 
   sync_cooldown: {

@@ -67,7 +67,7 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
     const chunkProcessed: OrganizedNoteItem[] = [];
     const notesForLLM: typeof chunk = [];
 
-    // Local Privacy Shield Check: deteksi kredensial sebelum kirim ke AI
+    // Local Privacy Shield & Fast-Path: deteksi kredensial dan URL bookmark secara instan
     for (const note of chunk) {
       const credCheck = detectLocalCredential(note.content);
       if (credCheck.isCredential) {
@@ -76,6 +76,14 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
           content: note.content,
           category: 'credential',
           specificTags: credCheck.tags,
+        });
+      } else if (/(https?:\/\/[^\s]+)/i.test(note.content)) {
+        const res = heuristicTagNote(note.content, existingUserTags);
+        chunkProcessed.push({
+          id: note.id,
+          content: note.content,
+          category: 'bookmark',
+          specificTags: res.specific_tags || ['bookmark'],
         });
       } else {
         notesForLLM.push(note);
@@ -133,6 +141,8 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
           const response = await generateText({
             model: openaiCompatible(modelName),
             temperature: 0,
+            maxTokens: 1500,
+            abortSignal: AbortSignal.timeout(20000),
             system: `You are an intelligent batch semantic classifier and tagging engine for UnlazyNotes.
 Analyze the user's batch of notes and return a strict JSON Array of objects with:
 1. "id": the exact note id provided.
