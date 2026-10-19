@@ -7,22 +7,22 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch**: `main` (Ahead of `origin/main` - Siap di-push ke GitHub)
+- **Branch Kolaborasi**: `gamma/dev` (Dedicated branch untuk Agent Gamma, branch `main` diproteksi ketat)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
   - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
+- **AI Gateway**: Cosmoshub API (`claude-haiku-5.5`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 133/133 assertions lolos (100% PASS)
-  - `scripts/test-ask-temporal.ts`: 100% PASS (Temporal reasoning, timeline bullet list, anti-table, anti-headers, non-meeting guard)
+  - `scripts/test-enhancements.ts`: 137/137 assertions lolos (100% PASS, termasuk auto-chunking safeguard)
+  - `scripts/test-ask-temporal.ts`: 100% PASS (Dynamic Scope Broad & Targeted, Anchor Time Math, Claude Haiku 5.5 inference)
   - `scripts/test-intent-classifier.ts`: 31/31 unit test Live AI & Heuristic lolos (100% PASS)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
-  - `npm run typecheck` & `npm run check`: 0 error
+  - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
 
 ---
 
@@ -299,13 +299,31 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - Dilarang kata pengantar (*"Berikut tugas..."*) dan catatan ambigu di tengah/bawah (*"Catatan: ..."*).
    - Menghapus basa-basi penutup atau pertanyaan robotik di akhir pesan.
 
-### Y. Status Verifikasi Test Suite Lengkap
-- `scripts/test-enhancements.ts`: 133/133 assertions passed (100% PASS)
-- `scripts/test-ask-temporal.ts`: 100% PASS (Zero meta-tags, jadwal dokter bebas dari meeting, isolasi jadwal lampau, zero tabel, zero heading besar)
+### Y. Dynamic Scope, Auto-Chunking Safeguard, & Universal Axioms
+1. **Dynamic Scope (Broad vs. Targeted Query)**:
+   - **Broad Overview**: Menyajikan 3 zona (*📌 Mendatang*, *⚠️ Sudah Lewat*, *📝 Backlog*), dibatasi maksimal 5–7 item per zona dengan ringkasan sisa `(+ N agenda lainnya, cek menu '/notes')`.
+   - **Targeted Query**: Menjawab HANYA entitas/topik yang ditanyakan secara terfokus tanpa menumpahkan agenda dari domain lain yang tidak berkaitan, serta menjelaskan perubahan jadwal (*reschedule*).
+2. **Auto-Chunking Safeguard Telegram (`src/lib/telegram.ts`)**:
+   - Fungsi `chunkText(text, limit = 4000)` memecah pesan panjang $\le 4000$ karakter secara aman pada batas baris baru (`\n`).
+   - Mencegah error `400 Bad Request: message is too long` pada Telegram API dan menyematkan `reply_markup` secara eksklusif pada *chunk* terakhir.
+3. **Anchor Time Math ($T_0$) & Anti-Hedging Jadwal**:
+   - Titik Nol ($T_0$): `[createdAt]` sebagai jangkar mutlak waktu relatif.
+   - Jam Tanpa Hari: Target waktu otomatis jatuh pada tanggal pembuatan catatan ($T_0$).
+   - Anti-Hedging: Dilarang menuliskan disclaimer ragu-ragu seperti `"(tanpa tanggal jelas)"` jika catatan memiliki timestamp dan jam.
+4. **Isolasi Semantik Domain & Pewarisan Konteks (*Context Inheritance*)**:
+   - Catatan multi-baris dan bertag saling berbagi konteks domain. Seluruh baris di dalamnya mewarisi domain dari konteks/tag tersebut sehingga istilah umum (*proposal*, *revisi*, *meeting*) tidak tertukar ke domain lain (misal: tugas kantor tidak tertukar ke tugas kuliah).
+5. **Migrasi Model AI ke `claude-haiku-5.5`**:
+   - Konfigurasi gateway Cosmoshub dimigrasikan dari `deepseek-v4.1-flash` ke `claude-haiku-5.5`.
+   - Inferensi menghasilkan penalaran temporal yang lebih presisi, perhitungan jam lampau yang akurat, dan zero halusinasi.
+
+### Z. Status Verifikasi Test Suite & Standar Branch Kolaborasi
+- `scripts/test-enhancements.ts`: 137/137 assertions passed (100% PASS)
+- `scripts/test-ask-temporal.ts`: 100% PASS (Broad overview, Targeted laser query, Anchor Time Math, Claude Haiku 5.5)
 - `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
 - `scripts/test-telegram-i18n.ts`: 33/33 tests passed (100% PASS)
 - `scripts/test-tier-quota.ts`: 19/19 skenario passed (100% PASS)
 - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
+- **Branching Rule**: Seluruh pengembangan Agent Gamma diisolasi pada branch `gamma/dev`. Branch `main` diproteksi ketat dan DILARANG di-push langsung.
 
 ---
 
