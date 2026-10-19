@@ -50,12 +50,19 @@
 4. **Flexible & Fuzzy Search (PostgreSQL `pg_trgm`):**
    * Pencarian cerdas berbasis Trigram Similarity dan pembersih tanda baca/spasi.
    * Menemukan catatan meski ada perbedaan tanda hubung (misal `almuhajirin` menemukan `Al-Muhajirin`) atau sedikit saltik (*typo tolerance*).
-5. **AI Pro Q&A (`/ask` - Universal Multilingual Engine):**
-   * Pengguna paket Pro dapat bertanya kepada AI tentang catatan mereka dalam 6 bulan terakhir langsung dari chat Telegram (misal: *"/ask berapa pengeluaran makan hari ini?"* atau *"/ask How much did I spend in USD today?"*).
+5. **AI Pro Q&A (`/ask` - Universal Multilingual Engine & Mobile Ergonomics):**
+   * Pengguna paket Pro dapat bertanya kepada AI tentang catatan mereka dalam 90 hari terakhir langsung dari chat Telegram (misal: *"/ask apa agenda terdekat minggu ini?"*, *"/ask berapa pengeluaran makan hari ini?"*, atau *"/ask How much did I spend in USD today?"*).
+   * **Mobile Timeline List (Anti-Tabel & Anti-Heading Besar)**: Menghilangkan tabel Markdown dan heading `#` yang merusak layout HP, menyajikan timeline bullet list (`•`) yang bersih dan ergonomis.
+   * **Strict 3-Section Grouping**: Pengelompokan mutlak tanpa duplikasi (*📌 Jadwal & Tugas Terdekat (Mendatang)*, *⚠️ Sudah Lewat (Overdue)*, *📝 To-Do Tanpa Tenggat (Backlog)*).
    * **Language Mirroring**: Menjawab otomatis dalam bahasa yang sama dengan pertanyaan (Bahasa Indonesia, English, Jawa, Sunda).
    * **Multi-Currency Segregation**: Menghitung transaksi tanpa mencampur aduk mata uang ($ USD vs Rp IDR).
    * **Domain-Agnostic Semantics**: Memahami rincian F&B, transportasi, tugas, dan agenda multi-item tanpa halusinasi.
-6. **Modern Web Dashboard & Mobile Responsive UI:**
+6. **Telegram UX, Dock Keyboard, & Note Actions (`/pin` & Shortcuts):**
+   * **Dock Menu Ramah Gestur**: Reply keyboard ringkas `[ 🏷 Tags ] [ ⭐️ Pin ]` dan tombol `[ ❌ Tutup Menu ]` yang mereset cache keyboard Telegram tanpa mengunci gestur tombol *Back* mobile.
+   * **Fitur Pin & Command `/pin`**: Tandai catatan penting dengan ikon `📌⭐️` dan buka kumpulan catatan pin secara instan.
+   * **Inline Quick Actions**: Setiap cuplikan catatan dilengkapi tombol interaktif `[ 📌 Pin / 📍 Unpin ]`, `[ 📋 Salin ]`, `[ 🗑 Hapus ]`, dan `[ ◀️ Kembali ]`.
+   * **Number Shortcut & Horizontal Tags**: Akses cepat tag dengan format horizontal 3 baris (`🔥 Teraktif`, `🕒 Terakhir`, `🔍 Sering Dicari`) dan pintasan navigasi digit `(1)`–`(9)`.
+7. **Modern Web Dashboard & Mobile Responsive UI:**
    * Dibangun dengan Astro 5 Server-Side Rendering (SSR) dan React 19.
    * **Tampilan Mobile Lengkap**: Header top bar ramping dengan *drawer slide-over* dan *bottom navigation bar* yang ramah jempol serta kompatibel dengan iOS *safe-area inset*.
    * Filter kategori instan, pencarian berbasis teks (full-text search), dan filter tag interaktif.

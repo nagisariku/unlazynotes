@@ -7,7 +7,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch**: `main` (Bersih di commit lokal `23875ff`)
+- **Branch**: `main` (Ahead of `origin/main` - Siap di-push ke GitHub)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
@@ -17,9 +17,10 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 110/110 assertions lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 133/133 assertions lolos (100% PASS)
+  - `scripts/test-ask-temporal.ts`: 100% PASS (Temporal reasoning, timeline bullet list, anti-table, anti-headers, non-meeting guard)
+  - `scripts/test-intent-classifier.ts`: 31/31 unit test Live AI & Heuristic lolos (100% PASS)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
-  - `scripts/test-intent-classifier.ts`: 31/31 unit test lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
   - `npm run typecheck` & `npm run check`: 0 error
 
@@ -243,13 +244,68 @@ Menghindari *anti-pattern* hardcoding aturan per domain spesifik (F&B, Game, Kul
    - List cuplikan catatan menampilkan ikon `📌⭐️` untuk catatan berstatus pin dan `📌` untuk catatan standar.
    - Perintah `/pin` menyajikan daftar catatan yang dipin secara kronologis terbaru.
    - Tampilan detail catatan menyajikan tombol aksi Inline Keyboard: `[ 📌 Pin / 📍 Unpin ]`, `[ 📋 Salin ]`, `[ 🗑 Hapus ]`, dan `[ ◀️ Kembali ]`.
-6. **Penyederhanaan Hamburger Menu, 2-Button Dock Menu, & Pembaruan Pesan `/start` & `/help`**:
-   - **Hamburger Menu Minimalis (`setMyCommands`)**: Disederhanakan menjadi HANYA perintah `/help` (`💡 Bantuan & panduan bot`), menjaga fokus menu tetap bersih dan mudah dipahami pengguna.
-   - **Persistent Dock Menu 2 Tombol (`PERSISTENT_DOCK_KEYBOARD`)**: Reply keyboard dibuat kompak dengan 2 tombol berdampingan: `[ 🏷 Tags ] [ ⭐️ Pin ]` (`resize_keyboard: true`, `is_persistent: true`), dipasangkan otomatis pada respon `/start`, `/help`, dan `/login`.
-   - **Pemberian Tautan Web Dashboard & Eliminasi Security Disclaimer**:
-     - Menghapus teks `{securityDisclaimer}` yang memakan tempat di bagian bawah pesan `/help`, `/start`, dan `/login`.
-     - Menggantikannya dengan tautan langsung ke Web Dashboard: `🌐 Web Dashboard: {dashboardUrl}`.
-7. **Verifikasi Suite**: `scripts/test-enhancements.ts` (125/125 PASS), `scripts/test-telegram-i18n.ts` (33/33 PASS), dan `scripts/test-intent-classifier.ts` (31/31 PASS).
+6. **Penyederhanaan Hamburger Menu, Dock Menu 2+1 Tombol, & Reset Cache Mobile Keyboard**:
+   - **Hamburger Menu Minimalis (`setMyCommands`)**: Disederhanakan menjadi HANYA perintah `/help` (`💡 Bantuan & panduan bot`) di [`scripts/bot-polling.ts`](file:///home/rikushiro/projects/unlazynotes/scripts/bot-polling.ts), menjaga fokus menu tetap bersih tanpa membingungkan pengguna.
+   - **Dock Menu Ramah Gestur Mobile (`PERSISTENT_DOCK_KEYBOARD`)**:
+     - Reply keyboard 2 baris kompak:
+       ```
+       [ 🏷 Tags ] [ ⭐️ Pin ]
+       [ ❌ Tutup Menu ]
+       ```
+     - Properti `is_persistent: true` DIHAPUS agar tombol / gestur *Back* pada HP pengguna tidak tertahan (*fix mobile back lag*).
+     - Tombol `❌ Tutup Menu` serta command `/close` dan `/hide` mengirimkan payload `remove_keyboard: true` secara eksplisit ke Telegram API untuk membersihkan *cache lock* keyboard pada aplikasi klien Telegram mobile.
+   - **Sinkronisasi 10 Perintah Lengkap di `/help` (Dwibahasa ID/EN)**:
+     - Seluruh perintah resmi terdokumentasi rapi: `/start`, `/help`, `/login`, `/logout`, `/tags`, `/tags <nama_tag>`, `/pin`, `/search`, `/ask`, `/secure`, `/vault`.
+     - Menghapus teks `{securityDisclaimer}` dan menyematkan tautan langsung ke Web Dashboard: `🌐 Web Dashboard: {dashboardUrl}`.
+
+### W. Clean-Consolidation & Refactoring 4-Layer Pipeline AI
+Penyempurnaan arsitektur kecerdasan AI berbasis *First-Principles* tanpa *hardcoding* per domain:
+1. **Layer 1: Pre-Classifier Regex Natural (`src/lib/ai/modules/general.ts` & `router.ts`)**:
+   - Menambahkan deteksi pola penanggalan kalender (`/\b(tanggal|tgl)\s+\d{1,2}\b/i` dan `/\b\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|...)\b/i`).
+   - Catatan seperti `"tuweeb 2, tanggal 16"` otomatis terklasifikasi sebagai `schedule` (bukan `todo`).
+2. **Layer 2: System Prompt & Few-Shot Multi-Domain Schedule (`src/lib/ai/modules/general.ts`)**:
+   - Mengeliminasi bias `#meeting` pada jadwal non-rapat:
+     * Medis: `"kontrol dokter gigi tgl 25 jam 10 pagi"` $\rightarrow$ `["dokter-gigi", "health"]`
+     * Bioskop: `"nonton avatar di cgv sabtu malam jam 21.15 seat f12"` $\rightarrow$ `["avatar", "cgv", "entertainment"]`
+     * Pendidikan/Kuliah: `"tuweeb 2, tanggal 16"` $\rightarrow$ `["tuweeb", "kuliah"]`
+     * Bisnis/Kerja: `"meeting evaluasi sprint tim shirobit jam 14.00"` $\rightarrow$ `["sprint", "shirobit", "meeting"]`
+   - Aturan jumlah tag: 3 hingga 5 domain-aware tags.
+   - Larangan tegas meta-tag: Menolak tag deskriptor struktural (seperti `date-reference`, `time-info`, `note`, `item`).
+3. **Layer 3: Deterministic Post-Processing & Sanitizer Guard (`general.ts`, `sanitizer.ts`, `taxonomy/general.ts`)**:
+   - Memutus penyuntikan `#meeting` pada jadwal umum. Tag `#meeting` HANYA aktif jika teks memuat kata kunci eksplisit pertemuan bisnis/kerja (`meeting`, `rapat`, `sync`, `call`, `discuss`, `sprint`, `demo`, `coffee break`), dan secara mutlak diblokir pada jadwal kesehatan (`dokter`, `gigi`, `klinik`, `kontrol`), pendidikan (`tuweb`), atau hiburan (`nonton`, `cgv`).
+   - Mencabut alias `appointment` dari canonical `meeting` pada taksonomi kanonikal agar janji dokter tidak terpetakan ke `meeting`.
+   - Dynamic meta-tag stripping pada `sanitizeTags()`: membersihkan akhiran `-descriptor`, `-reference[ds]?`, `-marker`, `-meta`, `-info`, atau `-item`.
+4. **Layer 4: Temporal Reasoning Engine `/ask` (`src/lib/ask.ts`)**:
+   - Query DB mencakup hingga 90 hari terakhir (`subDays(now, 90)` limit 100), dengan evaluasi tugas aktif/jadwal dibatasi 30 hari terakhir.
+   - Pemisahan mutlak jadwal masa lampau vs hari ini berdasarkan perbandingan matematis terhadap `Current Time`.
+   - Negative Constraint: Dilarang mengarang teks (*"Lanjutkan tugas..."*, *"Prioritas hari ini..."*) untuk memaksakan jadwal lampau ke daftar hari ini.
+
+### X. AI Output Mobile Polish `/ask` (Ergonomi Telegram Mobile)
+Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading besar:
+1. **Dilarang Keras Menggunakan Tabel Markdown**:
+   - Model dilarang memuntahkan tabel Markdown (`| Kolom | Kolom |` atau `|---|---|`).
+   - Ditambahkan parser deterministik `cleanMarkdownTablesAndHeaders()` di `postProcessAskResponse()` yang otomatis mengonversi tabel Markdown yang terlanjur terbentuk menjadi *Timeline Bullet List* (`•`).
+2. **Dilarang Menggunakan Heading Markdown Besar**:
+   - Menghilangkan tanda pagar (`#`, `##`, `###`), diganti teks tebal bertanda bintang (`*Judul:*`) dengan emoji.
+3. **Struktur Pengelompokan Mutlak (Strict 3 Sections, Zero Duplicates)**:
+   - `*📌 Jadwal & Tugas Terdekat (Mendatang):*` (Urut murni kronologis ke depan: `• Hari, DD MMM (Jam) - Agenda`)
+   - `*⚠️ Sudah Lewat (Overdue):*` (Eksklusif hanya untuk agenda dengan tanggal target < Current Time: `• Agenda (DD MMM) - keterangan selisih lampau`)
+   - `*📝 To-Do Tanpa Tenggat (Backlog):*` (Eksklusif untuk tugas aksi tanpa tanggal/jam di teksnya)
+4. **Pemisahan Tegas Backlog vs Overdue**:
+   - Tanggal pembuatan catatan `[createdAt]` dilarang dijadikan tenggat/deadline. Catatan tanpa tanggal target di teksnya 100% wajib masuk Backlog, bukan Overdue.
+5. **Dual-Anchor Prompting**:
+   - Menyuntikkan `Waktu Saat Ini (Current Time): ${nowFormatted}` di `systemPrompt` dan diulang di akhir `userPrompt` sehingga LLM tidak pernah salah mengira tanggal catatan masa depan (seperti 21 & 24 Okt) sebagai hari ini.
+6. **Zero Intro & Zero Outro**:
+   - Dilarang kata pengantar (*"Berikut tugas..."*) dan catatan ambigu di tengah/bawah (*"Catatan: ..."*).
+   - Menghapus basa-basi penutup atau pertanyaan robotik di akhir pesan.
+
+### Y. Status Verifikasi Test Suite Lengkap
+- `scripts/test-enhancements.ts`: 133/133 assertions passed (100% PASS)
+- `scripts/test-ask-temporal.ts`: 100% PASS (Zero meta-tags, jadwal dokter bebas dari meeting, isolasi jadwal lampau, zero tabel, zero heading besar)
+- `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
+- `scripts/test-telegram-i18n.ts`: 33/33 tests passed (100% PASS)
+- `scripts/test-tier-quota.ts`: 19/19 skenario passed (100% PASS)
+- `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
 
 ---
 
