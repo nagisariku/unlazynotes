@@ -397,8 +397,9 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
      - Normalisasi baris baru (`\r\n` dan `\r` $\rightarrow$ `\n`).
      - Pembersihan spasi akhir baris (`line.trimEnd()`).
      - Menghapus breakline antar baris list atau numbering berturut-turut (antar `- ` atau `1. ` tidak ada baris kosong).
+     - Menghubungkan baris pengantar/header list yang berakhiran titik dua (`daftar x:`) langsung ke item list pertama tanpa baris kosong pemisah.
      - Menghindari jeda >1x breakline (maksimal 1 baris kosong antar paragraf / `\n\n`).
-     - Standarisasi bullet `• ` dan `* ` menjadi `- ` dengan mempertahankan indentasi.
+     - Standarisasi seluruh variasi simbol bullet (`•`, `·`, `∙`, `◦`, `●`, `○`, `■`, `▪`, `▫`, `*`, `+`, `–`, `—`) menjadi `- ` dengan mempertahankan indentasi.
      - **Aturan Mutlak**: Menjaga 100% keaslian huruf besar-kecil, ejaan kata, bahasa gaul, singkatan, angka, dan tanda baca pengguna.
 3. **Local Credential Pre-Detection (Local Privacy Shield) (`src/lib/ai/credential-detector.ts`)**:
    - Deteksi nilai rahasia riil di mesin lokal menggunakan Complex Regex:
@@ -414,10 +415,12 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
      - Catatan umum: `isProcessed: false, category: 'others'`.
    - Tetap hening tanpa spam teks "tersimpan!" ke chat.
    - Cache counter bertambah secara instan: `unorganized_count:{userId} += 1`.
-5. **Tombol Dock Menu & Fitur Sync (`src/lib/telegram-handler.ts`)**:
+5. **Tombol Dock Menu, Fitur Sync & Non-Parallel Lock Barrier (`src/lib/telegram-handler.ts`)**:
    - Dock menu persisten selalu menyediakan tombol `🔄 Sync` di samping `🏷 Tags` dan `⭐️ Pin`.
-   - Perintah didukung via `/sync`, `🔄 Sync`, `/organize`, dan `/rapikan`.
-   - **Proteksi Anti-Spam**: Concurrency lock (`syncInProgressSet`) dan jeda cooldown 5 detik (`syncCooldownMap`).
+   - Perintah didukung via `/sync`, `🔄 Sync`, `/organize`, `/rapikan`, serta `/dock` dan `/menu` untuk me-refresh dock keyboard.
+   - **Animasi Loading Dinamis**: Saat AI memproses catatan, bot memunculkan pesan loading dengan titik tiga dinamis (`🔄 Menyinkronkan.` $\rightarrow$ `..` $\rightarrow$ `...`) setiap 1.2 detik dan menghapusnya saat selesai.
+   - **Non-Parallel Lock Barrier**: Selama sinkronisasi berlangsung (`syncInProgressSet` aktif pada `userId` dan `chatId`), bot menolak pesan baru, command, maupun tombol callback query dengan respons ramah menyuruh pengguna menunggu proses sinkronisasi hingga selesai.
+   - **Proteksi Anti-Spam**: Concurrency lock dan jeda cooldown 5 detik (`syncCooldownMap`).
    - **Rekonsiliasi Cache vs DB**: Mengecek langsung ke database apakah ada catatan berstatus `is_processed = false`, menyinkronkan counter cache dan tag unik pengguna dengan isi DB riil.
    - **Alur Respons Bersih (Zero Ringkasan Cantik)**:
      - Jika ada catatan unorganized yang diproses AI: membalas *"Sinkronisasi selesai!"*.
@@ -431,11 +434,11 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
 7. **Penyempurnaan Konten `/tags`**:
    - **Teraktif**: Diambil murni dari frekuensi kemunculan tag dengan jumlah catatan terbanyak di database.
    - **Terakhir**: Mengambil main tag (`specificTags[0]` atau fallback kategori) murni dari 15 catatan terakhir yang dikirim/dirapikan.
+   - Tombol inline rapikan di `/tags` ditiadakan karena telah terpusat di tombol dock `🔄 Sync`.
 8. **Smart Caching Layer (`src/lib/cache.ts`)**:
    - In-memory cache `user_tags:{userId}` (TTL 1 jam) dan `unorganized_count:{userId}` (TTL 24 jam) untuk kecepatan performa tanpa query berulang ke DB.
-9. **Integrasi `/ask` dan `/tags`**:
+9. **Integrasi `/ask`**:
    - `/ask`: Melakukan silent auto-organize catatan unorganized sebelum kalkulasi analisis dieksekusi agar rekap data keuangan/jadwal 100% akurat.
-   - `/tags`: Menampilkan tombol inline `[ 🪄 Rapikan {N} Catatan ]` di bawah daftar tag saat ada catatan unorganized.
 
 ---
 
