@@ -477,6 +477,24 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
+### Z. Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
+1. **Persistent 2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
+   - **Grid Simetris 2x2**:
+     ```
+     [ 📖 Read ] [ 🔄 Sync ]
+     [ 🏷 Tags ] [ ⭐️ Pin ]
+     ```
+   - **Fix Dock Auto-Minimizing**: Mengaktifkan `is_persistent: true` dan `resize_keyboard: true` sehingga tombol dock tetap terbuka di klien Telegram Desktop & Mobile tanpa perlu mengetik ulang `/dock`.
+   - **Menghapus Tombol `❌ Tutup Menu`**: Mengeliminasi risiko keyboard terhapus secara permanen dari UI klien karena aksi `remove_keyboard`.
+2. **Background Non-Blocking Sync Engine (`src/lib/telegram-handler.ts`)**:
+   - **Respon Instan (<200ms)**: Menghapus synchronous blocking barrier (`syncInProgressSet` tidak lagi menolak pesan user/callback). Saat tombol `🔄 Sync` ditekan, bot langsung merespons pesan awal:
+     `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`
+   - **Native Typing Indicator**: Menggunakan `bot.api.sendChatAction(chatId, 'typing')` bawaan Telegram sebagai indikator proses latar belakang tanpa polling pesan edit bolak-balik yang rentan terkena rate-limit 429.
+   - **Asynchronous AI Execution**: Pemrosesan AI `organizeUserNotes(userId)` berjalan di background. Setelah selesai, bot mengirim konfirmasi singkat `✅ Sinkronisasi selesai!` dan mengupdate cache.
+3. **Optimasi Latensi & Fast-Path LLM (`src/lib/ai/batch-organizer.ts`)**:
+   - **Fast-Path URL Bookmarks**: Catatan unorganized berupa tautan tunggal (URL valid) langsung diproses secara lokal instan ke kategori `bookmark` tanpa memanggil LLM.
+   - **Guard Output Token & Timeout**: Menetapkan `maxTokens: 1500` dan `AbortSignal.timeout(20000)` pada inferensi Claude Haiku 5.5 guna mencegah JSON terpotong di tengah chunk 15 catatan.
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)
