@@ -135,7 +135,7 @@ async function runTests() {
         id: `note-read-${testUserId}-${i}`,
         userId: testUserId,
         content: `Test Note Read #${i} - Detail content snippet`,
-        category: i % 2 === 0 ? 'todo' : 'others',
+        category: (i % 2 === 0 ? 'todo' : 'others') as any,
         isProcessed: i % 3 === 0,
         createdAt: new Date(Date.now() - (30 - i) * 60000), // staggered times
       });

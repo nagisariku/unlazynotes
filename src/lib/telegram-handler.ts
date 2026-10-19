@@ -44,10 +44,11 @@ export const DEBOUNCE_DELAY_MS = 3000;
 
 export const PERSISTENT_DOCK_KEYBOARD = {
   keyboard: [
-    [{ text: '📖 Read' }, { text: '🏷 Tags' }, { text: '⭐️ Pin' }],
-    [{ text: '🔄 Sync' }, { text: '❌ Tutup Menu' }],
+    [{ text: '📖 Read' }, { text: '🔄 Sync' }],
+    [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
   ],
   resize_keyboard: true,
+  is_persistent: true,
 };
 
 export function getDockKeyboard(_unorganizedCount: number = 0) {
