@@ -396,7 +396,8 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
    - Fungsi `cleanLocalFormat(content)`:
      - Normalisasi baris baru (`\r\n` dan `\r` $\rightarrow$ `\n`).
      - Pembersihan spasi akhir baris (`line.trimEnd()`).
-     - Pembatasan jeda enter berlebih maksimal 2 baris kosong berturut-turut (`\n\n\n`).
+     - Menghapus breakline antar baris list atau numbering berturut-turut (antar `- ` atau `1. ` tidak ada baris kosong).
+     - Menghindari jeda >1x breakline (maksimal 1 baris kosong antar paragraf / `\n\n`).
      - Standarisasi bullet `• ` dan `* ` menjadi `- ` dengan mempertahankan indentasi.
      - **Aturan Mutlak**: Menjaga 100% keaslian huruf besar-kecil, ejaan kata, bahasa gaul, singkatan, angka, dan tanda baca pengguna.
 3. **Local Credential Pre-Detection (Local Privacy Shield) (`src/lib/ai/credential-detector.ts`)**:
@@ -413,18 +414,23 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
      - Catatan umum: `isProcessed: false, category: 'others'`.
    - Tetap hening tanpa spam teks "tersimpan!" ke chat.
    - Cache counter bertambah secara instan: `unorganized_count:{userId} += 1`.
-5. **Tombol Menu & Trigger "Organize"**:
-   - Mendukung command `/organize` dan `/rapikan`.
-   - Tombol dock dinamis `🪄 Organize (N)` yang hanya muncul jika $N > 0$.
-   - Validasi: jika $N = 0$, membalas ramah: *"Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan."*; jika $N > 0$, menampilkan status sementara *"Sedang merapikan {count} catatan dengan AI... ⏳"*.
+5. **Tombol Dock Menu & Fitur Sync (`src/lib/telegram-handler.ts`)**:
+   - Dock menu persisten selalu menyediakan tombol `🔄 Sync` di samping `🏷 Tags` dan `⭐️ Pin`.
+   - Perintah didukung via `/sync`, `🔄 Sync`, `/organize`, dan `/rapikan`.
+   - **Proteksi Anti-Spam**: Concurrency lock (`syncInProgressSet`) dan jeda cooldown 5 detik (`syncCooldownMap`).
+   - **Rekonsiliasi Cache vs DB**: Mengecek langsung ke database apakah ada catatan berstatus `is_processed = false`, menyinkronkan counter cache dan tag unik pengguna dengan isi DB riil.
+   - **Alur Respons Bersih (Zero Ringkasan Cantik)**:
+     - Jika ada catatan unorganized yang diproses AI: membalas *"Sinkronisasi selesai!"*.
+     - Jika tidak ada catatan baru di DB: membalas *"Belum ada catatan baru!"*.
 6. **Batch AI Organizer (`src/lib/ai/batch-organizer.ts`)**:
    - Chunking safeguard: Memproses per chunk (maksimal 10–12 catatan per panggilan LLM) untuk melindungi limit output token Claude Haiku 5.5.
    - Mengirimkan payload batch ke model dengan menyertakan konteks tag lama user (`userTagContext`) agar tag konsisten.
    - Hierarki Tag: `specific_tags[0]` adalah Main Tag (payung topik utama), `specific_tags[1..]` adalah entitas detail dan konteks.
    - Bulk update database: `isProcessed = true, category = ..., specificTags = ...`.
    - Otomatis menginvalidasi cache tag user dan mereset unorganized counter ke 0.
-7. **Ringkasan Cantik (Organized Result Message)**:
-   - Menghasilkan satu pesan rekapitulasi estetik yang dikelompokkan per kategori (`📁 Todo`, `💰 Finance`, `📅 Schedule`, `📝 Draft`, `🔖 Bookmark`, `🔐 Credential`, `📚 Reference`, `💭 Random Yap`, `📦 Others`) lengkap dengan single-line preview dan `#tag-utama` `#tag-spesifik`.
+7. **Penyempurnaan Konten `/tags`**:
+   - **Teraktif**: Diambil murni dari frekuensi kemunculan tag dengan jumlah catatan terbanyak di database.
+   - **Terakhir**: Mengambil main tag (`specificTags[0]` atau fallback kategori) murni dari 15 catatan terakhir yang dikirim/dirapikan.
 8. **Smart Caching Layer (`src/lib/cache.ts`)**:
    - In-memory cache `user_tags:{userId}` (TTL 1 jam) dan `unorganized_count:{userId}` (TTL 24 jam) untuk kecepatan performa tanpa query berulang ke DB.
 9. **Integrasi `/ask` dan `/tags`**:

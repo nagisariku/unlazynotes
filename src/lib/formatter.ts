@@ -4,34 +4,62 @@
  * Aturan:
  * 1. Normalisasi baris baru (\r\n -> \n, \r -> \n).
  * 2. Hapus spasi berlebih di akhir baris (line.trimEnd()).
- * 3. Batasi jeda enter kosong berlebih (maksimal 2 baris kosong berturut-turut / \n\n\n).
- * 4. Rapikan indentasi bullet/list yang berantakan (misal `• ` atau `* ` diubah rapi jadi `- `).
- * 5. ATURAN MUTLAK: Dilarang keras mengubah huruf besar-kecil, kata, istilah, singkatan, atau tanda baca asli pengguna.
+ * 3. Standarisasi bullet di awal baris: `• ` atau `* ` diubah rapi jadi `- ` dengan mempertahankan indentasi.
+ * 4. List / Numbering: DILARANG ada baris kosong (breakline) antar item list/numbering berturut-turut.
+ * 5. Hindari > 1x breakline (maksimal 1 baris kosong antar paragraf / \n\n).
+ * 6. ATURAN MUTLAK: Dilarang keras mengubah huruf besar-kecil, kata, istilah, singkatan, angka, atau tanda baca asli pengguna.
  */
 
 export function cleanLocalFormat(content: string): string {
   if (!content) return '';
 
-  // 1. Normalisasi baris baru
-  let text = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // 1. Normalisasi baris baru (\r\n -> \n, \r -> \n)
+  const normalized = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
-  // 2. Trim trailing spaces pada setiap baris & rapikan bullet/list
-  const lines = text.split('\n').map((line) => {
+  // 2. Trim trailing spaces pada setiap baris & standarisasi bullet awal (• atau * -> -)
+  const rawLines = normalized.split('\n').map((line) => {
     let trimmedEnd = line.trimEnd();
-
-    // Standarisasi bullet: ganti bullet list `• ` atau `* ` di awal baris (dengan mempertahankan indentasi) menjadi `- `
-    // Contoh: "• Beli kopi" -> "- Beli kopi"
-    // Contoh: "  * Belajar TS" -> "  - Belajar TS"
     trimmedEnd = trimmedEnd.replace(/^([ \t]*)[•*][ \t]+/, '$1- ');
-
     return trimmedEnd;
   });
 
-  text = lines.join('\n');
+  // Regex mendeteksi baris list / numbering:
+  // - Bullet list: "- " atau "- [ ]" atau "- [x]"
+  // - Numbering: "1. ", "1) ", "(1) " dsb.
+  const isListItem = (line: string): boolean => {
+    return /^[ \t]*(-|\d+[\.\)]|\(\d+\))[ \t]+/.test(line);
+  };
 
-  // 3. Batasi jeda enter kosong berlebih (maksimal 2 baris kosong berturut-turut, yaitu \n\n\n)
-  text = text.replace(/\n{4,}/g, '\n\n\n');
+  // 3. Line-by-line assembly:
+  // - Tidak ada baris kosong antara list/numbering items
+  // - Maksimal 1 baris kosong antar paragraf biasa (\n\n)
+  const resultLines: string[] = [];
+  let pendingBlankLines = 0;
+  let lastNonEmptyLine = '';
+
+  for (const line of rawLines) {
+    if (line.trim() === '') {
+      pendingBlankLines++;
+      continue;
+    }
+
+    if (resultLines.length > 0) {
+      if (pendingBlankLines > 0) {
+        // Cek jika baris sebelumnya dan baris saat ini keduanya adalah list/numbering item
+        if (isListItem(lastNonEmptyLine) && isListItem(line)) {
+          // Jangan ada baris kosong antara list/numbering berturut-turut
+        } else {
+          // Antar paragraf/elemen berbeda, batasi maksimal 1 baris kosong
+          resultLines.push('');
+        }
+      }
+    }
+
+    resultLines.push(line);
+    lastNonEmptyLine = line;
+    pendingBlankLines = 0;
+  }
 
   // 4. Bersihkan spasi/baris kosong di awal dan akhir teks keseluruhan
-  return text.trim();
+  return resultLines.join('\n').trim();
 }

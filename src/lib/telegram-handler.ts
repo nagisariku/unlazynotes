@@ -25,26 +25,30 @@ import {
 import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/lib/i18n/telegram';
 import { cleanLocalFormat } from '@/lib/formatter';
 import { detectLocalCredential } from '@/lib/ai/credential-detector';
-import { getOrFetchUnorganizedCount, incrementUnorganizedCount } from '@/lib/cache';
-import { organizeUserNotes, formatOrganizedSummary } from '@/lib/ai/batch-organizer';
+import {
+  getOrFetchUnorganizedCount,
+  incrementUnorganizedCount,
+  setUnorganizedCountCache,
+  setUserTagsCache,
+  resetUnorganizedCount,
+  invalidateUserTagsCache,
+} from '@/lib/cache';
+import { organizeUserNotes } from '@/lib/ai/batch-organizer';
 
 export const PAGE_SIZE = 9;
 export const DEBOUNCE_DELAY_MS = 3000;
 
-export function getDockKeyboard(unorganizedCount: number = 0) {
-  const rows: Array<Array<{ text: string }>> = [
+export const PERSISTENT_DOCK_KEYBOARD = {
+  keyboard: [
     [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
-  ];
-  if (unorganizedCount > 0) {
-    rows.push([{ text: `🪄 Organize (${unorganizedCount})` }]);
-  }
-  return {
-    keyboard: rows,
-    resize_keyboard: true,
-  };
-}
+    [{ text: '🔄 Sync' }],
+  ],
+  resize_keyboard: true,
+};
 
-export const PERSISTENT_DOCK_KEYBOARD = getDockKeyboard(0);
+export function getDockKeyboard(_unorganizedCount: number = 0) {
+  return PERSISTENT_DOCK_KEYBOARD;
+}
 
 export function getWebDashboardUrl(forInlineButton = false): string {
   const envUrl = process.env.BETTER_AUTH_URL;
@@ -371,19 +375,24 @@ export async function getTagsOverviewData(userId: string) {
       existingCategories.add(n.category.trim().toLowerCase());
     }
 
+    // Hitung jumlah catatan unik per tag (1 catatan = 1 vote per tag)
+    const noteTags = new Set<string>();
     if (Array.isArray(n.specificTags) && n.specificTags.length > 0) {
       for (const rawTag of n.specificTags) {
         if (rawTag && typeof rawTag === 'string' && rawTag.trim()) {
-          const t = rawTag.trim().toLowerCase();
-          tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
+          noteTags.add(rawTag.trim().toLowerCase());
         }
       }
     } else if (n.category && typeof n.category === 'string' && n.category.trim()) {
-      const cat = n.category.trim().toLowerCase();
-      tagFreq.set(cat, (tagFreq.get(cat) || 0) + 1);
+      noteTags.add(n.category.trim().toLowerCase());
+    }
+
+    for (const t of noteTags) {
+      tagFreq.set(t, (tagFreq.get(t) || 0) + 1);
     }
   }
 
+  // 1. Teraktif: Top 15 tag dengan jumlah catatan terbanyak di database
   const activeTagsSlice = Array.from(tagFreq.entries())
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 15)
@@ -393,7 +402,6 @@ export async function getTagsOverviewData(userId: string) {
   const numberToTagMap = new Map<number, string>();
   let currentNumber = 1;
 
-  // 1. Teraktif: Kumpulkan top 15 tag dengan frekuensi kemunculan terbanyak di DB. Simpan ke seenTags.
   const activeNumbered: string[] = [];
   for (const t of activeTagsSlice) {
     seenTags.add(t);
@@ -402,31 +410,30 @@ export async function getTagsOverviewData(userId: string) {
     activeNumbered.push(`(${num})${escapeHtml(t)}`);
   }
 
-  // 2. Terakhir: Loop catatan terbaru (ambil HANYA 1 tag pertama per catatan, specificTags[0] atau fallback category).
-  // Lewati jika tag SUDAH ada di seenTags. Ambil hingga maksimal 15 tag unik.
+  // 2. Terakhir: Main tag dari 15 catatan terakhir dikirim / dirapikan
+  // Ambil hanya main tag (specificTags[0] atau fallback category) dari 15 catatan terbaru
   const recentNumbered: string[] = [];
-  for (const n of userNotes) {
-    let firstTag: string | null = null;
+  const recentNotesSlice = userNotes.slice(0, 15);
+
+  for (const n of recentNotesSlice) {
+    let mainTag: string | null = null;
     if (Array.isArray(n.specificTags) && n.specificTags.length > 0) {
       for (const st of n.specificTags) {
         if (st && typeof st === 'string' && st.trim()) {
-          firstTag = st.trim().toLowerCase();
+          mainTag = st.trim().toLowerCase();
           break;
         }
       }
     }
-    if (!firstTag && n.category && typeof n.category === 'string' && n.category.trim()) {
-      firstTag = n.category.trim().toLowerCase();
+    if (!mainTag && n.category && typeof n.category === 'string' && n.category.trim()) {
+      mainTag = n.category.trim().toLowerCase();
     }
 
-    if (firstTag && !seenTags.has(firstTag)) {
-      seenTags.add(firstTag);
+    if (mainTag && !seenTags.has(mainTag)) {
+      seenTags.add(mainTag);
       const num = currentNumber++;
-      numberToTagMap.set(num, firstTag);
-      recentNumbered.push(`(${num})${escapeHtml(firstTag)}`);
-      if (recentNumbered.length >= 15) {
-        break;
-      }
+      numberToTagMap.set(num, mainTag);
+      recentNumbered.push(`(${num})${escapeHtml(mainTag)}`);
     }
   }
 
@@ -826,67 +833,125 @@ export async function handleDashboardCommand(
   return { ok: true, action: 'dashboard_opened' };
 }
 
+const syncCooldownMap = new Map<string, number>();
+const syncInProgressSet = new Set<string>();
+const SYNC_COOLDOWN_MS = 5000;
+
 /**
- * Handles /organize or /rapikan or dock menu trigger
+ * Handles /sync, /organize, /rapikan or dock menu '🔄 Sync' trigger
  */
-export async function handleOrganizeCommand(
+export async function handleSyncCommand(
   chatId: string,
   userId: string,
   activeLocale: SupportedLocale = 'id'
 ): Promise<TelegramProcessResult> {
-  // Flush any pending debounced messages for this user first
-  if (debounceMap.has(chatId)) {
-    await flushDebounceBuffer(chatId);
-  }
-
-  const count = await getOrFetchUnorganizedCount(userId);
-
-  if (count === 0) {
-    const emptyMsg =
+  // Anti-Spam: Cek apakah proses sinkronisasi sedang berjalan untuk user ini
+  if (syncInProgressSet.has(userId)) {
+    const inProgressMsg =
       activeLocale === 'en'
-        ? 'All notes are organized! No new notes to organize.'
-        : 'Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan.';
+        ? 'Synchronization is already in progress, please wait... ⏳'
+        : 'Sinkronisasi sedang berlangsung, mohon tunggu sebentar... ⏳';
 
-    await sendTelegramMessage(chatId, emptyMsg, {
+    await sendTelegramMessage(chatId, inProgressMsg, {
       parse_mode: 'Markdown',
-      reply_markup: getDockKeyboard(0),
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
     });
-    return { ok: true, action: 'organize_empty', count: 0 };
+    return { ok: true, action: 'sync_in_progress' };
   }
 
-  const statusText =
-    activeLocale === 'en'
-      ? `Organizing ${count} notes with AI... ⏳`
-      : `Sedang merapikan ${count} catatan dengan AI... ⏳`;
+  // Anti-Spam: Cek cooldown 5 detik
+  const lastSync = syncCooldownMap.get(userId) || 0;
+  const elapsed = Date.now() - lastSync;
+  if (elapsed < SYNC_COOLDOWN_MS) {
+    const remainingSec = Math.ceil((SYNC_COOLDOWN_MS - elapsed) / 1000);
+    const cooldownMsg =
+      activeLocale === 'en'
+        ? `Please wait ${remainingSec}s before syncing again.`
+        : `Mohon tunggu ${remainingSec} detik sebelum melakukan sinkronisasi kembali.`;
 
-  const statusMsg = await sendTelegramMessageWithId(chatId, statusText, {
-    parse_mode: 'Markdown',
-  });
+    await sendTelegramMessage(chatId, cooldownMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
+    return { ok: true, action: 'sync_cooldown' };
+  }
 
-  const result = await organizeUserNotes(userId);
-  const summary = formatOrganizedSummary(result);
+  syncInProgressSet.add(userId);
 
-  if (statusMsg.ok && statusMsg.messageId) {
-    try {
-      await editTelegramMessage(chatId, statusMsg.messageId, summary, {
-        parse_mode: 'Markdown',
-        reply_markup: getDockKeyboard(0),
-      });
-    } catch {
-      await sendTelegramMessage(chatId, summary, {
-        parse_mode: 'Markdown',
-        reply_markup: getDockKeyboard(0),
-      });
+  try {
+    // 1. Flush any pending debounced messages for this user first
+    if (debounceMap.has(chatId)) {
+      await flushDebounceBuffer(chatId);
     }
-  } else {
-    await sendTelegramMessage(chatId, summary, {
-      parse_mode: 'Markdown',
-      reply_markup: getDockKeyboard(0),
-    });
-  }
 
-  return { ok: true, action: 'organize_success', count: result.total };
+    // 2. Cek DB: apa ada catatan yang belum dirapikan (is_processed = false)
+    const [dbResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(notes)
+      .where(and(eq(notes.userId, userId), eq(notes.isProcessed, false)));
+
+    const dbUnorganizedCount = Number(dbResult?.count || 0);
+
+    // 3. Rekonsiliasi Cache dengan DB (sinkronisasi cache agar tidak ada deviasi)
+    setUnorganizedCountCache(userId, dbUnorganizedCount);
+
+    // Refresh user tags cache dari DB
+    const userNotes = await db.query.notes.findMany({
+      where: eq(notes.userId, userId),
+      columns: { specificTags: true },
+    });
+    const freshUserTags = Array.from(new Set(userNotes.flatMap((n) => n.specificTags || [])));
+    setUserTagsCache(userId, freshUserTags);
+
+    // 4. Jika ada catatan yang belum dirapikan di DB (dbUnorganizedCount > 0):
+    if (dbUnorganizedCount > 0) {
+      // Kirim catatan ke AI untuk dirapikan secara batch
+      await organizeUserNotes(userId);
+
+      // Pastikan cache ter-update dan counter di-reset ke 0
+      resetUnorganizedCount(userId);
+      invalidateUserTagsCache(userId);
+
+      // Respons bersih tanpa ringkasan cantik: "sinkronasi selesai!"
+      const successMsg =
+        activeLocale === 'en'
+          ? 'Synchronization complete!'
+          : 'Sinkronisasi selesai!';
+
+      await sendTelegramMessage(chatId, successMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      });
+
+      return { ok: true, action: 'sync_completed', count: dbUnorganizedCount };
+    } else {
+      // 5. Jika tidak ada catatan baru: "belum ada catatan baru!"
+      const emptyMsg =
+        activeLocale === 'en'
+          ? 'No new notes!'
+          : 'Belum ada catatan baru!';
+
+      await sendTelegramMessage(chatId, emptyMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      });
+
+      return { ok: true, action: 'sync_empty', count: 0 };
+    }
+  } catch (err) {
+    console.error(`[Sync Error] User ${userId}:`, err);
+    await sendTelegramMessage(chatId, 'Gagal melakukan sinkronisasi catatan.', {
+      parse_mode: 'Markdown',
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
+    return { ok: false, error: 'sync_failed' };
+  } finally {
+    syncInProgressSet.delete(userId);
+    syncCooldownMap.set(userId, Date.now());
+  }
 }
+
+export const handleOrganizeCommand = handleSyncCommand;
 
 /**
  * Core Telegram Message Processor.
@@ -1280,13 +1345,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleDashboardCommand(chatId, activeLocale);
   }
 
-  // 6d. /organize atau /rapikan atau tombol dock '🪄 Organize (N)' / '🪄 Organize' / '🪄 Rapikan'
+  // 6d. /sync atau /organize atau /rapikan atau tombol dock '🔄 Sync' / 'Sync'
   if (
-    /^\/?(organize|rapikan)\b/i.test(text) ||
+    text === '🔄 Sync' ||
+    text === 'Sync' ||
+    /^\/?(sync|organize|rapikan)\b/i.test(text) ||
     text.startsWith('🪄 Organize') ||
     text.startsWith('🪄 Rapikan')
   ) {
-    return await handleOrganizeCommand(chatId, activeKey.userId, activeLocale);
+    return await handleSyncCommand(chatId, activeKey.userId, activeLocale);
   }
 
   // 7. /search <kata_kunci>
@@ -1961,8 +2028,8 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     return { ok: true, action: 'callback_menu_tags' };
   }
 
-  // 1c. Trigger Organize from Inline Keyboard: organize:run
-  if (data === 'organize:run') {
+  // 1c. Trigger Sync / Organize from Inline Keyboard: organize:run / sync:run
+  if (data === 'organize:run' || data === 'sync:run') {
     const [activeKey] = await db
       .select()
       .from(apiKeys)
@@ -1985,64 +2052,10 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
     await answerTelegramCallbackQuery(callbackId, {
-      text: activeLocale === 'en' ? 'Organizing notes...' : 'Sedang merapikan catatan...',
+      text: activeLocale === 'en' ? 'Syncing...' : 'Menyinkronkan...',
     });
 
-    const count = await getOrFetchUnorganizedCount(activeKey.userId);
-    if (count === 0) {
-      const emptyMsg =
-        activeLocale === 'en'
-          ? 'All notes are organized! No new notes to organize.'
-          : 'Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan.';
-
-      if (messageId) {
-        await editTelegramMessage(chatId, messageId, emptyMsg, {
-          parse_mode: 'Markdown',
-          reply_markup: getDockKeyboard(0),
-        });
-      } else {
-        await sendTelegramMessage(chatId, emptyMsg, {
-          parse_mode: 'Markdown',
-          reply_markup: getDockKeyboard(0),
-        });
-      }
-      return { ok: true, action: 'organize_empty', count: 0 };
-    }
-
-    const statusText =
-      activeLocale === 'en'
-        ? `Sedang merapikan ${count} catatan dengan AI... ⏳`
-        : `Sedang merapikan ${count} catatan dengan AI... ⏳`;
-
-    if (messageId) {
-      await editTelegramMessage(chatId, messageId, statusText, {
-        parse_mode: 'Markdown',
-      });
-    }
-
-    const result = await organizeUserNotes(activeKey.userId);
-    const summary = formatOrganizedSummary(result);
-
-    if (messageId) {
-      try {
-        await editTelegramMessage(chatId, messageId, summary, {
-          parse_mode: 'Markdown',
-          reply_markup: getDockKeyboard(0),
-        });
-      } catch {
-        await sendTelegramMessage(chatId, summary, {
-          parse_mode: 'Markdown',
-          reply_markup: getDockKeyboard(0),
-        });
-      }
-    } else {
-      await sendTelegramMessage(chatId, summary, {
-        parse_mode: 'Markdown',
-        reply_markup: getDockKeyboard(0),
-      });
-    }
-
-    return { ok: true, action: 'organize_success', count: result.total };
+    return await handleSyncCommand(chatId, activeKey.userId, activeLocale);
   }
 
   // 2. Pagination untuk /search: page:search:<query>:<page_num>

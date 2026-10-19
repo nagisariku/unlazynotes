@@ -24,6 +24,7 @@ import { db } from '../src/db';
 import { users, apiKeys, notes } from '../src/db/schema';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
+import { handleSyncCommand } from '../src/lib/telegram-handler';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -41,15 +42,14 @@ async function runTests() {
   // TEST 1: Local Formatting Cleanup (Zero AI, Word Preservation)
   // -------------------------------------------------------------
   console.log('--- TEST 1: Local Formatting Cleanup ---');
-  const rawInput = '  Baris pertama dengan spasi akhir    \r\n\r\n\r\n\r\n\r\nBaris kedua setelah jeda berlebih.\r\n• Point 1: Belanja susu   \r\n  * Point 2: Desain UI UnlazyNotes   \r\n- Point 3: Standard bullet tetap aman\r\n\r\n   ';
+  const rawInput = '  Baris pertama dengan spasi akhir    \r\n\r\n\r\n\r\n\r\nBaris kedua setelah jeda berlebih.\r\n• Point 1: Belanja susu   \r\n\r\n  * Point 2: Desain UI UnlazyNotes   \r\n\r\n- Point 3: Standard bullet tetap aman\r\n\r\n1. Number 1\r\n\r\n2. Number 2\r\n\r\n   ';
   const cleaned = cleanLocalFormat(rawInput);
 
   assert(!cleaned.includes('\r'), 'No carriage returns (\\r) allowed');
   assert(!cleaned.includes('    \n'), 'No trailing whitespace at line end');
-  assert(!cleaned.includes('\n\n\n\n'), 'No more than 2 consecutive blank lines');
-  assert(cleaned.includes('- Point 1: Belanja susu'), 'Bullet • must become -');
-  assert(cleaned.includes('  - Point 2: Desain UI UnlazyNotes'), 'Indented bullet * must become indented -');
-  assert(cleaned.includes('- Point 3: Standard bullet tetap aman'), 'Standard bullet - must be preserved');
+  assert(!cleaned.includes('\n\n\n'), 'No >1x breakline (max 1 blank line / \\n\\n)');
+  assert(cleaned.includes('- Point 1: Belanja susu\n  - Point 2: Desain UI UnlazyNotes\n- Point 3: Standard bullet tetap aman'), 'List items must have no breaklines between them');
+  assert(cleaned.includes('1. Number 1\n2. Number 2'), 'Numbering items must have no breaklines between them');
   assert(cleaned.includes('Desain UI UnlazyNotes'), 'Original casing and exact words must be preserved');
 
   console.log('✅ Formatting cleanup passed all assertions.\n');
@@ -207,6 +207,41 @@ async function runTests() {
   await db.delete(users).where(eq(users.id, testUserId));
 
   console.log('✅ Batch organize and DB persistence verified with 100% success.\n');
+
+  // -------------------------------------------------------------
+  // TEST 5: Sync Command, Anti-Spam Rate Limit, and Reconciliation
+  // -------------------------------------------------------------
+  console.log('--- TEST 5: Sync Command, Anti-Spam & Cache Reconciliation ---');
+  const syncUserId = 'test_user_sync_' + crypto.randomUUID().slice(0, 8);
+  const syncChatId = 'tg_chat_' + syncUserId;
+
+  await db.insert(users).values({
+    id: syncUserId,
+    email: `${syncUserId}@example.com`,
+    name: 'Sync Test User',
+  });
+
+  await db.insert(apiKeys).values({
+    id: crypto.randomUUID(),
+    userId: syncUserId,
+    keyHash: 'hash_' + syncUserId,
+    telegramChatId: syncChatId,
+    isActive: true,
+  });
+
+  // Scenario A: No notes in DB -> returns sync_empty
+  const syncResEmpty = await handleSyncCommand(syncChatId, syncUserId, 'id');
+  assert(syncResEmpty.ok === true && syncResEmpty.action === 'sync_empty', 'Sync with 0 notes returns sync_empty ("Belum ada catatan baru!")');
+
+  // Scenario B: Rapid second call within 5s -> triggers anti-spam cooldown
+  const syncResCooldown = await handleSyncCommand(syncChatId, syncUserId, 'id');
+  assert(syncResCooldown.ok === true && syncResCooldown.action === 'sync_cooldown', 'Rapid sync call triggers anti-spam cooldown');
+
+  // Clean up
+  await db.delete(apiKeys).where(eq(apiKeys.userId, syncUserId));
+  await db.delete(users).where(eq(users.id, syncUserId));
+
+  console.log('✅ Sync command and anti-spam verified successfully.\n');
 
   console.log('================================================================');
   console.log('🎉 ALL TESTS PASSED SUCCESSFULLY!');
