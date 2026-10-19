@@ -82,17 +82,21 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
         };
       }
 
-      // 2. Detect Draft (Long structured text >250 chars)
+      // 2. Detect Draft (Long structured text >200 chars or Markdown headers)
+      const hasMarkdownHeaders = /^#{1,6}\s+/m.test(text) || text.includes('\n#');
       if (
-        text.length > 250 ||
+        text.length > 200 ||
+        hasMarkdownHeaders ||
         lower.includes('draft') ||
         lower.includes('draf') ||
         lower.includes('catatan hasil diskusi') ||
         lower.includes('rangkuman')
       ) {
+        const enriched = enrichDualLayerTags([], 'draft', text);
+        const tags = enriched.length > 0 ? enriched : ['writing'];
         return {
           category: 'draft',
-          specific_tags: sanitizeTags(['writing'], 'draft', text, 5, existingUserTags),
+          specific_tags: sanitizeTags(tags, 'draft', text, 5, existingUserTags),
           source: null,
         };
       }

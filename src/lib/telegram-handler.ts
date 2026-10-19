@@ -111,25 +111,39 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
       );
     }
 
-    // 3. Smart Credential Warning Guardrail
-    const hasCredentialKeyword =
-      /\b(password|passwd|kata\s*sandi|pin(\s*atm)?|token|api[_-]?key|secret|kredensial|credential|cvv|otp)\b/i.test(
-        mergedText
-      );
-    if (hasCredentialKeyword) {
-      await sendTelegramMessage(
-        chatId,
-        getTelegramMsg('security_tip', item.locale),
-        { parse_mode: 'Markdown' }
-      );
-    }
-
-    // 4. Background AI Categorization & Tagging via Priority Queue (Fast-lane Pro)
+    // 3. Background AI Categorization & Tagging via Priority Queue (Fast-lane Pro)
     taggingQueue.enqueue({
       noteId,
       userId: item.activeKey.userId,
       content: mergedText,
       tier: item.tier,
+      onComplete: async ({ category }) => {
+        // Notifikasi security_tip HANYA dikirim jika:
+        // 1. Kategori yang dihasilkan AI adalah credential, DAN
+        // 2. Teks memuat indikasi nilai rahasia riil (misal ada assignment password:, pin atm, atau PIN numerik kartu),
+        //    BUKAN sekadar kata benda UI atau tugas teknis.
+        // Jika kategori dari AI adalah todo, draft, schedule, atau lainnya, DILARANG KERAS mengirim notifikasi security_tip.
+        if (category === 'credential') {
+          const lower = mergedText.toLowerCase();
+          const hasRealSecretValue =
+            /\b(password|passwd|pass|kata\s*sandi|sandi|secret|token|api[_-]?key)\s*[:=]\s*\S+/i.test(lower) ||
+            /\b(password|kata\s*sandi)\s*(nya)?\s+[^\s]+/i.test(lower) ||
+            /\b(pin\s*atm|pin\s*kartu|pin\s*debit|pin\s*kredit)\b/i.test(lower) ||
+            /\bpin\s*[:=]\s*\d{4,6}\b/i.test(lower) ||
+            /\b(no(mor)?\s*rek(ening)?|rekening)\b[^\n\r]*?\b\d{6,}\b/i.test(lower) ||
+            /\b(nik|ktp|sim|paspor|passport)\b[^\n\r]*?\b\d{4,}\b/i.test(lower) ||
+            /\b(ssh-ed\d+|ssh-rsa|private\s*key|seed\s*phrase)\b/i.test(lower) ||
+            /\b(cvv|otp)\s*[:=]?\s*\d{3,6}\b/i.test(lower);
+
+          if (hasRealSecretValue) {
+            await sendTelegramMessage(
+              chatId,
+              getTelegramMsg('security_tip', item.locale),
+              { parse_mode: 'Markdown' }
+            );
+          }
+        }
+      },
     });
 
     return noteId;

@@ -25,10 +25,20 @@ export function routeNoteIntent(content: string): DetectedModule {
     return 'bookmark';
   }
 
+  // 2b. Markdown Document / Spec / Pricing Draft Guard
+  // Catatan multi-baris dengan header Markdown (#, ##) adalah draft dokumen/spesifikasi arsitektur/SaaS
+  const hasMarkdownHeaders = /^#{1,6}\s+/m.test(text) || text.includes('\n#');
+  if (hasMarkdownHeaders && (text.length > 50 || text.includes('\n'))) {
+    return 'general';
+  }
+
   // 3. CREDENTIAL Intent: Deteksi data sensitif pribadi (Password, PIN ATM, No Rekening, Token/API Key, dan NIK/SIM dengan nomor)
+  // Kata "pin" TANPA indikator kartu ATM/debit atau nilai rahasia numerik DILARANG memicu credential
   const hasPureCredential =
-    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
-    /\b(password|pass|pin|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
+    /\b(password|passwd|pass|kata\s*sandi|sandi|no\s*rek|nomor\s*rekening|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
+    /\b(pin\s*atm|pin\s*kartu|pin\s*debit|pin\s*kredit)\b/i.test(lower) ||
+    /\bpin\s*[:=]\s*\d{4,6}\b/i.test(lower) ||
+    /\b(password|pass|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
     lower.startsWith('pass:') ||
     lower.startsWith('pin:') ||
     lower.startsWith('token:') ||
@@ -55,7 +65,13 @@ export function routeNoteIntent(content: string): DetectedModule {
     /\b\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\b/i.test(lower) ||
     /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\s+\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)\b/i.test(lower) ||
     (/\b(flight|terbang|berangkat)\s+(senin|selasa|rabu|kamis|jumat|sabtu|minggu|\d{1,2}\s+[a-z]+)\b/i.test(lower)) ||
-    (/\b(meeting|rapat|sync|call)\b/i.test(lower) && /\b(jam|pukul|\d+[:.]\d+|\d+\s*sore|\d+\s*pagi|\d+\s*siang|\d+\s*malam)\b/i.test(lower));
+    (/\b(meeting|rapat|sync|call)\b/i.test(lower) && /\b(jam|pukul|\d+[:.]\d+|\d+\s*sore|\d+\s*pagi|\d+\s*siang|\d+\s*malam)\b/i.test(lower)) ||
+    // Waktu kultural / ibadah (ba'da maghrib, habis isya, dll)
+    /\b(ba'?da|bada|habis|setelah|sebelum)\s+(sholat|solat|subuh|dzuhur|zuhur|ashar|asar|maghrib|isya|tarawih|jumatan)\b/i.test(lower) ||
+    (/\b(kajian|pengajian|tarawih)\b/i.test(lower) && /\b(maghrib|isya|subuh|ashar)\b/i.test(lower)) ||
+    // Periode waktu relatif (nanti sore, besok malam, minggu depan)
+    /\b(nanti|ntar)\s+(pagi|siang|sorean|sore|maleman|malam)\b/i.test(lower) ||
+    /\b(minggu|bulan)\s+depan\b/i.test(lower);
 
   // Guard against non-schedule numbers like price
   const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak|usd|dollar|dollars|sgd|eur|gbp)\b/i.test(lower);
@@ -70,6 +86,9 @@ export function routeNoteIntent(content: string): DetectedModule {
   const isHealthMetric = /\b\d+\s*(mg|ml|tablet|kapsul|gram)\b/i.test(lower);
   const isWorkoutMetric = /\b\d+\s*(kg|reps|set)\b/i.test(lower);
   const isPostalCode = /\b(kodepos|kode\s*pos|pos\s*code|zip\s*code)\s*\d+\b/i.test(lower);
+  const isStepOrDistanceMetric =
+    /\b\d+(\.\d+)?\s*(k\s*)?(langkah|steps?|meter|km)\b/i.test(lower) ||
+    /\b\d+k\s+(langkah|steps?)\b/i.test(lower);
 
   const hasDebtPattern =
     /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
@@ -82,6 +101,7 @@ export function routeNoteIntent(content: string): DetectedModule {
     !isHealthMetric &&
     !isWorkoutMetric &&
     !isPostalCode &&
+    !isStepOrDistanceMetric &&
     (
       hasCurrencySuffix ||
       hasCurrencyPrefix ||
@@ -106,14 +126,21 @@ export function routeNoteIntent(content: string): DetectedModule {
   }
 
   // 7. TODO Intent: Segala bentuk aksi, tugas, perintah, atau komunikasi tanpa jam kalender spesifik
-  // Multi-line shopping list without prices is strictly TODO (e.g. "beli kemeja putih uniqlo \n stok sabun biore \n obat tetes mata rohto")
   const isShoppingList =
     /\b(beli|stok|belanja|pesen|pesan|order)\b/i.test(lower) &&
     (content.includes('\n') || /\b(dan|serta|stok)\b/i.test(lower));
 
   const isCommunicationTask = /\b(chat|telepon|telpon|wa|whatsapp|tanya|hubungi|dm|email|follow up|call)\s+[a-z0-9_-]+/i.test(lower);
+
+  // Dev tasks / engineering instructions / backlog items
+  const isDevTask =
+    /\b(bikin|buat|tambah|tambahkan|tambahin|pasang|setup|implementasikan|implementasi|fix|perbaiki|update|refactor|deploy|coding|develop|build|test|ganti|ubah|rapikan|integrasikan)\b/i.test(lower) ||
+    (/\b(tombol|button|fitur|feature|endpoint|api|database|migration|component|halaman|ui|ux|backend|frontend|bot|repo|service)\b/i.test(lower) && /\b(bikin|tambah|tambahin|buat|opsi|di|untuk|ke)\b/i.test(lower)) ||
+    /^[a-z0-9_-]+:\s*-\s+/i.test(text); // e.g. "unlazynotes: - latest notes up to 50 notes"
+
   const isActionTask =
     isShoppingList ||
+    isDevTask ||
     lower.startsWith('todo') ||
     lower.startsWith('task') ||
     /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order|cari|carikan|bandingin|bandingkan|compare|riset|research|survey|survei|analisa|analisis|perpanjang|urus|bawa|ambil|fotokopi)\b/i.test(lower) ||

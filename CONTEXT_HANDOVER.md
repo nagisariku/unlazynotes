@@ -320,7 +320,7 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
 - `scripts/test-phase4-polishes.ts`: 33/33 skenario lolos (100% PASS)
 - `scripts/test-enhancements.ts`: 145/145 assertions passed (100% PASS)
 - `scripts/test-ask-temporal.ts`: 100% PASS (Broad overview, Targeted laser query, Anchor Time Math, Claude Haiku 5.5)
-- `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
+- `scripts/test-intent-classifier.ts`: 38/38 skenario Live AI & Heuristic passed (100% PASS)
 - `scripts/test-telegram-i18n.ts`: 33/33 tests passed (100% PASS)
 - `scripts/test-tier-quota.ts`: 19/19 skenario passed (100% PASS)
 - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
@@ -358,6 +358,31 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - **Penanganan Error**: Jika pemrosesan AI gagal, bot menampilkan pesan error yang ramah pengguna.
    - **System Prompt Anti-Abuse**: AI diinstruksikan menolak dengan tegas dan sopan segala pertanyaan/perintah di luar konteks catatan pengguna (coding/pemrograman, penulisan esai, matematika umum, dll.).
    - **Identitas AI**: Jika pengguna menanyakan model AI yang digunakan, AI menjawab secara konsisten `"Model UnlazyNotesLLM-v1"` dan dilarang membocorkan rincian arsitektur atau vendor internal sistem.
+
+### AB. First-Principles Semantic Intent Refactor & LLM-Driven Classification
+1. **Claude Haiku 5.5 sebagai Single Source of Truth**:
+   - Menghapus puluhan tumpukan regex kaku pada `normalizeCategory` di `src/lib/ai/modules/general.ts` yang selama ini menimpa hasil inferensi LLM.
+   - `normalizeCategory` kini murni menegakkan absolute invariant (pure URL $\rightarrow$ `bookmark`, explicit task checklist `- [ ]` $\rightarrow$ `todo`), memetakan sinonim kata dari model ke 9 kategori resmi, dan mempercayai output LLM secara penuh.
+2. **Penguatan Semantic Intent Boundaries di System Prompt**:
+   - Menegaskan batas hakikat niat hidup catatan:
+     * `todo`: Segala aksi, tugas, perintah, dev tasks, food orders, dan instruksi teknis dalam gaya penulisan bebas apa pun (santai, tanpa bullet, bullet list).
+     * `finance`: Transaksi keuangan riil arus kas dompet user. Angka pada spesifikasi produk, tier SaaS (`# free ... # pro $1/month`), atau perbandingan spek barang diklasifikasikan sebagai `draft` / `todo` / `others`, BUKAN `finance`.
+     * `schedule`: Terikat titik waktu pelaksanaan, mencakup jam, tanggal kalender, waktu kultural/ibadah (`ba'da maghrib ada kajian`), dan waktu relatif (`nanti sorean mau jogging`).
+     * `credential`: Brankas nilai rahasia aktual. Penyebutan fitur UI (seperti `"tambah opsi pin untuk note penting"`) atau administrasi tanpa digit nilai rahasia masuk ke `todo`.
+     * `draft`: Dokumen spesifikasi produk/arsitektur/SaaS multi-baris Markdown, esai, dan tulisan panjang.
+     * `reference`: Rujukan statis, kutipan, ayat suci, hadits, doa, resep masakan.
+     * `bookmark`: Tautan URL.
+     * `random-yap`: Curahan hati, uneg-uneg, keluhan santai tanpa aksi.
+     * `others`: Log terstruktur non-aksi (gejala kesehatan & obat, metrik fisik seperti `10k langkah keliling komplek`, repetisi gym, ide fitur mentah).
+3. **Penyelarasan Security Tip Guardrail Telegram (`src/lib/telegram-handler.ts`)**:
+   - Membasmi regex mandiri `hasCredentialKeyword` (`\bpin\b`) yang sebelumnya berjalan terpisah di luar AI.
+   - Notifikasi `security_tip` dipasangkan pada callback `onComplete` dari `taggingQueue` dan HANYA dikirim jika kategori AI adalah `credential` DAN memuat indikator nilai rahasia aktual (assignment `password:`, `pin atm`, atau nomor identitas/rekening). Catatan berfitur UI `"pin note"` dipastikan tidak memicu spam security tip.
+4. **Penyelarasan Router Offline / Heuristic Fallback (`src/lib/ai/router.ts`)**:
+   - Multi-line Markdown dengan header (`#`, `##`) diarahkan ke `general` (me-resolve ke `draft`), bukan `finance`.
+   - Perintah aksi teknis dan backlog item (`^[a-z0-9_-]+:\s*-\s+`) diarahkan ke `todo`.
+   - Metrik fisik langkah kaki (`10k langkah`) diamankan dari pencocokan mata uang `10k`.
+5. **Verifikasi Test Suite**:
+   - 38/38 skenario (100% PASS) pada `scripts/test-intent-classifier.ts` baik untuk Live AI Pipeline maupun Heuristic Fallback.
 
 ---
 
