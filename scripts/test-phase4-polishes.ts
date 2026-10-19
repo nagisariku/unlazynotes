@@ -51,8 +51,8 @@ async function runPolishesTestSuite() {
   const bookmarkCat = ALL_CATEGORIES.find((c) => c.key === 'bookmark');
   const othersCat = ALL_CATEGORIES.find((c) => c.key === 'others');
 
-  assert(financeCat?.label === '💲 Finance', 'Finance uses 💲 emoji');
-  assert(bookmarkCat?.label === '🖇🔗 Bookmark', 'Bookmark uses 🖇🔗 emoji');
+  assert(financeCat?.label === '💰 Finance', 'Finance uses 💰 emoji');
+  assert(bookmarkCat?.label === '📎 Bookmark', 'Bookmark uses 📎 emoji');
   assert(othersCat?.label === 'Others', 'Others has NO emoji');
 
   // Test dynamic filter: only show categories with >= 1 note
@@ -61,8 +61,8 @@ async function runPolishesTestSuite() {
   assert(filteredKb !== undefined, 'Filtered keyboard is generated');
   assert(filteredKb?.inline_keyboard.length === 1, 'Only 1 row for 2 items');
   assert(filteredKb?.inline_keyboard[0].length === 2, 'Row has exactly 2 buttons');
-  assert(filteredKb?.inline_keyboard[0][0].text === '💲 Finance', 'Shows 💲 Finance');
-  assert(filteredKb?.inline_keyboard[0][1].text === '🖇🔗 Bookmark', 'Shows 🖇🔗 Bookmark');
+  assert(filteredKb?.inline_keyboard[0][0].text === '💰 Finance', 'Shows 💰 Finance');
+  assert(filteredKb?.inline_keyboard[0][1].text === '📎 Bookmark', 'Shows 📎 Bookmark');
 
   // Test empty set: when no categories exist
   const emptyKb = buildCategoriesGridKeyboard(new Set());
@@ -157,6 +157,10 @@ async function runPolishesTestSuite() {
   assert(pinCbRes.ok === true && pinCbRes.action === 'note_detail_view', 'Toggling pin updates view');
   const [pinnedCheck] = await db.select().from(notes).where(eq(notes.id, longNoteId)).limit(1);
   assert(pinnedCheck.isPinned === true, 'Note is now pinned');
+
+  // Verify displayNoteDetail for pinned note executes cleanly
+  const pinnedViewRes = await displayNoteDetail(testChatId, undefined, longNoteId, 'tags', 'resep', 1);
+  assert(pinnedViewRes.ok === true, 'Pinned note detail renders cleanly with Lepas Pin');
 
   // --- 7. /ask: AI Model Identity & Anti-Abuse Guardrail ---
   console.log('\n--- 7. Testing /ask Model Identity & Anti-Abuse ---');

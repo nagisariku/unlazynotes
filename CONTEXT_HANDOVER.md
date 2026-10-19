@@ -317,7 +317,7 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - Inferensi menghasilkan penalaran temporal yang lebih presisi, perhitungan jam lampau yang akurat, dan zero halusinasi.
 
 ### Z. Status Verifikasi Test Suite & Standar Branch Kolaborasi
-- `scripts/test-phase4-polishes.ts`: 32/32 skenario lolos (100% PASS)
+- `scripts/test-phase4-polishes.ts`: 33/33 skenario lolos (100% PASS)
 - `scripts/test-enhancements.ts`: 145/145 assertions passed (100% PASS)
 - `scripts/test-ask-temporal.ts`: 100% PASS (Broad overview, Targeted laser query, Anchor Time Math, Claude Haiku 5.5)
 - `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
@@ -333,8 +333,8 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
 2. **Kategori Dinamis `/tags` & Pembaruan Emoji**:
    - **Filter Catatan Aktif (Lightweight $O(N)$ in-memory)**: Tombol kategori yang ditampilkan HANYA yang memiliki $\ge 1$ catatan milik user. Jika kategori belum memiliki catatan (0 catatan), tombol tidak ditampilkan.
    - **Pembaruan Emoji Tombol**:
-     * Finance: menggunakan `💲 Finance`.
-     * Bookmark: menggunakan `🖇🔗 Bookmark`.
+     * Finance: menggunakan `💰 Finance` (kembali ke icon klasik).
+     * Bookmark: menggunakan `📎 Bookmark`.
      * Others: menggunakan `Others` (murni tanpa emoji).
    - **Pembersihan Logika "Sering Dicari"**:
      * Kategori "Sering Dicari" beserta logic tracking-nya dihapus dari `/tags`. Konten `/tags` kini ringkas dan fokus hanya pada `🔥 Teraktif` dan `🕒 Terakhir`.
@@ -347,11 +347,12 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - **Root Cause & Fix Bug Catatan Panjang**: Telegram API membatasi parameter `copy_text` pada `CopyTextButton` maksimal **256 karakter**. Catatan panjang sebelumnya memicu error `400 Bad Request: BUTTON_COPY_TEXT_INVALID`. Sistem diperbaiki dengan auto-switch: jika catatan $\le 256$ karakter menggunakan native `copy_text`, jika $> 256$ karakter menggunakan callback `note:copy:<id>` yang mengirim teks catatan mentah ke chat untuk disalin langsung.
    - **Auto-Chunking Safeguard**: Detail teks $> 4000$ karakter otomatis dikirim menggunakan `sendTelegramMessage` chunking alih-alih `editMessageText` yang gagal pada batas 4096 karakter Telegram.
    - **Re-styling Tombol Detail**:
-     * Pin: menggunakan ikon bintang `⭐ Pin` / `⭐ Lepas Pin`.
+     * Pin: menggunakan ikon bintang `⭐ Pin`.
+     * Lepas Pin: murni teks `Lepas Pin` tanpa icon atau emoji apa pun.
      * Salin: tombol `Salin` tanpa emoji.
      * Hapus: tombol `Hapus` tanpa emoji.
    - **Format Konten Baru**:
-     `📌` (diikuti break space / baris baru), `{isi notes...}`, (diikuti double break space / baris kosong), `{EEE, dd/MM/yyyy • HH:mm WIB}`, dan `Tags: {kategori, specific_tags}`.
+     `📌` (diikuti break space / baris baru), `{isi notes...}`, (diikuti double break space lega `\n\n\n`), `{EEE, dd/MM/yyyy • HH:mm WIB}`, dan `Tags: {kategori, specific_tags}`.
 6. **Optimasi `/ask`: Pembersihan Loading & Anti-Abuse AI Guardrails**:
    - **Pembersihan Pesan Loading**: Pesan `🤖 Sedang menganalisis catatan Anda...` dilacak dengan `message_id` dan otomatis dihapus (`deleteMessage`) setelah jawaban AI terkirim (atau saat terjadi kegagalan).
    - **Penanganan Error**: Jika pemrosesan AI gagal, bot menampilkan pesan error yang ramah pengguna.

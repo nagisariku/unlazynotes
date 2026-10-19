@@ -219,10 +219,10 @@ export function formatSnippetPage(
 }
 
 export const ALL_CATEGORIES = [
-  { key: 'finance', label: '💲 Finance' },
+  { key: 'finance', label: '💰 Finance' },
   { key: 'todo', label: '📋 Todo' },
   { key: 'schedule', label: '📅 Schedule' },
-  { key: 'bookmark', label: '🖇🔗 Bookmark' },
+  { key: 'bookmark', label: '📎 Bookmark' },
   { key: 'credential', label: '🔐 Credential' },
   { key: 'reference', label: '📚 Reference' },
   { key: 'draft', label: '📝 Draft' },
@@ -532,10 +532,10 @@ export async function displayNoteDetail(
   }
   const tagsStr = tagsSet.size > 0 ? Array.from(tagsSet).join(', ') : '-';
 
-  const detailText = `${pinIcon}\n${note.content.trim()}\n\n${dateTimeStr}\nTags: ${tagsStr}`;
+  const detailText = `${pinIcon}\n${note.content.trim()}\n\n\n${dateTimeStr}\nTags: ${tagsStr}`;
 
-  // Action Buttons: pin (⭐), salin (no emoji), hapus (no emoji)
-  const pinText = note.isPinned ? '⭐ Lepas Pin' : '⭐ Pin';
+  // Action Buttons: pin (⭐), lepas pin (no emoji), salin (no emoji), hapus (no emoji)
+  const pinText = note.isPinned ? 'Lepas Pin' : '⭐ Pin';
   const rawPinCb = `note:pin:${note.id}:${type}:${queryVal}:${currentPage}`;
   const pinCb = rawPinCb.length <= 64 ? rawPinCb : `note:pin:${note.id}`;
 

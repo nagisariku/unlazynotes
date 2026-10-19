@@ -147,7 +147,7 @@ async function runTests() {
   assert(keyboard.inline_keyboard[2].length === 3, `Row 3 has 3 buttons`);
 
   // Row 1
-  assert(keyboard.inline_keyboard[0][0].text === '💲 Finance', `Row 1 Col 1 is Finance (💲)`);
+  assert(keyboard.inline_keyboard[0][0].text === '💰 Finance', `Row 1 Col 1 is Finance (💰)`);
   assert(keyboard.inline_keyboard[0][0].callback_data === 'page:tags:finance:1', `Finance callback_data is page:tags:finance:1`);
   assert(keyboard.inline_keyboard[0][1].text === '📋 Todo', `Row 1 Col 2 is Todo`);
   assert(keyboard.inline_keyboard[0][1].callback_data === 'page:tags:todo:1', `Todo callback_data is page:tags:todo:1`);
@@ -155,7 +155,7 @@ async function runTests() {
   assert(keyboard.inline_keyboard[0][2].callback_data === 'page:tags:schedule:1', `Schedule callback_data is page:tags:schedule:1`);
 
   // Row 2
-  assert(keyboard.inline_keyboard[1][0].text === '🖇🔗 Bookmark', `Row 2 Col 1 is Bookmark (🖇🔗)`);
+  assert(keyboard.inline_keyboard[1][0].text === '📎 Bookmark', `Row 2 Col 1 is Bookmark (📎)`);
   assert(keyboard.inline_keyboard[1][0].callback_data === 'page:tags:bookmark:1', `Bookmark callback_data is page:tags:bookmark:1`);
   assert(keyboard.inline_keyboard[1][1].text === '🔐 Credential', `Row 2 Col 2 is Credential`);
   assert(keyboard.inline_keyboard[1][1].callback_data === 'page:tags:credential:1', `Credential callback_data is page:tags:credential:1`);
@@ -176,7 +176,7 @@ async function runTests() {
   assert(filteredKb !== undefined, `Filtered keyboard is generated`);
   assert(filteredKb.inline_keyboard.length === 1, `Filtered keyboard has 1 row`);
   assert(filteredKb.inline_keyboard[0].length === 2, `Filtered row has 2 buttons`);
-  assert(filteredKb.inline_keyboard[0][0].text === '💲 Finance', `First button is Finance`);
+  assert(filteredKb.inline_keyboard[0][0].text === '💰 Finance', `First button is Finance`);
   assert(filteredKb.inline_keyboard[0][1].text === '📋 Todo', `Second button is Todo`);
 
   // Check pagination keyboard has "Kembali ke Tags"
