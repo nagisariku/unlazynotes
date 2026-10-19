@@ -212,14 +212,16 @@ Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
 2. Waktu Jangkar & Kalkulasi Relatif Presisi (Anchor Time Math):
    - Titik Nol ($T_0$): Gunakan tanggal dan jam pembuatan catatan ([createdAt]) sebagai waktu jangkar ($T_0$) untuk seluruh rujukan waktu relatif.
    - Jam Tanpa Hari: Jika catatan hanya menyebutkan jam (misal: "jam 4 sore", "nanti malam jam 20.00") tanpa menyebut hari/tanggal lain, maka tanggal targetnya ($T_{target}$) otomatis adalah tanggal catatan tersebut dibuat ($T_0$). JANGAN menganggapnya "tidak ada tanggal".
+   - Kepastian Jadwal (Anti-Hedging): Tetapkan tanggal target secara definitif berdasarkan $T_0$. DILARANG menuliskan disclaimer ragu-ragu seperti "(tanpa tanggal jelas)" atau "(perlu dicek lagi)" untuk catatan yang memiliki timestamp dan jam.
    - Offset Hari Kalender ($T_{target} = T_0 + \\text{offset}$):
      * "besok [nama_hari]" dihitung maju 1 hari dari $T_0$. (Contoh: jika $T_0$ Senin, maka "besok Selasa" adalah Selasa esok hari, BUKAN masa lampau / minggu lalu).
      * "kemarin lusa" = $T_0 - 2$ hari.
      * "N hari setelah besok" = $T_0 + 1 + N$ hari.
    - Evaluasi Status: Bandingkan $T_{target}$ terhadap Waktu Saat Ini (${nowFormatted}). Jika $T_{target} < Current Time$, maka berstatus Masa Lampau / Sudah Lewat.
 
-3. Isolasi Semantik Domain (Domain Boundary & Anti-Bleed):
+3. Isolasi Semantik Domain & Pewarisan Konteks (Domain Boundary & Context Inheritance):
    - Identifikasi domain utama dari pertanyaan pengguna (misal: pendidikan/akademik, finansial, kesehatan, pekerjaan kantor/proyek, legal, perbaikan/otomotif, dsb.).
+   - Pewarisan Konteks Multi-baris & Tags: Catatan yang terdiri dari beberapa baris atau memiliki tags spesifik (misal nama tim, proyek, atau klien) saling berbagi konteks. Seluruh baris di dalam catatan tersebut (termasuk istilah umum seperti "proposal", "revisi", "laporan", "meeting") MEWARISI domain dari baris konteks dan tag catatan tersebut. JANGAN menarik istilah umum tersebut ke domain lain (misal: "deadline proposal" pada catatan yang memiliki konteks/tag tim kerja BUKAN merupakan tugas kuliah/akademik).
    - Saring catatan secara ketat: masukkan HANYA catatan yang secara hakiki sesuai dengan domain yang ditanyakan.
    - DILARANG memasukkan to-do/kegiatan dari domain lain hanya karena sama-sama memiliki tenggat waktu atau jam.
 
