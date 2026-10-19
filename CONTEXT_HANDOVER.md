@@ -477,15 +477,15 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
-### Z. Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
-1. **Persistent 2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
+### Z. Non-Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
+1. **2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
    - **Grid Simetris 2x2**:
      ```
      [ 📖 Read ] [ 🔄 Sync ]
      [ 🏷 Tags ] [ ⭐️ Pin ]
      ```
-   - **Fix Dock Auto-Minimizing**: Mengaktifkan `is_persistent: true` dan `resize_keyboard: true` sehingga tombol dock tetap terbuka di klien Telegram Desktop & Mobile tanpa perlu mengetik ulang `/dock`.
-   - **Menghapus Tombol `❌ Tutup Menu`**: Mengeliminasi risiko keyboard terhapus secara permanen dari UI klien karena aksi `remove_keyboard`.
+   - **Non-Persistent (Dapat Ditutup Bebas)**: `is_persistent` dinonaktifkan agar pengguna dapat menutup/meminimalkan atau membuka kembali dock secara alami melalui kontrol keyboard bawaan Telegram (ikon keyboard / swipe), tanpa mengunci UI layar.
+   - **Tanpa Tombol "Tutup Dock"**: Tidak lagi memerlukan tombol `❌ Tutup Menu` khusus yang memakan ruang baris.
 2. **Background Non-Blocking Sync Engine (`src/lib/telegram-handler.ts`)**:
    - **Respon Instan (<200ms)**: Menghapus synchronous blocking barrier (`syncInProgressSet` tidak lagi menolak pesan user/callback). Saat tombol `🔄 Sync` ditekan, bot langsung merespons pesan awal:
      `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`
