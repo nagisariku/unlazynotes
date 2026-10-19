@@ -3,6 +3,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { VALID_SOURCES, CATEGORIES, type Source } from '../../constants';
 import { sanitizeTags, normalizeTag, BANNED_TAGS } from '../sanitizer';
 import { type NoteTagResult } from '../types';
+import { routeNoteIntent } from '../router';
 import type { NoteCategory } from '@/db/schema';
 
 /**
@@ -16,177 +17,89 @@ import type { NoteCategory } from '@/db/schema';
  * 6. OTHERS / RANDOM-YAP: Non-action thoughts, opinions, raw ideas, health symptoms, and rants.
  */
 export function normalizeCategory(rawCat: string | undefined, content: string): NoteCategory {
-  const lower = content.toLowerCase().trim();
+  const text = content.trim();
+  const lower = text.toLowerCase();
 
-  // 1. Explicit Todo Checkbox Prefix or strong task override (e.g. "- [ ] review: https://..." or "harus ... buat ujian: https://...")
-  if (
-    lower.startsWith('- [ ]') ||
-    lower.startsWith('[ ]') ||
-    lower.startsWith('todo:') ||
-    ((lower.startsWith('harus ') || lower.startsWith('jangan lupa ')) && /\b(ujian|exam|tugas|pr)\b/i.test(lower))
-  ) {
+  // 1. Enforce Absolute Invariants:
+  // Explicit Todo Checkbox Prefix
+  if (lower.startsWith('- [ ]') || lower.startsWith('[ ]') || lower.startsWith('todo:')) {
     return 'todo';
   }
 
-  // 2. URL -> Bookmark
-  const hasUrl = /(https?:\/\/[^\s]+)/i.test(content);
-  if (hasUrl) {
+  // Pure URL without extra commentary -> always bookmark
+  const urlRegex = /(https?:\/\/[^\s]+)/gi;
+  const strippedOfUrl = text.replace(urlRegex, '').trim();
+  const hasUrl = /(https?:\/\/[^\s]+)/i.test(text);
+  if (hasUrl && strippedOfUrl.length === 0) {
     return 'bookmark';
   }
 
-  // 3. Sensitive Credentials (Password, ATM PIN, Bank Account Number, Token, API Key, dan NIK/SIM dengan nomor)
-  const hasPureCredential =
-    /\b(password|passwd|pass|kata\s*sandi|sandi|pin(\s*atm)?|no\s*rek|nomor\s*rekening|rekening|token|api[_-]?key|secret|kredensial|credential|seed\s*phrase|ssh-ed\d+|ssh-rsa|private\s*key|ssid|wlan)(nya)?\b/i.test(lower) ||
-    /\b(password|pass|pin|token|secret|sandi)(nya)?\s*[:=]/i.test(lower) ||
-    lower.startsWith('pass:') ||
-    lower.startsWith('pin:') ||
-    lower.startsWith('token:') ||
-    lower.startsWith('secret:') ||
-    lower.startsWith('sandi:');
-
-  // ID documents (KTP, SIM, Paspor, NIK) ONLY trigger credential if accompanied by identity numbers/digits
-  const hasIdDocumentWithNumber =
-    /\b(nik|ktp|sim|paspor|passport)\b[^\n\r]*?\b\d{4,}\b/i.test(lower) ||
-    (/\b(no(mor)?\s*(ktp|nik|sim|paspor|passport)|nik(\s*ktp)?|nomor\s*identitas)\b/i.test(lower) && /\b\d{4,}\b/.test(lower));
-
-  const isCredential = hasPureCredential || hasIdDocumentWithNumber;
-
-  if (isCredential) {
-    return 'credential';
-  }
-
-  // 4. Schedule (Specific date, hour, clock, or appointment)
-  const isSchedulePattern =
-    /\b(jam|pukul)\s*\d+([.:]\d+)?(\s*(pagi|siang|sore|malam|wib|wita|wit|am|pm))?\b/i.test(lower) ||
-    /\b\d+([.:]\d+)\s*(am|pm|wib|wita|wit)\b/i.test(lower) ||
-    /\b(besok|lusa|kemarin)\s+(pagi|siang|sore|malam|jam|pukul)\b/i.test(lower) ||
-    /\b(tanggal|tgl)\s+\d{1,2}\b/i.test(lower) ||
-    /\b\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)\b/i.test(lower) ||
-    /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\s+\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)\b/i.test(lower) ||
-    (/\b(flight|terbang|berangkat)\s+(senin|selasa|rabu|kamis|jumat|sabtu|minggu|\d{1,2}\s+[a-z]+)\b/i.test(lower)) ||
-    (/\b(meeting|rapat|sync|call)\b/i.test(lower) && /\b(jam|pukul|\d+[:.]\d+|\d+\s*sore|\d+\s*pagi|\d+\s*siang|\d+\s*malam)\b/i.test(lower));
-
-  const hasCurrencySuffix = /\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak|usd|dollar|dollars|sgd|eur|gbp)\b/i.test(lower);
-  const hasCurrencyPrefix = /(\$|rp\.?|idr|usd|sgd|eur|gbp)\s*\d+/i.test(lower);
-  const hasThousandsSeparator = /\b\d{1,3}([.,]\d{3})+(\s*(via|pake|qris|cash|transfer|debit|kredit))?\b/i.test(lower);
-
-  if (isSchedulePattern && !hasCurrencySuffix && !hasCurrencyPrefix && !hasThousandsSeparator) {
-    return 'schedule';
-  }
-
-  // 5. Finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH nominal price/amount
-  const isHealthMetric = /\b\d+\s*(mg|ml|tablet|kapsul|gram)\b/i.test(lower);
-  const isWorkoutMetric = /\b\d+\s*(kg|reps|set)\b/i.test(lower);
-  const isPostalCode = /\b(kodepos|kode\s*pos|pos\s*code|zip\s*code)\s*\d+\b/i.test(lower);
-
-  const hasDebtPattern =
-    /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
-    (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
-
-  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan|qris|cash|patungan)\b/i.test(lower);
-  const hasItemWithNumber = /\b(cimin|cilok|tahu|martabak|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting|cursor)\s+.*(\$|rp)?\d+/i.test(lower);
-
-  const isFinance =
-    !isHealthMetric &&
-    !isWorkoutMetric &&
-    !isPostalCode &&
-    (
-      hasCurrencySuffix ||
-      hasCurrencyPrefix ||
-      hasThousandsSeparator ||
-      hasDebtPattern ||
-      hasItemWithNumber ||
-      (hasFinanceVerb && (/\b\d+\b/.test(lower) || hasThousandsSeparator))
-    );
-
-  if (isFinance) {
-    return 'finance';
-  }
-
-  // 6. SCRIPTURE / QUOTES / PRAYERS / REFLECTIONS -> 'reference' or 'draft' (NEVER Todo!)
-  const isArabicScript = /[\u0600-\u06FF]/.test(content);
-  const isScriptureOrQuote =
-    isArabicScript ||
-    /\b(surah|qs\b|q\.s\b|ayat|al-qur'?an|quran|hadits|hadist|rasulullah|allah|bismillah|alhamdulillah|doa|quote|kutipan|pepatah|filosofi|renungan|refleksi|asy-syarh|ash-sharh|al-baqarah|al-fatihah)\b/i.test(lower);
-
-  if (isScriptureOrQuote && !lower.startsWith('- [ ]') && !lower.startsWith('todo:')) {
-    return content.length > 250 ? 'draft' : 'reference';
-  }
-
-  // Multi-line shopping list without prices is strictly TODO (e.g. "beli kemeja putih uniqlo \n stok sabun biore \n obat tetes mata rohto")
-  const isShoppingList =
-    /\b(beli|stok|belanja|pesen|pesan|order)\b/i.test(lower) &&
-    (content.includes('\n') || /\b(dan|serta|stok)\b/i.test(lower));
-
-  // 7. Non-Action Health, Workout, and Raw Idea Guards -> others (NOT todo, UNLESS shopping list!)
-  const isHealthLog = /\b(migrain|pusing|demam|flu|batuk|pilek|maag|mual|paracetamol|panadol|bodrex|tolak\s*angin|obat|vitamin|apotek)\b/i.test(lower);
-  const isWorkoutLog = /\b(squat|bench-press|deadlift|workout|gym|leg\s*day|pushup|pullup)\b/i.test(lower);
-  const isRawIdea = /\b(ide\s+konten|ide\s+fitur|ide\s+aplikasi|ide\s+bisnis|ide\s+video|ide\s+tulisan|kepikiran)\b/i.test(lower) || lower.startsWith('ide: ') || lower.startsWith('ide :') || lower.startsWith('ide ');
-
-  if (!isShoppingList && (isHealthLog || isWorkoutLog || isRawIdea) && !lower.startsWith('- [ ]') && !lower.startsWith('todo:') && !/\b(harus|wajib|jangan lupa)\b/i.test(lower)) {
-    return 'others';
-  }
-
-  // 8. Todo Intent: Actions, tasks, commands, or communications without specific calendar/clock times
-  const isCommunicationTask = /\b(chat|telepon|telpon|wa|whatsapp|tanya|hubungi|dm|email|follow up|call)\s+[a-z0-9_-]+/i.test(lower);
-  const isActionTask =
-    isShoppingList ||
-    lower.startsWith('todo') ||
-    lower.startsWith('task') ||
-    /\b(harus|wajib|jangan lupa|ingat|kerjakan|tugas|pr|deadline|homework|chores|beli|cek|revisi|kirim|bereskan|pelajari|siapkan|pesen|pesan|order|cari|carikan|bandingin|bandingkan|compare|riset|research|survey|survei|analisa|analisis|perpanjang|urus|bawa|ambil|fotokopi)\b/i.test(lower) ||
-    (/\b(belajar|study|kuliah|review|prepare)\b/i.test(lower) && /\b(ujian|exam|uts|uas|kuis|quiz|tes|besok|minggu depan|midterm|finals)\b/i.test(lower));
-
-  if (isCommunicationTask || isActionTask) {
-    return 'todo';
-  }
-
-  // 9. Curhat, Shower Thoughts & Life Musings without action -> 'random-yap' (NOT others!)
-  const isCurhatOrShowerThought =
-    /\b(kadang mikir|kepikiran|kenapa ya|heran|curhat|uneg-uneg|capek banget|males banget|kok bisa|shower thought|renungan|kenapa orang|ngapain ya)\b/i.test(lower);
-
-  if (isCurhatOrShowerThought) {
-    return 'random-yap';
-  }
-
-  // If rawCat from LLM was provided, map synonyms or use it
+  // 2. Jika rawCat ada, percayai LLM (Claude Haiku 5.5) dan petakan sinonim ke 9 kategori baku:
   if (rawCat) {
     const c = rawCat.toLowerCase().trim();
-    if (c === 'bookmark' && !hasUrl) {
-      return lower.includes('kodepos') ? 'reference' : 'others';
+
+    // Mapping sinonim LLM
+    if (['todo', 'task', 'tasks', 'action', 'actions', 'checklist', 'backlog', 'chores', 'job'].includes(c)) {
+      return 'todo';
     }
-    if (['rant', 'thought', 'yap', 'shower-thought', 'curhat', 'uneg-uneg', 'opini', 'random-yap'].includes(c)) {
+    if (['finance', 'expense', 'expenses', 'spending', 'income', 'money', 'bill', 'bills', 'payment', 'transaksi'].includes(c)) {
+      return 'finance';
+    }
+    if (['schedule', 'event', 'events', 'appointment', 'calendar', 'meeting', 'jadwal'].includes(c)) {
+      return 'schedule';
+    }
+    if (['random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought', 'uneg-uneg', 'opini'].includes(c)) {
       return 'random-yap';
     }
+    if (['bookmark', 'link', 'url', 'web', 'site'].includes(c)) {
+      return 'bookmark';
+    }
+    if (['credential', 'password', 'passwords', 'secret', 'secrets', 'auth', 'token', 'token-key'].includes(c)) {
+      return 'credential';
+    }
+    if (['draft', 'writing', 'article', 'doc', 'docs', 'spec', 'specification', 'document'].includes(c)) {
+      return 'draft';
+    }
+    if (['reference', 'recipe', 'quote', 'quotes', 'snippet', 'documentation', 'scripture'].includes(c)) {
+      return 'reference';
+    }
+    if (['others', 'other', 'idea', 'ideas', 'konsep', 'log'].includes(c)) {
+      return 'others';
+    }
+
     if (CATEGORIES.includes(c as NoteCategory)) {
       return c as NoteCategory;
     }
-    if (['food', 'expense', 'expenses', 'spending', 'purchase', 'bill', 'income', 'money', 'payment', 'transaksi'].includes(c)) {
-      return 'finance';
-    }
-    if (['task', 'todo', 'checklist', 'action', 'plan', 'wishlist', 'shopping', 'activity'].includes(c)) {
-      return 'todo';
-    }
-    if (['calendar', 'meeting', 'event', 'appointment', 'deadline', 'jadwal'].includes(c)) {
-      return 'schedule';
-    }
-    if (['link', 'url', 'web', 'site'].includes(c)) {
+  }
+
+  // 3. Fallback Heuristik (HANYA jika LLM gagal atau mengembalikan nilai aneh):
+  const fallbackModule = routeNoteIntent(content);
+  switch (fallbackModule) {
+    case 'bookmark':
       return 'bookmark';
-    }
-    if (['password', 'pin', 'secret', 'auth', 'token', 'credential'].includes(c)) {
+    case 'credential':
       return 'credential';
-    }
-    if (['draft', 'writing', 'article', 'document'].includes(c)) {
-      return 'draft';
-    }
-    if (['recipe', 'quote', 'snippet', 'documentation'].includes(c)) {
-      return 'reference';
-    }
-    if (['idea', 'konsep'].includes(c)) {
+    case 'schedule':
+      return 'schedule';
+    case 'finance':
+      return 'finance';
+    case 'todo':
+      return 'todo';
+    case 'general':
+    default: {
+      const isArabic = /[\u0600-\u06FF]/.test(content);
+      const isScripture = isArabic || /\b(surah|qs\b|q\.s\b|ayat|al-qur'?an|quran|hadits|hadist|rasulullah|allah|bismillah|alhamdulillah|doa|quote|kutipan)\b/i.test(lower);
+      if (isScripture) return text.length > 250 ? 'draft' : 'reference';
+
+      if (text.length > 200 || /^#{1,6}\s+/m.test(text) || text.includes('\n#')) return 'draft';
+
+      if (/\b(kadang mikir|kepikiran|kenapa ya|heran|curhat|uneg-uneg|capek banget|males banget|kok bisa|shower thought|renungan)\b/i.test(lower)) {
+        return 'random-yap';
+      }
+
       return 'others';
     }
   }
-
-  return 'others';
 }
 
 /**
@@ -401,12 +314,11 @@ export function enrichDualLayerTags(
     if (/\bfitur\b/i.test(lower)) domainEntities.push('fitur');
   }
 
-  // 9. Credential Domain
-  if (category === 'credential' || /\b(no\s*rek|nomor\s*rekening|rekening|pin\s*atm|pin|password|wifi|token|kredensial)\b/i.test(lower)) {
+  // 9. Credential Domain (HANYA jika category === 'credential')
+  if (category === 'credential') {
     if (/\bbca\b/i.test(lower)) domainEntities.push('bca');
     if (/\b(rekening|no\s*rek|nomor\s*rekening)\b/i.test(lower)) domainEntities.push('rekening');
     if (/\batm\b/i.test(lower)) domainEntities.push('atm');
-    if (/\bpin\b/i.test(lower)) domainEntities.push('pin');
     if (/\bwifi\b/i.test(lower)) domainEntities.push('wifi');
     if (/\badmin\b/i.test(lower)) domainEntities.push('admin');
     if (/\bdashboard\b/i.test(lower)) domainEntities.push('dashboard');
@@ -415,6 +327,7 @@ export function enrichDualLayerTags(
     if (/\bsim\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) domainEntities.push('sim');
     if (/\bpaspor\b/i.test(lower) && /\b\d{4,}\b/.test(lower)) domainEntities.push('paspor');
   }
+  if (/\bpin\b/i.test(lower)) domainEntities.push('pin');
 
   // 10. Scripture & Quotes Domain (Quran, Hadith, Doa, Philosophy, Quotes)
   const isArabicScript = /[\u0600-\u06FF]/.test(content);
@@ -458,6 +371,27 @@ export function enrichDualLayerTags(
   if (/\bpolres\b/i.test(lower)) domainEntities.push('polres');
   if (/\bsim\b/i.test(lower) && !/\b\d{4,}\b/.test(lower)) domainEntities.push('sim');
   if (/\bktp\b/i.test(lower) && !/\b\d{4,}\b/.test(lower)) domainEntities.push('ktp');
+
+  // 13. Dev, Cultural, and Fitness/Step Entities
+  if (/\bunlazynotes\b/i.test(lower)) {
+    domainEntities.push('unlazynotes');
+    if (!domainUmbrellas.includes('tech')) domainUmbrellas.push('tech');
+  }
+  if (/\b(kajian|pengajian)\b/i.test(lower)) {
+    domainEntities.push('kajian');
+  }
+  if (/\bmaghrib\b/i.test(lower)) {
+    domainEntities.push('maghrib');
+  }
+  if (/\bjogging\b/i.test(lower)) {
+    domainEntities.push('jogging');
+  }
+  if (/\b(langkah|steps?)\b/i.test(lower)) {
+    domainEntities.push('langkah');
+    if (!domainUmbrellas.includes('workout') && !domainUmbrellas.includes('health')) {
+      domainUmbrellas.push('workout');
+    }
+  }
 
   // Candidate dishes/snacks and transit
   const dishCandidates = [
@@ -623,7 +557,7 @@ export async function processGeneralNote(
   existingUserTags?: string[]
 ): Promise<NoteTagResult> {
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
+  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
 
   if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
     return heuristicFallback(content);
@@ -652,17 +586,18 @@ Analyze the user's note and return a strict JSON object with:
 2. "specific_tags": 3 to 5 domain-aware tags (lowercase-with-hyphens).
 3. "source": detected platform source string or null.
 
-PRIMARY INTENT CATEGORIES:
-- bookmark: Any note containing HTTP/HTTPS link(s), whether pure URL or accompanied by commentary/caption.
-- credential: Sensitive private credentials: Password, PIN ATM, Bank Account Number (no rek), Token/API Key.
-  CRITICAL ID CARD GUARD: Words like "ktp", "sim", "paspor", "passport", "nik" ONLY trigger "credential" if accompanied by actual identity numbers/digits. Administrative tasks or procedures (e.g. "perpanjang sim a... bawa fotokopi ktp", "urus paspor") are actionable tasks and MUST be classified as "todo", NOT "credential"!
-- finance: Actual financial transactions, purchases, spending, bills, income, or debt/loans WITH explicit nominal amount/price. MUST ALWAYS retain the specific entity as Tag 1 (e.g. "cimin 12k" -> ["cimin", "food"]).
-- schedule: Notes that have a specific calendar date, day, clock time, or relative calendar anchor (e.g., 'tanggal 16', '16 okt', 'meeting jam 14.00', 'besok sore ke dokter', 'flight rabu depan', 'demo produk client selasa jam 10 pagi', 'nonton avatar di cgv sabtu malam jam 21.15'). Even without a clock hour, any note with an explicit calendar date MUST be categorized as 'schedule' (NOT 'todo'). Note: Non-meeting schedules like cinema/movies MUST NOT be tagged as 'meeting'; use 'entertainment'!
-- todo: Action tasks, commands, chores, food orders, multi-line shopping lists, or research/comparison tasks (e.g. "cari info...", "bandingin harga...", "survei...", "perpanjang sim...", "urus berkas...").
-- random-yap: Casual thoughts, uneg-uneg, venting, shower thoughts, and life musings without action (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...", "kenapa ya tiap senin rasanya...", "curhat capek banget..."). WAJIB use "random-yap" (NOT "others") for personal reflections, curhat, and shower thoughts!
-- reference: Religious scriptures, Quranic verses, hadith, prayers (doa), quotes, recipes, code snippets. SCRIPTURES & QUOTES ARE NEVER TODO!
-- draft: Long reflections (>250 chars), essays, unformatted articles, speech transcripts.
-- others: Specific non-action structured logs: health symptoms & medication logs (e.g. "migrain minum paracetamol"), gym/workout logs ("squat 60kg"), raw feature/business ideas ("ide fitur: ...").
+PRIMARY INTENT CATEGORIES (Classify strictly by user's CORE SEMANTIC INTENT, regardless of casual or unformatted writing style):
+- todo: Segala catatan yang hakikatnya berupa aksi, tugas, pekerjaan, perintah, instruksi teknis/pembangunan (dev tasks), pesanan, follow-up, atau daftar belanja yang harus ditindaklanjuti. Berlaku untuk gaya penulisan APAPUN (kalimat santai, instruksi teknis, bullet list, catatan ringkas tanpa bullet, e.g. "bikin tombol share di detail notes unlazynotes", "unlazynotes: - latest notes up to 50 notes", "tambahin opsi pin untuk note penting", "pesen martabak", "chat rizky tanya proposal", "perpanjang sim a...").
+- finance: Segala catatan transaksi riil arus kas dompet user di dunia nyata (pengeluaran, pemasukan, utang-piutang, pembayaran, tagihan) yang memuat nominal harga/uang (e.g. "cimin 20k", "ubed minjem 100k", "subscription cursor 20 usd").
+  PENTING: Jika angka/harga muncul dalam konteks dokumen spesifikasi fitur, rencana tier harga SaaS (misal: "# SaaS Spec \n # free ... # pro $1/month"), jumlah langkah/olahraga ("10k langkah"), atau perbandingan spek barang, HAKIKATNYA adalah draft, todo, atau others, BUKAN finance!
+- schedule: Segala kegiatan yang terikat pada titik waktu pelaksanaan (jam spesifik, tanggal kalender, hari, waktu ibadah/kultural seperti sholat/maghrib/kajian e.g. "ba'da maghrib ada kajian", maupun periode relatif seperti nanti sore, besok malam, minggu depan e.g. "nanti sorean mau jogging").
+- credential: Brankas penyimpanan nilai rahasia aktual (password akun, PIN kartu/ATM, nomor rekening bank, token/API key, private key).
+  PENTING: Penyebutan nama fitur (seperti "pin note", "tambahin opsi pin untuk note penting", "fitur password") atau tugas mengganti/memperpanjang tanpa mencantumkan nilai rahasia BUKAN credential (masuk ke todo)!
+- draft: Dokumen terstruktur, spesifikasi fitur produk, rancangan arsitektur, esai, tulisan panjang (>200 karakter).
+- reference: Rujukan statis, kutipan, ayat suci (Quran, hadits, doa), resep masakan, kode pemrograman referensi. SCRIPTURES & QUOTES ARE NEVER TODO!
+- bookmark: Tautan URL/link yang ingin disimpan atau dibaca (baik URL murni maupun dengan teks pengantar).
+- random-yap: Curahan hati, uneg-uneg, keluhan, renungan santai, shower thoughts tanpa aksi (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...").
+- others: Log terstruktur non-aksi spesifik: gejala kesehatan & obat, catatan repetisi gym/workout ("leg day 4 set squat 60kg", "10k langkah keliling komplek"), ide bisnis/fitur mentah.
 
 CORE TAGGING PRINCIPLES:
 0. Concrete Domain Entity Rule (Strict Anti-Meta):
@@ -719,20 +654,28 @@ Examples:
    - "demo produk client selasa jam 10 pagi" -> {"category": "schedule", "specific_tags": ["demo", "meeting", "client"]}
    - "coffee break with client discuss Q4 roadmap jam 4 sore" -> {"category": "schedule", "specific_tags": ["q4-roadmap", "meeting", "client"]}
    - "meeting desain jam 3 sore" -> {"category": "schedule", "specific_tags": ["desain", "meeting"]}
+   - "ba'da maghrib ada kajian" -> {"category": "schedule", "specific_tags": ["kajian", "maghrib"]}
+   - "nanti sorean mau jogging" -> {"category": "schedule", "specific_tags": ["jogging", "schedule"]}
 9. Debt & Multi-Entity Business Income (Finance):
    - "ubed minjem 100k" -> {"category": "finance", "specific_tags": ["ubed", "piutang"]}
    - "aku minjem 50k ke fajar" -> {"category": "finance", "specific_tags": ["fajar", "utang"]}
    - "dapet transferan dp website klien 2.5jt pt karya maju" -> {"category": "finance", "specific_tags": ["pt-karya-maju", "website", "client", "income"]}
 10. Communication & Tasks (Todo):
    - "chat rizky tanya proposal" -> {"category": "todo", "specific_tags": ["rizky", "proposal"]}
+   - "bikin tombol share di detail notes unlazynotes" -> {"category": "todo", "specific_tags": ["unlazynotes", "fitur", "tech"]}
+   - "unlazynotes: - latest notes up to 50 notes" -> {"category": "todo", "specific_tags": ["unlazynotes", "notes", "tech"]}
+   - "tambahin opsi pin untuk note penting" -> {"category": "todo", "specific_tags": ["pin", "fitur", "todo"]}
 11. Bookmarks:
    - "https://medium.com/p/123 bacaan devops bagus" -> {"category": "bookmark", "specific_tags": ["medium", "devops"]}
    - "https://youtu.be/xyz referensi animasi web" -> {"category": "bookmark", "specific_tags": ["youtube", "animasi", "referensi"]}
 12. Health, Workout & Ideas (Others):
    - "migrain minum paracetamol" -> {"category": "others", "specific_tags": ["health", "migrain", "paracetamol"]}
    - "leg day 4 set squat 60kg" -> {"category": "others", "specific_tags": ["workout", "gym", "squat"]}
+   - "10k langkah keliling komplek" -> {"category": "others", "specific_tags": ["langkah", "workout", "health"]}
    - "ide konten tiktok soal app fatigue" -> {"category": "others", "specific_tags": ["idea", "tiktok", "app-fatigue"]}
    - "ide fitur: voice note transcription" -> {"category": "others", "specific_tags": ["idea", "fitur", "voice-note"]}
+13. SaaS Specs & Architectural Pricing Tiers (DRAFT, NEVER Finance):
+   - "# SaaS Architecture & Pricing\n# free\n# pro $1/month" -> {"category": "draft", "specific_tags": ["saas", "pricing", "draft"]}
 
 Formatting:
 - Output JSON ONLY.

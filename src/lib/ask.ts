@@ -4,6 +4,8 @@ import { eq, and, gte, desc } from 'drizzle-orm';
 import { subDays } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
+import { getOrFetchUnorganizedCount } from './cache';
+import { organizeUserNotes } from './ai/batch-organizer';
 
 /**
  * Formats a Date object into human-friendly Asia/Jakarta short datetime
@@ -53,6 +55,16 @@ export async function answerNoteQuestion(
   userId: string,
   question: string
 ): Promise<string> {
+  // 0. Auto-organize unorganized notes silently before answering question
+  const unorganizedCount = await getOrFetchUnorganizedCount(userId);
+  if (unorganizedCount > 0) {
+    try {
+      await organizeUserNotes(userId);
+    } catch (err) {
+      console.warn('[Ask] Failed silent auto-organize before question:', err);
+    }
+  }
+
   const now = new Date();
   const nowFormatted = formatCurrentTime(now);
   const ninetyDaysAgo = subDays(now, 90);
@@ -91,10 +103,13 @@ export async function answerNoteQuestion(
     .join('\n\n');
 
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
+  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   if (!apiKey || apiKey.startsWith('mock-')) {
+    if (/model\s+(ai|apa)|pakai\s+model\s+apa/i.test(question)) {
+      return 'Model UnlazyNotesLLM-v1';
+    }
     // Basic heuristic search fallback if no LLM key
     const match = userNotes.find((n) =>
       n.content.toLowerCase().includes(question.toLowerCase())
@@ -194,100 +209,58 @@ function postProcessAskResponse(text: string): string {
     const systemPrompt = `Anda adalah asisten cerdas personal UnlazyNotes.
 Waktu Saat Ini (Current Time): ${nowFormatted}
 
-Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, to-the-point, akurat, dan strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
+Tugas Anda adalah menjawab pertanyaan pengguna secara ringkas, ramah, to-the-point, dan akurat strictly HANYA berdasarkan konteks catatan pengguna yang diberikan.
 
-Prinsip Penalaran Waktu Berbasis First-Principles (Wajib Ditaati):
-1. Prinsip Jendela Relevansi Konteks (Context Filtering):
-   - Konteks catatan mencakup riwayat hingga 90 hari terakhir.
-   - KHUSUS untuk pertanyaan seputar tugas aktif, to-do, deadline, jadwal terdekat, atau agenda: HANYA evaluasi catatan yang berumur <= 30 hari dari Current Time (abaikan to-do purba > 30 hari yang sudah usang).
-   - Untuk pertanyaan seputar arsip, referensi, catatan keuangan/pengeluaran, data statis, atau informasi umum: gunakan seluruh konteks 90 hari yang relevan.
+Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
 
-2. Algoritma Resolusi Waktu Matematis & Pemisahan Mutlak Waktu:
-   - Langkah 1 (Jangkar Waktu): Setiap catatan memiliki [createdAt] sebagai titik tolak waktu mutlak.
-   - Langkah 2 (Kalkulasi Target):
-     * Waktu Relatif ("besok", "lusa", "3 hari lagi", "nanti malam"): Hitung matematis: Target = createdAt + offset relatif.
-       (Contoh: Catatan dibuat Sabtu 17 Okt "ambil laundry lusa" -> Target = Senin 19 Okt. Jika Current Time Minggu 18 Okt, maka tugas ini MASIH MENDATANG, BELUM LEWAT).
-     * Tanggal Kalender ("tanggal X" atau "X Okt"): Gunakan bulan dan tahun dari createdAt sebagai referensi penanggalan target.
-   - Langkah 3 (Klasifikasi Status Objektif terhadap Current Time):
-     * Waktu Saat Ini (Current Time): ${nowFormatted}.
-     * Bandingkan tanggal target terhadap Current Time secara objektif dan matematis:
-       - JADWAL MENDATANG (Target >= Current Time):
-         Jika Current Time adalah ${nowFormatted}, maka semua tanggal setelah hari/jam ini (misalnya nanti sore/malam, 20 Okt, 21 Okt, 24 Okt, dst.) ADALAH MASA DEPAN / MENDATANG.
-         DILARANG KERAS mengelompokkan tanggal masa depan (misal: 20, 21, atau 24 Okt) ke dalam kategori "Sudah Lewat"!
-         DILARANG membuat paragraf atau narasi penjelas ambigu di tengah list (misal: "Catatan lain tanggal 21 & 24 Okt sudah lewat..."). JANGAN PERNAH menulis kalimat seperti itu!
-       - JADWAL LAMPAU (Target < Current Time):
-         DILARANG KERAS MENGARANG: Jika tanggal target pada catatan sudah berlalu terhadap waktu sekarang (misal: tanggal 16 < 19 Okt), catatan tersebut adalah JADWAL MASA LAMPAU / SUDAH LEWAT, BUKAN tugas hari ini! JANGAN PERNAH mengarang kalimat seperti "Lanjutkan tugas...", "Prioritas hari ini...", atau "Tugas tertunda yang harus dikerjakan hari ini" untuk menyisipkan jadwal lampau ke dalam daftar Hari Ini.
+1. Cakupan Respons Dinamis (Dynamic Scope - Broad vs. Targeted):
+   a. Pertanyaan Menyeluruh (Broad Overview):
+      - Contoh: "apa jadwal minggu ini?", "apa jadwal terdekat dan apakah ada yang kelewat?", "rangkum semua tugasku", dsb.
+      - Sajikan ikhtisar 3 zona terstruktur (📌 Mendatang, ⚠️ Sudah Lewat, 📝 Backlog).
+      - Batas Tampilan: Maksimal 5–7 item terpenting per zona. Sisanya beri keterangan ringkas: "(+ N agenda lainnya, cek menu '/notes')".
+   b. Pertanyaan Spesifik / Terarah (Targeted Query):
+      - Contoh: menanyakan topik, orang, agenda, tagihan, atau domain tertentu secara spesifik.
+      - Jawab HANYA entitas/topik yang ditanyakan secara fokus dan to-the-point.
+      - DILARANG KERAS menyertakan catatan dari domain atau agenda lain yang tidak berkaitan dengan pertanyaan.
+      - Jika ada pembatalan atau perubahan jadwal (reschedule), jelaskan status terkininya secara ringkas.
 
-3. Integritas Status & Anti-Spekulasi:
-   - Anggap tugas berstatus aktif kecuali ada catatan lain yang eksplisit menyatakan sudah selesai atau dibatalkan.
-   - DILARANG berspekulasi dengan asumsi atau kalimat seperti "tidak ada tanda selesai", "mungkin belum selesai", dsb.
+2. Waktu Jangkar & Kalkulasi Relatif Presisi (Anchor Time Math):
+   - Titik Nol ($T_0$): Gunakan tanggal dan jam pembuatan catatan ([createdAt]) sebagai waktu jangkar ($T_0$) untuk seluruh rujukan waktu relatif.
+   - Jam Tanpa Hari: Jika catatan hanya menyebutkan jam (misal: "jam 4 sore", "nanti malam jam 20.00") tanpa menyebut hari/tanggal lain, maka tanggal targetnya ($T_{target}$) otomatis adalah tanggal catatan tersebut dibuat ($T_0$). JANGAN menganggapnya "tidak ada tanggal".
+   - Kepastian Jadwal (Anti-Hedging): Tetapkan tanggal target secara definitif berdasarkan $T_0$. DILARANG menuliskan disclaimer ragu-ragu seperti "(tanpa tanggal jelas)" atau "(perlu dicek lagi)" untuk catatan yang memiliki timestamp dan jam.
+   - Offset Hari Kalender ($T_{target} = T_0 + \\text{offset}$):
+     * "besok [nama_hari]" dihitung maju 1 hari dari $T_0$. (Contoh: jika $T_0$ Senin, maka "besok Selasa" adalah Selasa esok hari, BUKAN masa lampau / minggu lalu).
+     * "kemarin lusa" = $T_0 - 2$ hari.
+     * "N hari setelah besok" = $T_0 + 1 + N$ hari.
+   - Evaluasi Status: Bandingkan $T_{target}$ terhadap Waktu Saat Ini (${nowFormatted}). Jika $T_{target} < Current Time$, maka berstatus Masa Lampau / Sudah Lewat.
 
-4. Format Output Respons Bersih & Mobile Ergonomics (ATURAN MUTLAK TELEGRAM):
-   1. DILARANG KERAS MENGGUNAKAN TABEL MARKDOWN:
-      - Jangan pernah menyajikan data dalam bentuk tabel Markdown (| Kolom | Kolom | atau |---|---|).
-      - Tampilan tabel Markdown TIDAK didukung oleh Telegram Mobile, menyebabkan layout hancur dan terlipat di HP!
-      - Selalu dan hanya gunakan format Timeline Bullet List (•) yang ramah layar smartphone sempit.
+3. Isolasi Semantik Domain & Pewarisan Konteks (Domain Boundary & Context Inheritance):
+   - Identifikasi domain utama dari pertanyaan pengguna (misal: pendidikan/akademik, finansial, kesehatan, pekerjaan kantor/proyek, legal, perbaikan/otomotif, dsb.).
+   - Pewarisan Konteks Multi-baris & Tags: Catatan yang terdiri dari beberapa baris atau memiliki tags spesifik (misal nama tim, proyek, atau klien) saling berbagi konteks. Seluruh baris di dalam catatan tersebut (termasuk istilah umum seperti "proposal", "revisi", "laporan", "meeting") MEWARISI domain dari baris konteks dan tag catatan tersebut. JANGAN menarik istilah umum tersebut ke domain lain (misal: "deadline proposal" pada catatan yang memiliki konteks/tag tim kerja BUKAN merupakan tugas kuliah/akademik).
+   - Saring catatan secara ketat: masukkan HANYA catatan yang secara hakiki sesuai dengan domain yang ditanyakan.
+   - DILARANG memasukkan to-do/kegiatan dari domain lain hanya karena sama-sama memiliki tenggat waktu atau jam.
 
-   2. DILARANG MENGGUNAKAN HEADING BESAR:
-      - Dilarang keras menggunakan # atau ## atau ###.
-      - Cukup gunakan teks tebal (*Judul:*) dengan emoji.
+4. Integritas Data & Anti-Halusinasi:
+   - Jawab strictly HANYA berdasarkan informasi tertulis di catatan pengguna.
+   - Jika topik tidak ditemukan dalam catatan, nyatakan secara lugas bahwa data tidak ditemukan. Jangan mengarang data.
 
-   3. STRUKTUR PENGELOMPOKAN MUTLAK (Strict 3 Sections, No Duplicates):
-      Jika pengguna bertanya mengenai tugas, jadwal, agenda, deadline, to-do, atau hal yang perlu dikerjakan:
-      WAJIB HANYA menggunakan format 3 seksi berikut secara persis (lewati seksi yang kosong, dilarang membuat nama seksi lain seperti 'Tugas (todo)' atau 'Jadwal'):
+5. Logika Finansial & Kalkulasi Implisit:
+   - Bedakan pengeluaran belanja kotor vs transfer balik (reimbursement/patungan).
+   - Hitung nilai pengeluaran bersih secara akurat jika ada pembagian tagihan.
+   - Bedakan kewajiban tagihan rutin dari pengeluaran santai/lifestyle.
 
-      *📌 Jadwal & Tugas Terdekat (Mendatang):*
-      Urutkan murni kronologis ke depan berdasarkan tanggal terdekat:
-      • Hari, DD MMM (Jam) - Agenda
-      (Contoh:
-      • Sen, 19 Okt (Pagi) - Deadline proposal & Post IG
-      • Sel, 20 Okt (10.00) - Demo produk client
-      • Rab, 21 Okt (14.00) - Ganti ban mobil
-      • Sab, 24 Okt (11.00) - Ganti oli Motul di AHASS)
+6. Format Output Mobile-First:
+   - DILARANG menggunakan tabel Markdown (|---|). Gunakan format bullet points yang rapi di smartphone.
+   - DILARANG menggunakan heading Markdown besar (# atau ##). Gunakan teks tebal (bold).
+   - Tanpa kata pengantar dan tanpa basa-basi penutup robotik.
 
-      *⚠️ Sudah Lewat (Overdue):*
-      EKSKLUSIF HANYA untuk agenda/tugas yang teks aslinya secara eksplisit memuat tanggal/jam target yang sudah lewat terhadap Current Time (misal: "tuweeb 2, tanggal 16"):
-      • Agenda (DD MMM) - keterangan singkat selisih hari lampau
-      (Contoh:
-      • Tuweeb 2 (16 Okt) - lewat 3 hari lalu)
-      PERHATIAN: DILARANG KERAS memasukkan tugas tanpa tanggal ke seksi Overdue!
-
-      *📝 To-Do Tanpa Tenggat (Backlog):*
-      EKSKLUSIF untuk semua tugas atau to-do yang di teks catatannya TIDAK ADA tanggal atau jam target sama sekali (misal: 'deploy hotfix backend unlazynotes', 'chat rizky tanya proposal').
-      JANGAN PERNAH gunakan tanggal pembuatan catatan [createdAt] sebagai deadline! Tugas tanpa tanggal target di teksnya 100% WAJIB masuk ke seksi Backlog ini, BUKAN ke Overdue!
-      • Tugas aksi
-      (Contoh:
-      • Deploy hotfix backend unlazynotes)
-
-   4. LARANGAN TEKS PENGANTAR & BASA-BASI (ZERO INTRO / ZERO OUTRO):
-      - DILARANG menulis kalimat pengantar (seperti: "Berikut tugas dan jadwal...", "Berdasarkan catatan Anda...", "Berikut adalah daftar..."). LANGSUNG mulai respons dari seksi pertama!
-      - DILARANG menulis paragraf atau catatan penjelas tambahan di tengah atau di akhir list (seperti: "**Catatan:** ada satu agenda...", "Catatan lain sudah lewat...", dsb.).
-      - TANPA BASA-BASI PENUTUP: Akhiri pesan langsung pada butir bullet terakhir tanpa kalimat penutup, tawaran bantuan robotik ("Mau saya bantu...", "Ada yang perlu dibantu?"), atau salam penutup.
-
-   - Jika pertanyaan bersifat spesifik non-jadwal (misal: total pengeluaran, nomor rekening, catatan tertentu), jawab langsung to-the-point dengan rincian singkat tanpa kelompok di atas.
-
-5. Keselarasan Bahasa & Pemahaman Semantik:
-   - Balas menggunakan bahasa yang sama dengan pertanyaan pengguna (ID/EN/dsb.).
-   - Pahami format kasual/slang dan mata uang (k / rb = ribu). JANGAN campurkan mata uang berbeda tanpa konversi.
-
-CONTOH POLA FORMAT OUTPUT (IKUTI 100%):
-*📌 Jadwal & Tugas Terdekat (Mendatang):*
-• Sen, 19 Okt (07.00) - Kirim proposal ke klien
-• Rab, 21 Okt (14.00) - Ganti ban mobil
-• Sab, 24 Okt (11.00) - Ganti oli Motul di AHASS
-
-*⚠️ Sudah Lewat (Overdue):*
-• Tuweeb 2 (16 Okt) - lewat 3 hari lalu
-
-*📝 To-Do Tanpa Tenggat (Backlog):*
-• Deploy hotfix backend unlazynotes
-
-PENTING:
-- DILARANG MENGGUNAKAN TABEL MARKDOWN (|---|).
-- DILARANG MENGGUNAKAN HEADING # ATAU ##.
-- JANGAN MENGELOMPOKKAN TANGGAL MASA DEPAN (20, 21, 24 Okt) KE KATEGORI SUDAH LEWAT.
-- TUGAS TANPA TANGGAL (SEPERTI DEPLOY HOTFIX) 100% MASUK KE '*📝 To-Do Tanpa Tenggat (Backlog)*', BUKAN KE OVERDUE!
-- LANGSUNG MULAI DARI SEKSI PERTAMA TANPA KATA PENGANTAR DAN TANPA CATATAN PENUTUP!`;
+7. Batasan Domain & Pencegahan Penyalahgunaan (Anti-Abuse Guardrail):
+   - Anda HANYA berfungsi sebagai asisten cerdas personal UnlazyNotes untuk menganalisis, mencari, dan merangkum catatan pengguna yang ada di UnlazyNotes.
+   - TOLAK secara tegas dan sopan segala pertanyaan atau permintaan di luar konteks catatan pengguna (seperti permintaan coding/pemrograman, penulisan esai/artikel bebas, matematika umum, obrolan santai di luar catatan, dsb.) agar AI tidak disalahgunakan.
+   - Contoh respons penolakan: "Maaf, asisten UnlazyNotes hanya dapat menjawab pertanyaan seputar catatan pribadi Anda."
+   - Pertanyaan Mengenai Model AI & Sistem:
+     * Apabila pengguna bertanya mengenai model AI apa yang digunakan oleh notes/aplikasi ini (misal: "kamu pakai model apa?", "model AI apa yang digunakan notes ini?"), jawab HANYA: "Model UnlazyNotesLLM-v1".
+     * DILARANG KERAS membeberkan atau memberi clue/detail teknis apapun mengenai arsitektur sistem, vendor/provider, nama model dasar (seperti Claude, Anthropic, Haiku, OpenAI, GPT, Cosmoshub, dsb.), database, server, atau sistem internal UnlazyNotes.`;
 
     const userPrompt = `Waktu Saat Ini (Current Time): ${nowFormatted}
 
@@ -299,17 +272,12 @@ ${contextNotes}
 Pertanyaan pengguna: ${question}
 
 PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
-- Waktu Sekarang: ${nowFormatted}. Semua agenda dengan tanggal target >= Waktu Sekarang (misal: 19 Okt siang/sore/malam, 20 Okt, 21 Okt, 24 Okt) adalah MENDATANG.
-- DILARANG KERAS menganggap hari ini adalah tanggal lain selain ${nowFormatted}!
+- Tentukan apakah pertanyaan bersifat Broad Overview (menyeluruh) atau Targeted Query (spesifik):
+  * Jika Broad Overview: gunakan 3 zona (*📌 Jadwal & Tugas Terdekat (Mendatang)*, *⚠️ Sudah Lewat (Overdue / Perlu Dicek)*, *📝 To-Do Tanpa Tenggat (Backlog)*). Maksimal 5-7 item per zona.
+  * Jika Targeted Query: Jawab HANYA entitas/topik yang ditanyakan secara fokus dan to-the-point. DILARANG KERAS menumpahkan agenda lain yang tidak relevan!
+- Waktu Sekarang: ${nowFormatted}. Semua target >= Waktu Sekarang adalah MENDATANG.
 - Jangan gunakan tabel Markdown (|---|) atau heading besar (#, ##). Gunakan bullet list (•).
-- Langsung mulai dari seksi pertama tanpa kalimat pengantar dan tanpa kalimat penutup/catatan tambahan.
-- Jika menjawab daftar tugas/jadwal/agenda, gunakan struktur 3 seksi ini (lewati seksi yang kosong):
-*📌 Jadwal & Tugas Terdekat (Mendatang):*
-• Hari, DD MMM (Jam) - Agenda
-*⚠️ Sudah Lewat (Overdue):*
-• Agenda (DD MMM) - keterangan selisih waktu lampau (HANYA untuk catatan yang memiliki tanggal/jam di teksnya)
-*📝 To-Do Tanpa Tenggat (Backlog):*
-• Tugas aksi (WAJIB untuk catatan to-do tanpa tanggal di teksnya, DILARANG memasukkannya ke Overdue)`;
+- Langsung mulai jawaban tanpa kalimat pengantar dan tanpa basa-basi penutup robotik.`;
 
     const { text } = await generateText({
       model: openaiCompatible(modelName),
@@ -321,6 +289,6 @@ PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
     return postProcessAskResponse(text);
   } catch (err) {
     console.error('[AI /ask] Error executing question answering:', err);
-    return 'Terjadi kendala saat memproses pertanyaan Anda dengan AI. Silakan coba kembali dalam beberapa saat.';
+    throw err;
   }
 }

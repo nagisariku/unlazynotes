@@ -225,6 +225,55 @@ const TEST_MATRIX: TestCase[] = [
     forbiddenTags: ['others', 'bandingin', 'bandingkan', 'finance'],
     description: 'Tuning 4: Comparison task without specific amount is TODO (NOT finance/others)',
   },
+
+  // --- Real-World Human Writing Style & Semantic Intent Refactor Cases ---
+  {
+    input: 'bikin tombol share di detail notes unlazynotes',
+    expectedCat: 'todo',
+    expectedTags: ['unlazynotes'],
+    forbiddenTags: ['others', 'bikin'],
+    description: 'Human Style 1: Dev task in free natural language -> todo (NOT others)',
+  },
+  {
+    input: 'unlazynotes: - latest notes up to 50 notes',
+    expectedCat: 'todo',
+    expectedTags: ['unlazynotes'],
+    forbiddenTags: ['others'],
+    description: 'Human Style 2: Dev backlog item -> todo (NOT others)',
+  },
+  {
+    input: '# UnlazyNotes Architecture & Pricing\n\n## Tiers\n# free\n- 30 notes per month\n\n# pro $1/month\n- unlimited sync',
+    expectedCat: 'draft',
+    expectedTags: ['unlazynotes'],
+    forbiddenTags: ['finance', 'credential'],
+    description: 'Human Style 3: SaaS spec & architecture pricing tier markdown -> draft (NOT finance/credential)',
+  },
+  {
+    input: "ba'da maghrib ada kajian",
+    expectedCat: 'schedule',
+    expectedTags: ['kajian'],
+    description: "Human Style 4a: Cultural/prayer time schedule -> schedule (ba'da maghrib)",
+  },
+  {
+    input: 'nanti sorean mau jogging',
+    expectedCat: 'schedule',
+    expectedTags: ['jogging'],
+    description: 'Human Style 4b: Relative time schedule -> schedule (nanti sorean)',
+  },
+  {
+    input: '10k langkah keliling komplek',
+    expectedCat: 'others',
+    expectedTags: ['langkah'],
+    forbiddenTags: ['finance', 'usd', 'dollar', 'food'],
+    description: 'Human Style 5: Step count metric (10k langkah) -> others (NOT finance)',
+  },
+  {
+    input: 'tambahin opsi pin untuk note penting',
+    expectedCat: 'todo',
+    expectedTags: ['pin'],
+    forbiddenTags: ['credential'],
+    description: 'Human Style 6: UI feature note mentioning "pin" -> todo (NOT credential, no security tip)',
+  },
 ];
 
 async function runClassifierTests() {

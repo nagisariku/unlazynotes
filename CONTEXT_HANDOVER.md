@@ -7,22 +7,24 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch**: `main` (Ahead of `origin/main` - Siap di-push ke GitHub)
+- **Branch Kolaborasi**: `gamma/dev` (Dedicated branch untuk Agent Gamma, branch `main` diproteksi ketat)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
   - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
+- **AI Gateway**: Cosmoshub API (`claude-haiku-5.5`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 133/133 assertions lolos (100% PASS)
-  - `scripts/test-ask-temporal.ts`: 100% PASS (Temporal reasoning, timeline bullet list, anti-table, anti-headers, non-meeting guard)
-  - `scripts/test-intent-classifier.ts`: 31/31 unit test Live AI & Heuristic lolos (100% PASS)
+  - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
+  - `scripts/test-intent-classifier.ts`: 38/38 Live AI & 38/38 Heuristic (100% PASS)
+  - `scripts/test-phase4-polishes.ts`: 33/33 tests lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 145/145 assertions lolos (100% PASS)
+  - `scripts/test-ask-temporal.ts`: 100% PASS (Dynamic Scope Broad & Targeted, Anchor Time Math, Claude Haiku 5.5 inference)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
-  - `npm run typecheck` & `npm run check`: 0 error
+  - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
 
 ---
 
@@ -299,13 +301,199 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - Dilarang kata pengantar (*"Berikut tugas..."*) dan catatan ambigu di tengah/bawah (*"Catatan: ..."*).
    - Menghapus basa-basi penutup atau pertanyaan robotik di akhir pesan.
 
-### Y. Status Verifikasi Test Suite Lengkap
-- `scripts/test-enhancements.ts`: 133/133 assertions passed (100% PASS)
-- `scripts/test-ask-temporal.ts`: 100% PASS (Zero meta-tags, jadwal dokter bebas dari meeting, isolasi jadwal lampau, zero tabel, zero heading besar)
-- `scripts/test-intent-classifier.ts`: 31/31 skenario Live AI & Heuristic passed (100% PASS)
+### Y. Dynamic Scope, Auto-Chunking Safeguard, & Universal Axioms
+1. **Dynamic Scope (Broad vs. Targeted Query)**:
+   - **Broad Overview**: Menyajikan 3 zona (*📌 Mendatang*, *⚠️ Sudah Lewat*, *📝 Backlog*), dibatasi maksimal 5–7 item per zona dengan ringkasan sisa `(+ N agenda lainnya, cek menu '/notes')`.
+   - **Targeted Query**: Menjawab HANYA entitas/topik yang ditanyakan secara terfokus tanpa menumpahkan agenda dari domain lain yang tidak berkaitan, serta menjelaskan perubahan jadwal (*reschedule*).
+2. **Auto-Chunking Safeguard Telegram (`src/lib/telegram.ts`)**:
+   - Fungsi `chunkText(text, limit = 4000)` memecah pesan panjang $\le 4000$ karakter secara aman pada batas baris baru (`\n`).
+   - Mencegah error `400 Bad Request: message is too long` pada Telegram API dan menyematkan `reply_markup` secara eksklusif pada *chunk* terakhir.
+3. **Anchor Time Math ($T_0$) & Anti-Hedging Jadwal**:
+   - Titik Nol ($T_0$): `[createdAt]` sebagai jangkar mutlak waktu relatif.
+   - Jam Tanpa Hari: Target waktu otomatis jatuh pada tanggal pembuatan catatan ($T_0$).
+   - Anti-Hedging: Dilarang menuliskan disclaimer ragu-ragu seperti `"(tanpa tanggal jelas)"` jika catatan memiliki timestamp dan jam.
+4. **Isolasi Semantik Domain & Pewarisan Konteks (*Context Inheritance*)**:
+   - Catatan multi-baris dan bertag saling berbagi konteks domain. Seluruh baris di dalamnya mewarisi domain dari konteks/tag tersebut sehingga istilah umum (*proposal*, *revisi*, *meeting*) tidak tertukar ke domain lain (misal: tugas kantor tidak tertukar ke tugas kuliah).
+5. **Migrasi Model AI ke `claude-haiku-5.5`**:
+   - Konfigurasi gateway Cosmoshub dimigrasikan dari `deepseek-v4.1-flash` ke `claude-haiku-5.5`.
+   - Inferensi menghasilkan penalaran temporal yang lebih presisi, perhitungan jam lampau yang akurat, dan zero halusinasi.
+
+### Z. Status Verifikasi Test Suite & Standar Branch Kolaborasi
+- `scripts/test-phase4-polishes.ts`: 33/33 skenario lolos (100% PASS)
+- `scripts/test-enhancements.ts`: 145/145 assertions passed (100% PASS)
+- `scripts/test-ask-temporal.ts`: 100% PASS (Broad overview, Targeted laser query, Anchor Time Math, Claude Haiku 5.5)
+- `scripts/test-intent-classifier.ts`: 38/38 skenario Live AI & Heuristic passed (100% PASS)
 - `scripts/test-telegram-i18n.ts`: 33/33 tests passed (100% PASS)
 - `scripts/test-tier-quota.ts`: 19/19 skenario passed (100% PASS)
 - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
+- **Branching Rule**: Seluruh pengembangan Agent Gamma diisolasi pada branch `gamma/dev`. Branch `main` diproteksi ketat dan DILARANG di-push langsung.
+
+### AA. Phase 4.1 UX & System Polishes (Telegram Bot & AI Guardrails)
+1. **Dock Menu Minimalis (1-Row Safe Navigation)**:
+   - Disederhanakan menjadi 1 baris murni: `[ 🏷 Tags ] [ ⭐️ Pin ]`.
+   - Tombol `❌ Tutup Menu` dihapus sepenuhnya agar tampilan keyboard pengguna tetap bersih.
+2. **Kategori Dinamis `/tags` & Pembaruan Emoji**:
+   - **Filter Catatan Aktif (Lightweight $O(N)$ in-memory)**: Tombol kategori yang ditampilkan HANYA yang memiliki $\ge 1$ catatan milik user. Jika kategori belum memiliki catatan (0 catatan), tombol tidak ditampilkan.
+   - **Pembaruan Emoji Tombol**:
+     * Finance: menggunakan `💰 Finance` (kembali ke icon klasik).
+     * Bookmark: menggunakan `📎 Bookmark`.
+     * Others: menggunakan `Others` (murni tanpa emoji).
+   - **Pembersihan Logika "Sering Dicari"**:
+     * Kategori "Sering Dicari" beserta logic tracking-nya dihapus dari `/tags`. Konten `/tags` kini ringkas dan fokus hanya pada `🔥 Teraktif` dan `🕒 Terakhir`.
+     * Ditambahkan blok `💡 Perintah Cepat:` (`/pin`, `/vault`, `/search`, `/ask`) tepat sebelum instruksi nomor tag.
+3. **Invalid Command Guard**:
+   - Pesan yang diawali karakter `/` namun tidak cocok dengan perintah terdaftar mana pun otomatis membalas pesan singkat: `invalid command` dan tidak disimpan ke database sebagai catatan.
+4. **Dokumentasi `/vault` (Tanpa Kunci) di `/help`**:
+   - Menambahkan petunjuk penggunaan perintah `/vault` (tanpa parameter kunci) bagi pengguna yang ingin melihat seluruh daftar kredensial tersimpan saat lupa nama kuncinya.
+5. **Perbaikan Bug Detail Catatan Panjang & Re-styling Tombol**:
+   - **Root Cause & Fix Bug Catatan Panjang**: Telegram API membatasi parameter `copy_text` pada `CopyTextButton` maksimal **256 karakter**. Catatan panjang sebelumnya memicu error `400 Bad Request: BUTTON_COPY_TEXT_INVALID`. Sistem diperbaiki dengan auto-switch: jika catatan $\le 256$ karakter menggunakan native `copy_text`, jika $> 256$ karakter menggunakan callback `note:copy:<id>` yang mengirim teks catatan mentah ke chat untuk disalin langsung.
+   - **Auto-Chunking Safeguard**: Detail teks $> 4000$ karakter otomatis dikirim menggunakan `sendTelegramMessage` chunking alih-alih `editMessageText` yang gagal pada batas 4096 karakter Telegram.
+   - **Re-styling Tombol Detail**:
+     * Pin: menggunakan ikon bintang `⭐ Pin`.
+     * Lepas Pin: murni teks `Lepas Pin` tanpa icon atau emoji apa pun.
+     * Salin: tombol `Salin` tanpa emoji.
+     * Hapus: tombol `Hapus` tanpa emoji.
+   - **Format Konten Baru**:
+     `📌` (diikuti break space / baris baru), `{isi notes...}`, (diikuti double break space lega `\n\n\n`), `{EEE, dd/MM/yyyy • HH:mm WIB}`, dan `Tags: {kategori, specific_tags}`.
+6. **Optimasi `/ask`: Pembersihan Loading & Anti-Abuse AI Guardrails**:
+   - **Pembersihan Pesan Loading**: Pesan `🤖 Sedang menganalisis catatan Anda...` dilacak dengan `message_id` dan otomatis dihapus (`deleteMessage`) setelah jawaban AI terkirim (atau saat terjadi kegagalan).
+   - **Penanganan Error**: Jika pemrosesan AI gagal, bot menampilkan pesan error yang ramah pengguna.
+   - **System Prompt Anti-Abuse**: AI diinstruksikan menolak dengan tegas dan sopan segala pertanyaan/perintah di luar konteks catatan pengguna (coding/pemrograman, penulisan esai, matematika umum, dll.).
+   - **Identitas AI**: Jika pengguna menanyakan model AI yang digunakan, AI menjawab secara konsisten `"Model UnlazyNotesLLM-v1"` dan dilarang membocorkan rincian arsitektur atau vendor internal sistem.
+
+### AB. First-Principles Semantic Intent Refactor & LLM-Driven Classification
+1. **Claude Haiku 5.5 sebagai Single Source of Truth**:
+   - Menghapus puluhan tumpukan regex kaku pada `normalizeCategory` di `src/lib/ai/modules/general.ts` yang selama ini menimpa hasil inferensi LLM.
+   - `normalizeCategory` kini murni menegakkan absolute invariant (pure URL $\rightarrow$ `bookmark`, explicit task checklist `- [ ]` $\rightarrow$ `todo`), memetakan sinonim kata dari model ke 9 kategori resmi, dan mempercayai output LLM secara penuh.
+2. **Penguatan Semantic Intent Boundaries di System Prompt**:
+   - Menegaskan batas hakikat niat hidup catatan:
+     * `todo`: Segala aksi, tugas, perintah, dev tasks, food orders, dan instruksi teknis dalam gaya penulisan bebas apa pun (santai, tanpa bullet, bullet list).
+     * `finance`: Transaksi keuangan riil arus kas dompet user. Angka pada spesifikasi produk, tier SaaS (`# free ... # pro $1/month`), atau perbandingan spek barang diklasifikasikan sebagai `draft` / `todo` / `others`, BUKAN `finance`.
+     * `schedule`: Terikat titik waktu pelaksanaan, mencakup jam, tanggal kalender, waktu kultural/ibadah (`ba'da maghrib ada kajian`), dan waktu relatif (`nanti sorean mau jogging`).
+     * `credential`: Brankas nilai rahasia aktual. Penyebutan fitur UI (seperti `"tambah opsi pin untuk note penting"`) atau administrasi tanpa digit nilai rahasia masuk ke `todo`.
+     * `draft`: Dokumen spesifikasi produk/arsitektur/SaaS multi-baris Markdown, esai, dan tulisan panjang.
+     * `reference`: Rujukan statis, kutipan, ayat suci, hadits, doa, resep masakan.
+     * `bookmark`: Tautan URL.
+     * `random-yap`: Curahan hati, uneg-uneg, keluhan santai tanpa aksi.
+     * `others`: Log terstruktur non-aksi (gejala kesehatan & obat, metrik fisik seperti `10k langkah keliling komplek`, repetisi gym, ide fitur mentah).
+3. **Penyelarasan Security Tip Guardrail Telegram (`src/lib/telegram-handler.ts`)**:
+   - Membasmi regex mandiri `hasCredentialKeyword` (`\bpin\b`) yang sebelumnya berjalan terpisah di luar AI.
+   - Notifikasi `security_tip` dipasangkan pada callback `onComplete` dari `taggingQueue` dan HANYA dikirim jika kategori AI adalah `credential` DAN memuat indikator nilai rahasia aktual (assignment `password:`, `pin atm`, atau nomor identitas/rekening). Catatan berfitur UI `"pin note"` dipastikan tidak memicu spam security tip.
+4. **Penyelarasan Router Offline / Heuristic Fallback (`src/lib/ai/router.ts`)**:
+   - Multi-line Markdown dengan header (`#`, `##`) diarahkan ke `general` (me-resolve ke `draft`), bukan `finance`.
+   - Perintah aksi teknis dan backlog item (`^[a-z0-9_-]+:\s*-\s+`) diarahkan ke `todo`.
+   - Metrik fisik langkah kaki (`10k langkah`) diamankan dari pencocokan mata uang `10k`.
+5. **Verifikasi Test Suite**:
+   - 38/38 skenario (100% PASS) pada `scripts/test-intent-classifier.ts` baik untuk Live AI Pipeline maupun Heuristic Fallback.
+
+### G. Deferred Batch Organization & Local Privacy Shield (Okt 2026)
+Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta perapian cerdas on-demand:
+1. **Database Schema & Backfill (`src/db/schema.ts`)**:
+   - Menambahkan kolom status proses: `isProcessed: boolean('is_processed').default(false).notNull()`.
+   - Index komposit efisiensi query: `index('notes_user_processed_idx').on(t.userId, t.isProcessed)`.
+   - 702 catatan lama di database berhasil dimigrasi dan ditandai `is_processed = true`.
+2. **Local Formatting Cleanup (Zero AI) (`src/lib/formatter.ts`)**:
+   - Fungsi `cleanLocalFormat(content)`:
+     - Normalisasi baris baru (`\r\n` dan `\r` $\rightarrow$ `\n`).
+     - Pembersihan spasi akhir baris (`line.trimEnd()`).
+     - Menghapus breakline antar baris list atau numbering berturut-turut (antar `- ` atau `1. ` tidak ada baris kosong).
+     - Menghubungkan baris pengantar/header list yang berakhiran titik dua (`daftar x:`) langsung ke item list pertama tanpa baris kosong pemisah.
+     - Menghindari jeda >1x breakline (maksimal 1 baris kosong antar paragraf / `\n\n`).
+     - Standarisasi seluruh variasi simbol bullet (`•`, `·`, `∙`, `◦`, `●`, `○`, `■`, `▪`, `▫`, `*`, `+`, `–`, `—`) menjadi `- ` dengan mempertahankan indentasi.
+     - **Aturan Mutlak**: Menjaga 100% keaslian huruf besar-kecil, ejaan kata, bahasa gaul, singkatan, angka, dan tanda baca pengguna.
+3. **Local Credential Pre-Detection (Local Privacy Shield) (`src/lib/ai/credential-detector.ts`)**:
+   - Deteksi nilai rahasia riil di mesin lokal menggunakan Complex Regex:
+     - Password assignments (`password:`, `sandi =`, `passwordnya ...`).
+     - PIN ATM / Kartu (`pin atm`, `pin: 1234`).
+     - Nomor Rekening Bank (diikuti digit $\ge 6$).
+     - API Key, Secret Token, Private Key (`ssh-ed25519`, `bearer token`).
+     - CVV & Kartu Identitas bernomor (`ktp`, `nik`, `sim` dengan nomor $\ge 6$ digit).
+   - **Zero-Knowledge Privacy Guard**: Catatan kredensial langsung ditandai `category = 'credential'`, `isProcessed = true`, dan diekstrak tag lokalnya tanpa pernah dikirim ke AI eksternal, disertai pengiriman `security_tip`.
+4. **Silent Capture di Telegram Handler (`src/lib/telegram-handler.ts`)**:
+   - Catatan baru diformat lokal, dicek kredensialnya, dan disimpan ke database:
+     - Kredensial: `isProcessed: true, category: 'credential'`.
+     - Catatan umum: `isProcessed: false, category: 'others'`.
+   - Tetap hening tanpa spam teks "tersimpan!" ke chat.
+   - Cache counter bertambah secara instan: `unorganized_count:{userId} += 1`.
+5. **Tombol Dock Menu, Fitur Sync & Non-Parallel Lock Barrier (`src/lib/telegram-handler.ts`)**:
+   - Dock menu persisten selalu menyediakan tombol `🔄 Sync` di samping `🏷 Tags` dan `⭐️ Pin`.
+   - Perintah didukung via `/sync`, `🔄 Sync`, `/organize`, `/rapikan`, serta `/dock` dan `/menu` untuk me-refresh dock keyboard.
+   - **Animasi Loading Dinamis**: Saat AI memproses catatan, bot memunculkan pesan loading dengan titik tiga dinamis (`🔄 Menyinkronkan.` $\rightarrow$ `..` $\rightarrow$ `...`) setiap 1.2 detik dan menghapusnya saat selesai.
+   - **Non-Parallel Lock Barrier**: Selama sinkronisasi berlangsung (`syncInProgressSet` aktif pada `userId` dan `chatId`), bot menolak pesan baru, command, maupun tombol callback query dengan respons ramah menyuruh pengguna menunggu proses sinkronisasi hingga selesai.
+   - **Proteksi Anti-Spam**: Concurrency lock dan jeda cooldown 5 detik (`syncCooldownMap`).
+   - **Rekonsiliasi Cache vs DB**: Mengecek langsung ke database apakah ada catatan berstatus `is_processed = false`, menyinkronkan counter cache dan tag unik pengguna dengan isi DB riil.
+   - **Alur Respons Bersih (Zero Ringkasan Cantik)**:
+     - Jika ada catatan unorganized yang diproses AI: membalas *"Sinkronisasi selesai!"*.
+     - Jika tidak ada catatan baru di DB: membalas *"Belum ada catatan baru!"*.
+6. **Batch AI Organizer (`src/lib/ai/batch-organizer.ts`)**:
+   - Chunking safeguard: Memproses per chunk (maksimal 10–12 catatan per panggilan LLM) untuk melindungi limit output token Claude Haiku 5.5.
+   - Mengirimkan payload batch ke model dengan menyertakan konteks tag lama user (`userTagContext`) agar tag konsisten.
+   - Hierarki Tag: `specific_tags[0]` adalah Main Tag (payung topik utama), `specific_tags[1..]` adalah entitas detail dan konteks.
+   - Bulk update database: `isProcessed = true, category = ..., specificTags = ...`.
+   - Otomatis menginvalidasi cache tag user dan mereset unorganized counter ke 0.
+7. **Penyempurnaan Konten `/tags`**:
+   - **Teraktif**: Diambil murni dari frekuensi kemunculan tag dengan jumlah catatan terbanyak di database.
+   - **Terakhir**: Mengambil main tag (`specificTags[0]` atau fallback kategori) murni dari 15 catatan terakhir yang dikirim/dirapikan.
+   - Tombol inline rapikan di `/tags` ditiadakan karena telah terpusat di tombol dock `🔄 Sync`.
+8. **Smart Caching Layer (`src/lib/cache.ts`)**:
+   - In-memory cache `user_tags:{userId}` (TTL 1 jam) dan `unorganized_count:{userId}` (TTL 24 jam) untuk kecepatan performa tanpa query berulang ke DB.
+9. **Integrasi `/ask`**:
+   - `/ask`: Melakukan silent auto-organize catatan unorganized sebelum kalkulasi analisis dieksekusi agar rekap data keuangan/jadwal 100% akurat.
+
+### Y. Command `/read`, Tombol Dock 🔄 Sync Cooldown, & Multimedia Local Compression Engine (Okt 2026)
+1. **Command `/read` & Tombol Dock Menu (`src/lib/telegram-handler.ts`)**:
+   - Dock keyboard persisten diperbarui:
+     - Baris 1: `[ 📖 Read ] [ 🏷 Tags ] [ ⭐️ Pin ]`
+     - Baris 2: `[ 🔄 Sync ] [ ❌ Tutup Menu ]`
+   - Menampilkan hingga maksimal 27 catatan terakhir (non-encrypted, seluruh kategori) milik user menggunakan paginasi (`PAGE_SIZE = 9`, maksimal 3 halaman: 1-9, 10-18, 19-27).
+   - Format cuplikan catatan:
+     - Menampilkan cuplikan hingga 140 karakter.
+     - Ikon lampiran: `🖼️` jika memiliki gambar, `📎` jika dokumen/file non-gambar.
+     - Badge `[unorganized]` jika catatan belum dirapikan oleh AI (`isProcessed = false`).
+   - Inline navigation: tombol navigasi pagination `[ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]` serta tombol nomor pintasan `[ 1 ]` s.d. `[ 9 ]` menuju detail catatan.
+2. **Tombol Dock `🔄 Sync` & 10s Cooldown**:
+   - Cooldown 10 detik per pengguna (`SYNC_COOLDOWN_MS = 10000`). Jika ditekan berulang dalam kurun 10 detik, membalas: `"⏳ Tunggu sebentar sebelum melakukan sinkronisasi lagi ya!"`.
+   - Sinkronisasi instan antara cache in-memory dan database PostgreSQL.
+   - Zero-junk response: Hanya membalas `"✅ Sinkronisasi selesai!"` atau `"ℹ️ Belum ada catatan baru!"`.
+3. **Lampiran Multimedia & Mesin Kompresi Lokal Sharp (`src/lib/media-processor.ts`)**:
+   - **Drizzle Schema Update**: Kolom `attachments` berjenis `jsonb` di tabel `notes` dengan struktur `NoteAttachment[]`:
+     `[{ type: 'image' | 'file', originalName: string, mimeType: string, sizeBytes: number, localPath: string, fileId: string }]`.
+   - **Validasi Input Ketat**:
+     - Batas maksimal berkas 3MB (`media_size_exceeded`): `"⚠️ Ukuran file melebihi batas maksimal 3MB. Catatan tidak disimpan."`
+     - Wajib memiliki caption teks (`media_missing_caption`): `"⚠️ Catatan gambar/file wajib menyertakan caption teks. Catatan tidak disimpan."`
+     - Debounce Buffer mendukung pengelompokan album foto (*media group*) ke dalam satu catatan yang sama.
+   - **Kompresi Gambar Lokal Cepat (Sharp)**:
+     - Mengunduh file dari Telegram Bot API via `getFile`.
+     - Gambar di-*resize* ke lebar maksimal 1200px (tanpa perbesaran) dan dikonversi ke format WebP dengan *quality* 70%.
+     - Menghasilkan ukuran berkas puluhan KB (30KB - 80KB) yang disimpan di `storage/attachments/`.
+   - **Zero-Vision AI Policy**:
+     - Gambar tidak pernah dikirim ke Vision API Claude/LLM (menghemat token dan menjaga privasi 100%).
+     - Konten catatan yang dikirimkan ke AI Organizer secara otomatis disisipi awalan penanda:
+       `[Catatan ini memiliki lampiran gambar/file]\n{isi caption}`.
+   - **Tampilan Detail Catatan**:
+     - Saat detail catatan dibuka (`displayNoteDetail`), berkas foto/dokumen dikirimkan kembali ke chat (`sendTelegramPhoto` / `sendTelegramDocument`) bersama teks detail catatan.
+4. **Verifikasi Test Suite**:
+   - `scripts/test-enhancements-oct19.ts`: 24/24 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, dan zero-vision AI payload).
+   - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
+   - `npm run check` & `npm run typecheck`: 0 errors.
+
+### Z. Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
+1. **Persistent 2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
+   - **Grid Simetris 2x2**:
+     ```
+     [ 📖 Read ] [ 🔄 Sync ]
+     [ 🏷 Tags ] [ ⭐️ Pin ]
+     ```
+   - **Fix Dock Auto-Minimizing**: Mengaktifkan `is_persistent: true` dan `resize_keyboard: true` sehingga tombol dock tetap terbuka di klien Telegram Desktop & Mobile tanpa perlu mengetik ulang `/dock`.
+   - **Menghapus Tombol `❌ Tutup Menu`**: Mengeliminasi risiko keyboard terhapus secara permanen dari UI klien karena aksi `remove_keyboard`.
+2. **Background Non-Blocking Sync Engine (`src/lib/telegram-handler.ts`)**:
+   - **Respon Instan (<200ms)**: Menghapus synchronous blocking barrier (`syncInProgressSet` tidak lagi menolak pesan user/callback). Saat tombol `🔄 Sync` ditekan, bot langsung merespons pesan awal:
+     `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`
+   - **Native Typing Indicator**: Menggunakan `bot.api.sendChatAction(chatId, 'typing')` bawaan Telegram sebagai indikator proses latar belakang tanpa polling pesan edit bolak-balik yang rentan terkena rate-limit 429.
+   - **Asynchronous AI Execution**: Pemrosesan AI `organizeUserNotes(userId)` berjalan di background. Setelah selesai, bot mengirim konfirmasi singkat `✅ Sinkronisasi selesai!` dan mengupdate cache.
+3. **Optimasi Latensi & Fast-Path LLM (`src/lib/ai/batch-organizer.ts`)**:
+   - **Fast-Path URL Bookmarks**: Catatan unorganized berupa tautan tunggal (URL valid) langsung diproses secara lokal instan ke kategori `bookmark` tanpa memanggil LLM.
+   - **Guard Output Token & Timeout**: Menetapkan `maxTokens: 1500` dan `AbortSignal.timeout(20000)` pada inferensi Claude Haiku 5.5 guna mencegah JSON terpotong di tengah chunk 15 catatan.
 
 ---
 

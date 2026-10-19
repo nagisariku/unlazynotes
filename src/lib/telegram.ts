@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 import crypto from 'node:crypto';
 import * as dotenv from 'dotenv';
 import path from 'node:path';
@@ -67,24 +67,36 @@ export interface TelegramSendOptions {
 }
 
 /**
- * Send a message back to Telegram user with graceful error handling.
+ * Splits long text into safe chunks <= limit characters, preserving newline boundaries where possible.
  */
-export async function sendTelegramMessage(
+export function chunkText(text: string, limit = 4000): string[] {
+  if (text.length <= limit) return [text];
+  const chunks: string[] = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= limit) {
+      chunks.push(remaining);
+      break;
+    }
+    let splitIdx = remaining.lastIndexOf('\n', limit);
+    if (splitIdx === -1 || splitIdx < limit / 2) {
+      splitIdx = limit;
+    }
+    chunks.push(remaining.slice(0, splitIdx));
+    remaining = remaining.slice(splitIdx).trimStart();
+  }
+  return chunks;
+}
+
+async function sendSingleTelegramMessage(
   chatId: string | number,
   text: string,
   options?: TelegramSendOptions
 ): Promise<boolean> {
-  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
-    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
-    return true;
-  }
-
   try {
     await bot.api.sendMessage(chatId, text, options);
     return true;
   } catch (error: any) {
-    // Jika gagal karena formatting markdown/HTML dari respons LLM, kirim ulang sebagai plain text
     if (options?.parse_mode) {
       try {
         await bot.api.sendMessage(chatId, text, {
@@ -99,6 +111,95 @@ export async function sendTelegramMessage(
     return false;
   }
 }
+
+/**
+ * Send a message back to Telegram user with graceful error handling and auto-chunking safeguard (>4000 chars).
+ */
+export async function sendTelegramMessage(
+  chatId: string | number,
+  text: string,
+  options?: TelegramSendOptions
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
+    return true;
+  }
+
+  const chunks = chunkText(text, 4000);
+  if (chunks.length > 1) {
+    let allOk = true;
+    for (let i = 0; i < chunks.length; i++) {
+      const chunkOptions: TelegramSendOptions | undefined = options
+        ? {
+            ...options,
+            reply_markup: i === chunks.length - 1 ? options.reply_markup : undefined,
+          }
+        : undefined;
+      const ok = await sendSingleTelegramMessage(chatId, chunks[i], chunkOptions);
+      if (!ok) allOk = false;
+    }
+    return allOk;
+  }
+
+  return sendSingleTelegramMessage(chatId, text, options);
+}
+
+/**
+ * Send a single Telegram message and return its message ID if successful.
+ */
+export async function sendTelegramMessageWithId(
+  chatId: string | number,
+  text: string,
+  options?: TelegramSendOptions
+): Promise<{ ok: boolean; messageId?: number }> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Send] to Chat ID ${chatId}:\n${text}`);
+    return { ok: true, messageId: 999999 };
+  }
+
+  try {
+    const sent = await bot.api.sendMessage(chatId, text, options);
+    return { ok: true, messageId: sent.message_id };
+  } catch (error: any) {
+    if (options?.parse_mode) {
+      try {
+        const sent = await bot.api.sendMessage(chatId, text, {
+          reply_markup: options.reply_markup,
+        });
+        return { ok: true, messageId: sent.message_id };
+      } catch (retryErr) {
+        console.error(`[Telegram] Retry plain text send failed:`, retryErr);
+      }
+    }
+    console.error(`[Telegram] Failed to send message with ID to ${chatId}:`, error);
+    return { ok: false };
+  }
+}
+
+/**
+ * Delete a Telegram message by ID.
+ */
+export async function deleteTelegramMessage(
+  chatId: string | number,
+  messageId: number
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock Delete] Message ${messageId} in Chat ID ${chatId}`);
+    return true;
+  }
+
+  try {
+    await bot.api.deleteMessage(chatId, messageId);
+    return true;
+  } catch (err) {
+    console.error(`[Telegram] Failed to delete message ${messageId} in ${chatId}:`, err);
+    return false;
+  }
+}
+
 
 /**
  * Edit an existing message in-place in Telegram chat.
@@ -200,4 +301,58 @@ export function formatSavedMessage(
   }
 
   return `Saved • tags: ${uniqueTags.join(', ')}`;
+}
+
+/**
+ * Sends a photo to Telegram via fileId or local file path.
+ */
+export async function sendTelegramPhoto(
+  chatId: string | number,
+  photo: string,
+  caption?: string
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock SendPhoto] to Chat ID ${chatId}: ${photo}`);
+    return true;
+  }
+
+  try {
+    if (photo.startsWith('/') || photo.startsWith('.')) {
+      await bot.api.sendPhoto(chatId, new InputFile(photo), { caption });
+    } else {
+      await bot.api.sendPhoto(chatId, photo, { caption });
+    }
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to send photo to ${chatId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Sends a document to Telegram via fileId or local file path.
+ */
+export async function sendTelegramDocument(
+  chatId: string | number,
+  document: string,
+  caption?: string
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock SendDocument] to Chat ID ${chatId}: ${document}`);
+    return true;
+  }
+
+  try {
+    if (document.startsWith('/') || document.startsWith('.')) {
+      await bot.api.sendDocument(chatId, new InputFile(document), { caption });
+    } else {
+      await bot.api.sendDocument(chatId, document, { caption });
+    }
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to send document to ${chatId}:`, error);
+    return false;
+  }
 }

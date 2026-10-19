@@ -35,6 +35,8 @@ export type TelegramMessageKey =
   | 'ask_missing_question'
   | 'ask_analyzing'
   | 'ask_answer_header'
+  | 'ask_failed'
+  | 'invalid_command'
   | 'secure_missing_params'
   | 'secure_saved'
   | 'vault_empty'
@@ -44,7 +46,18 @@ export type TelegramMessageKey =
   | 'vault_decryption_failed'
   | 'vault_revealed_multiple_header'
   | 'callback_unauthenticated'
-  | 'dashboard_prompt';
+  | 'dashboard_prompt'
+  | 'sync_loading_base'
+  | 'sync_started'
+  | 'sync_lock_active'
+  | 'sync_cooldown'
+  | 'sync_completed'
+  | 'sync_empty'
+  | 'sync_failed'
+  | 'media_size_exceeded'
+  | 'media_missing_caption'
+  | 'read_empty'
+  | 'read_header';
 
 export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocale, string>> = {
   dashboard_prompt: {
@@ -70,7 +83,7 @@ Daftar Perintah:
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
 • \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
 • \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
-• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia atau lihat daftar kunci Private Vault Anda
+• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia; gunakan \`/vault\` (tanpa kunci) jika lupa kuncinya untuk melihat daftar kredensial tersimpan
 
 Cara Penggunaan:
 Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami akan otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
@@ -89,7 +102,7 @@ Command List:
 • \`/search <keyword>\` - Search notes by keyword
 • \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
 • \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault
-• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secrets or view your Private Vault keys
+• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secret; use \`/vault\` (without key) if you forgot the key to view all stored credential keys
 
 How to Use:
 Simply send any text message or link directly to this bot. Our AI will automatically categorize and tag your notes in seconds!
@@ -173,8 +186,8 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_header: {
-    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n🔍 <b>Sering Dicari:</b>\n{searchedTagsText}\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
-    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n🔍 <b>Most Searched:</b>\n{searchedTagsText}\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
+    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
+    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
   },
 
   tags_cluster_detail: {
@@ -257,6 +270,16 @@ Simply send any text message or link directly to this bot. Our AI will automatic
     en: `💡 *AI Answer:*\n\n{answer}`,
   },
 
+  ask_failed: {
+    id: `❌ Maaf, gagal menganalisis catatan Anda. Silakan coba beberapa saat lagi.`,
+    en: `❌ Sorry, failed to analyze your notes. Please try again in a moment.`,
+  },
+
+  invalid_command: {
+    id: `invalid command`,
+    en: `invalid command`,
+  },
+
   secure_missing_params: {
     id: `Format salah. Silakan gunakan format:\n\`/secure <kunci> <isi_rahasia>\`\n\nContoh:\n\`/secure wifi-rumah MySecretPassword123\`\n\`/secure token-prod secret_api_key_xyz\``,
     en: `Invalid format. Please use:\n\`/secure <key> <secret_content>\`\n\nExample:\n\`/secure home-wifi MySecretPassword123\`\n\`/secure prod-token secret_api_key_xyz\``,
@@ -300,6 +323,61 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   callback_unauthenticated: {
     id: `Sesi akun Telegram belum terhubung.`,
     en: `Telegram account session is not connected.`,
+  },
+
+  sync_loading_base: {
+    id: `🔄 Menyinkronkan`,
+    en: `🔄 Synchronizing`,
+  },
+
+  sync_started: {
+    id: `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`,
+    en: `🔄 Organizing {count} notes in the background... You can keep writing notes as usual!`,
+  },
+
+  sync_lock_active: {
+    id: `⏳ Sinkronisasi sedang berlangsung di latar belakang... Tunggu sebentar ya!`,
+    en: `⏳ Synchronization is currently running in the background... Please wait a moment!`,
+  },
+
+  sync_cooldown: {
+    id: `⏳ Tunggu sebentar sebelum melakukan sinkronisasi lagi ya!`,
+    en: `⏳ Please wait a moment before synchronizing again!`,
+  },
+
+  sync_completed: {
+    id: `✅ Sinkronisasi selesai!`,
+    en: `✅ Synchronization complete!`,
+  },
+
+  sync_empty: {
+    id: `ℹ️ Belum ada catatan baru!`,
+    en: `ℹ️ No new notes!`,
+  },
+
+  sync_failed: {
+    id: `Gagal melakukan sinkronisasi catatan.`,
+    en: `Failed to synchronize notes.`,
+  },
+
+  media_size_exceeded: {
+    id: `⚠️ Ukuran file melebihi batas maksimal 3MB. Catatan tidak disimpan.`,
+    en: `⚠️ File size exceeds maximum limit of 3MB. Note was not saved.`,
+  },
+
+  media_missing_caption: {
+    id: `⚠️ Catatan gambar/file wajib menyertakan caption teks. Catatan tidak disimpan.`,
+    en: `⚠️ Image/file notes must include a text caption. Note was not saved.`,
+  },
+
+  read_empty: {
+    id: `Belum ada catatan yang tersimpan!`,
+    en: `No notes found yet!`,
+  },
+
+  read_header: {
+    id: `📖 *Catatan Terakhir*`,
+    en: `📖 *Latest Notes*`,
   },
 };
 
