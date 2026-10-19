@@ -623,7 +623,7 @@ export async function processGeneralNote(
   existingUserTags?: string[]
 ): Promise<NoteTagResult> {
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
+  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
 
   if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
     return heuristicFallback(content);
