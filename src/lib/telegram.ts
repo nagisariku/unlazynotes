@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, InputFile } from 'grammy';
 import crypto from 'node:crypto';
 import * as dotenv from 'dotenv';
 import path from 'node:path';
@@ -301,4 +301,58 @@ export function formatSavedMessage(
   }
 
   return `Saved • tags: ${uniqueTags.join(', ')}`;
+}
+
+/**
+ * Sends a photo to Telegram via fileId or local file path.
+ */
+export async function sendTelegramPhoto(
+  chatId: string | number,
+  photo: string,
+  caption?: string
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock SendPhoto] to Chat ID ${chatId}: ${photo}`);
+    return true;
+  }
+
+  try {
+    if (photo.startsWith('/') || photo.startsWith('.')) {
+      await bot.api.sendPhoto(chatId, new InputFile(photo), { caption });
+    } else {
+      await bot.api.sendPhoto(chatId, photo, { caption });
+    }
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to send photo to ${chatId}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Sends a document to Telegram via fileId or local file path.
+ */
+export async function sendTelegramDocument(
+  chatId: string | number,
+  document: string,
+  caption?: string
+): Promise<boolean> {
+  const currentToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!currentToken || currentToken.includes('123456789') || currentToken.startsWith('mock-')) {
+    console.log(`[Telegram Mock SendDocument] to Chat ID ${chatId}: ${document}`);
+    return true;
+  }
+
+  try {
+    if (document.startsWith('/') || document.startsWith('.')) {
+      await bot.api.sendDocument(chatId, new InputFile(document), { caption });
+    } else {
+      await bot.api.sendDocument(chatId, document, { caption });
+    }
+    return true;
+  } catch (error: any) {
+    console.error(`[Telegram] Failed to send document to ${chatId}:`, error);
+    return false;
+  }
 }

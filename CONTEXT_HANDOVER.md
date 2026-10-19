@@ -440,6 +440,43 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
 9. **Integrasi `/ask`**:
    - `/ask`: Melakukan silent auto-organize catatan unorganized sebelum kalkulasi analisis dieksekusi agar rekap data keuangan/jadwal 100% akurat.
 
+### Y. Command `/read`, Tombol Dock 🔄 Sync Cooldown, & Multimedia Local Compression Engine (Okt 2026)
+1. **Command `/read` & Tombol Dock Menu (`src/lib/telegram-handler.ts`)**:
+   - Dock keyboard persisten diperbarui:
+     - Baris 1: `[ 📖 Read ] [ 🏷 Tags ] [ ⭐️ Pin ]`
+     - Baris 2: `[ 🔄 Sync ] [ ❌ Tutup Menu ]`
+   - Menampilkan hingga maksimal 27 catatan terakhir (non-encrypted, seluruh kategori) milik user menggunakan paginasi (`PAGE_SIZE = 9`, maksimal 3 halaman: 1-9, 10-18, 19-27).
+   - Format cuplikan catatan:
+     - Menampilkan cuplikan hingga 140 karakter.
+     - Ikon lampiran: `🖼️` jika memiliki gambar, `📎` jika dokumen/file non-gambar.
+     - Badge `[unorganized]` jika catatan belum dirapikan oleh AI (`isProcessed = false`).
+   - Inline navigation: tombol navigasi pagination `[ ◀️ Prev ] [ 1 / N ] [ Next ▶️ ]` serta tombol nomor pintasan `[ 1 ]` s.d. `[ 9 ]` menuju detail catatan.
+2. **Tombol Dock `🔄 Sync` & 10s Cooldown**:
+   - Cooldown 10 detik per pengguna (`SYNC_COOLDOWN_MS = 10000`). Jika ditekan berulang dalam kurun 10 detik, membalas: `"⏳ Tunggu sebentar sebelum melakukan sinkronisasi lagi ya!"`.
+   - Sinkronisasi instan antara cache in-memory dan database PostgreSQL.
+   - Zero-junk response: Hanya membalas `"✅ Sinkronisasi selesai!"` atau `"ℹ️ Belum ada catatan baru!"`.
+3. **Lampiran Multimedia & Mesin Kompresi Lokal Sharp (`src/lib/media-processor.ts`)**:
+   - **Drizzle Schema Update**: Kolom `attachments` berjenis `jsonb` di tabel `notes` dengan struktur `NoteAttachment[]`:
+     `[{ type: 'image' | 'file', originalName: string, mimeType: string, sizeBytes: number, localPath: string, fileId: string }]`.
+   - **Validasi Input Ketat**:
+     - Batas maksimal berkas 3MB (`media_size_exceeded`): `"⚠️ Ukuran file melebihi batas maksimal 3MB. Catatan tidak disimpan."`
+     - Wajib memiliki caption teks (`media_missing_caption`): `"⚠️ Catatan gambar/file wajib menyertakan caption teks. Catatan tidak disimpan."`
+     - Debounce Buffer mendukung pengelompokan album foto (*media group*) ke dalam satu catatan yang sama.
+   - **Kompresi Gambar Lokal Cepat (Sharp)**:
+     - Mengunduh file dari Telegram Bot API via `getFile`.
+     - Gambar di-*resize* ke lebar maksimal 1200px (tanpa perbesaran) dan dikonversi ke format WebP dengan *quality* 70%.
+     - Menghasilkan ukuran berkas puluhan KB (30KB - 80KB) yang disimpan di `storage/attachments/`.
+   - **Zero-Vision AI Policy**:
+     - Gambar tidak pernah dikirim ke Vision API Claude/LLM (menghemat token dan menjaga privasi 100%).
+     - Konten catatan yang dikirimkan ke AI Organizer secara otomatis disisipi awalan penanda:
+       `[Catatan ini memiliki lampiran gambar/file]\n{isi caption}`.
+   - **Tampilan Detail Catatan**:
+     - Saat detail catatan dibuka (`displayNoteDetail`), berkas foto/dokumen dikirimkan kembali ke chat (`sendTelegramPhoto` / `sendTelegramDocument`) bersama teks detail catatan.
+4. **Verifikasi Test Suite**:
+   - `scripts/test-enhancements-oct19.ts`: 24/24 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, dan zero-vision AI payload).
+   - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
+   - `npm run check` & `npm run typecheck`: 0 errors.
+
 ---
 
 ## 3. Analisis Kompleksitas & Skalabilitas (Kapasitas 1.000 – 10.000 Users)

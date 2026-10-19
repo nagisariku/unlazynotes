@@ -87,7 +87,11 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
       if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
         // Fallback Heuristic Offline
         for (const note of notesForLLM) {
-          const res = heuristicTagNote(note.content, existingUserTags);
+          const hasAttachments = note.attachments && Array.isArray(note.attachments) && note.attachments.length > 0;
+          const contentText = hasAttachments
+            ? `[Catatan ini memiliki lampiran gambar/file]\n${note.content}`
+            : note.content;
+          const res = heuristicTagNote(contentText, existingUserTags);
           chunkProcessed.push({
             id: note.id,
             content: note.content,
@@ -115,10 +119,16 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
                 )}\n`
               : '';
 
-          const payload = notesForLLM.map((n) => ({
-            id: n.id,
-            content: n.content,
-          }));
+          const payload = notesForLLM.map((n) => {
+            const hasAttachments = n.attachments && Array.isArray(n.attachments) && n.attachments.length > 0;
+            const contentText = hasAttachments
+              ? `[Catatan ini memiliki lampiran gambar/file]\n${n.content}`
+              : n.content;
+            return {
+              id: n.id,
+              content: contentText,
+            };
+          });
 
           const response = await generateText({
             model: openaiCompatible(modelName),

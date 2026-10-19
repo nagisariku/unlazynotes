@@ -8,11 +8,15 @@ import {
   hashApiKey,
   sendTelegramMessage,
   sendTelegramMessageWithId,
+  sendTelegramPhoto,
+  sendTelegramDocument,
   deleteTelegramMessage,
   editTelegramMessage,
   editTelegramReplyMarkup,
   answerTelegramCallbackQuery,
 } from '@/lib/telegram';
+import { processTelegramAttachment } from '@/lib/media-processor';
+import type { NoteAttachment } from '@/db/schema';
 import { normalizeTag } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
@@ -40,8 +44,8 @@ export const DEBOUNCE_DELAY_MS = 3000;
 
 export const PERSISTENT_DOCK_KEYBOARD = {
   keyboard: [
-    [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
-    [{ text: '🔄 Sync' }],
+    [{ text: '📖 Read' }, { text: '🏷 Tags' }, { text: '⭐️ Pin' }],
+    [{ text: '🔄 Sync' }, { text: '❌ Tutup Menu' }],
   ],
   resize_keyboard: true,
 };
@@ -74,6 +78,14 @@ export interface TelegramProcessResult {
   tag?: string;
 }
 
+export interface RawAttachmentInput {
+  fileId: string;
+  type: 'image' | 'file';
+  fileName?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
 interface DebounceBufferItem {
   timer: NodeJS.Timeout;
   messages: string[];
@@ -83,6 +95,9 @@ interface DebounceBufferItem {
   createdAt: Date;
   tier: 'free' | 'pro';
   locale: SupportedLocale;
+  rawAttachments?: RawAttachmentInput[];
+  mediaGroupId?: string;
+  hasMedia?: boolean;
 }
 
 // In-memory buffer map indexed by chatId
@@ -98,12 +113,39 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
   clearTimeout(item.timer);
   debounceMap.delete(chatId);
 
+  // Jika buffer memiliki media, periksa apakah ada caption yang berhasil dikumpulkan
+  if (item.hasMedia) {
+    const rawMergedCheck = item.messages.join('\n\n').trim();
+    if (!rawMergedCheck) {
+      await sendTelegramMessage(chatId, getTelegramMsg('media_missing_caption', item.locale), {
+        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      });
+      return null;
+    }
+  }
+
   const rawMergedText = item.messages.join('\n\n');
   // 1. Pembersihan format lokal (Zero AI)
   const mergedText = cleanLocalFormat(rawMergedText);
   const noteId = item.noteId;
 
   try {
+    // Proses dan kompres lampiran jika ada
+    let processedAttachments: NoteAttachment[] = [];
+    if (item.rawAttachments && item.rawAttachments.length > 0) {
+      for (const rawAtt of item.rawAttachments) {
+        const processed = await processTelegramAttachment(
+          rawAtt.fileId,
+          rawAtt.type,
+          item.activeKey.userId,
+          rawAtt.fileName,
+          rawAtt.mimeType,
+          rawAtt.sizeBytes
+        );
+        processedAttachments.push(processed);
+      }
+    }
+
     // 2. Deteksi kredensial lokal (Local Privacy Shield)
     const credCheck = detectLocalCredential(mergedText);
 
@@ -116,6 +158,7 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
         content: mergedText,
         category: 'credential',
         specificTags: credCheck.tags,
+        attachments: processedAttachments,
         source: 'telegram',
         isProcessed: true,
         createdAt: item.createdAt,
@@ -149,6 +192,7 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
         content: mergedText,
         category: 'others',
         specificTags: [],
+        attachments: processedAttachments,
         source: 'telegram',
         isProcessed: false,
         createdAt: item.createdAt,
@@ -200,7 +244,15 @@ export function getActiveDebounceCount(chatId: string): number {
  * - Clean pin list: 📌 Content (truncated up to 140 chars)
  */
 export function formatSnippetPage(
-  items: Array<{ content: string; createdAt: Date; category: string; specificTags?: string[] | null; isPinned?: boolean }>,
+  items: Array<{
+    content: string;
+    createdAt: Date;
+    category: string;
+    specificTags?: string[] | null;
+    isPinned?: boolean;
+    isProcessed?: boolean;
+    attachments?: Array<{ type: 'image' | 'file'; [key: string]: any }> | null;
+  }>,
   totalCount: number,
   page: number,
   pageSize: number,
@@ -212,7 +264,7 @@ export function formatSnippetPage(
   let text = `${headerTitle} ${pageInfo}\n\n`;
 
   if (items.length === 0) {
-    text += locale === 'en' ? '_No notes found in this category or tag._' : '_Belum ada catatan pada kategori atau tag ini._';
+    text += locale === 'en' ? '_No notes found._' : '_Belum ada catatan._';
     return text.trim();
   }
 
@@ -243,7 +295,16 @@ export function formatSnippetPage(
     const clean = rawClean || defaultTitle;
     const snippet = clean.length > 140 ? `${clean.slice(0, 140)}...` : clean;
     const pinIcon = n.isPinned ? '📌⭐️' : '📌';
-    group.snippets.push(`(${noteIndex}) ${pinIcon} ${snippet}`);
+
+    let attachIcon = '';
+    if (n.attachments && Array.isArray(n.attachments) && n.attachments.length > 0) {
+      const hasImg = n.attachments.some((a) => a.type === 'image');
+      attachIcon = hasImg ? ' 🖼️' : ' 📎';
+    }
+
+    const unorgBadge = n.isProcessed === false ? ' [unorganized]' : '';
+
+    group.snippets.push(`(${noteIndex}) ${pinIcon}${attachIcon} ${snippet}${unorgBadge}`);
     noteIndex++;
   }
 
@@ -274,7 +335,7 @@ export const ALL_CATEGORIES = [
 /**
  * Builds Telegram Inline Keyboard for categories with at least 1 note.
  */
-export function buildCategoriesGridKeyboard(availableCategories?: Set<string>, unorganizedCount: number = 0) {
+export function buildCategoriesGridKeyboard(availableCategories?: Set<string>, _unorganizedCount: number = 0) {
   const categoriesToDisplay = availableCategories
     ? ALL_CATEGORIES.filter((c) => availableCategories.has(c.key))
     : ALL_CATEGORIES;
@@ -503,7 +564,7 @@ export async function handleTagFilter(
 /**
  * In-memory map to store navigation context for note detail view when callback_data is long.
  */
-export const noteNavMap = new Map<string, { type: 'tags' | 'search' | 'pin'; queryVal: string; page: number }>();
+export const noteNavMap = new Map<string, { type: 'tags' | 'search' | 'pin' | 'read'; queryVal: string; page: number }>();
 
 /**
  * In-memory session state for active note snippets list on a chat.
@@ -513,7 +574,7 @@ export const noteListSessionMap = new Map<
   string,
   {
     items: Array<{ id: string; content: string }>;
-    type: 'tags' | 'search' | 'pin';
+    type: 'tags' | 'search' | 'pin' | 'read';
     queryVal: string;
     page: number;
     expiresAt: number;
@@ -547,7 +608,7 @@ export async function displayNoteDetail(
   chatId: string,
   messageId: number | undefined,
   noteId: string,
-  type: 'tags' | 'search' | 'pin',
+  type: 'tags' | 'search' | 'pin' | 'read',
   queryVal: string,
   currentPage: number
 ): Promise<TelegramProcessResult> {
@@ -562,6 +623,20 @@ export async function displayNoteDetail(
   }
 
   noteNavMap.set(note.id, { type, queryVal, page: currentPage });
+
+  // Kirim lampiran foto/file jika ada (sendPhoto / sendDocument)
+  if (note.attachments && Array.isArray(note.attachments) && note.attachments.length > 0) {
+    for (const att of note.attachments) {
+      const fileTarget = att.fileId || att.localPath;
+      if (fileTarget) {
+        if (att.type === 'image') {
+          await sendTelegramPhoto(chatId, fileTarget);
+        } else {
+          await sendTelegramDocument(chatId, fileTarget);
+        }
+      }
+    }
+  }
 
   const pinIcon = note.isPinned ? '📌⭐️' : '📌';
   const dateTimeStr = formatNoteDateWib(new Date(note.createdAt));
@@ -652,7 +727,7 @@ export async function displayNoteDetail(
  * - Menu row: [ 🏷 Kembali ke Tags ]
  */
 export function buildPaginationKeyboard(
-  type: 'tags' | 'search' | 'pin',
+  type: 'tags' | 'search' | 'pin' | 'read',
   queryVal: string,
   currentPage: number,
   totalPages: number,
@@ -706,7 +781,7 @@ export function buildPaginationKeyboard(
   }
 
   // 3. Baris Menu
-  if (type === 'tags' || type === 'pin') {
+  if (type === 'tags' || type === 'pin' || type === 'read') {
     rows.push([
       {
         text: '🏷 Kembali ke Tags',
@@ -800,6 +875,78 @@ export async function handlePinList(
 }
 
 /**
+ * Handles /read command and dock menu '📖 Read':
+ * Displays up to 27 latest notes across all categories using pagination (PAGE_SIZE = 9, up to 3 pages).
+ */
+export async function handleReadCommand(
+  chatId: string,
+  userId: string,
+  page: number = 1,
+  activeLocale: SupportedLocale = 'id',
+  messageId?: number
+): Promise<TelegramProcessResult> {
+  const MAX_READ_NOTES = 27;
+
+  // Query total non-encrypted notes count for this user
+  const [countResult] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(notes)
+    .where(and(eq(notes.userId, userId), eq(notes.isEncrypted, false)));
+
+  const totalInDb = Number(countResult?.count || 0);
+  const totalCount = Math.min(totalInDb, MAX_READ_NOTES);
+
+  if (totalCount === 0) {
+    const emptyMsg = getTelegramMsg('read_empty', activeLocale);
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, emptyMsg);
+    } else {
+      await sendTelegramMessage(chatId, emptyMsg, { reply_markup: PERSISTENT_DOCK_KEYBOARD });
+    }
+    return { ok: true, action: 'read_empty' };
+  }
+
+  const totalPages = Math.min(3, Math.max(1, Math.ceil(totalCount / PAGE_SIZE)));
+  const validPage = Math.min(Math.max(1, page), totalPages);
+  const offset = (validPage - 1) * PAGE_SIZE;
+  const limitForPage = Math.min(PAGE_SIZE, totalCount - offset);
+
+  const pageNotes = await db
+    .select()
+    .from(notes)
+    .where(and(eq(notes.userId, userId), eq(notes.isEncrypted, false)))
+    .orderBy(desc(notes.createdAt))
+    .limit(limitForPage)
+    .offset(offset);
+
+  const headerTitle = getTelegramMsg('read_header', activeLocale);
+  const reply = formatSnippetPage(pageNotes, totalCount, validPage, PAGE_SIZE, headerTitle, activeLocale);
+  const keyboard = buildPaginationKeyboard('read', 'all', validPage, totalPages, pageNotes);
+
+  noteListSessionMap.set(chatId, {
+    items: pageNotes.map((n) => ({ id: n.id, content: n.content })),
+    type: 'read',
+    queryVal: 'all',
+    page: validPage,
+    expiresAt: Date.now() + TAG_SESSION_TTL_MS,
+  });
+
+  if (messageId) {
+    await editTelegramMessage(chatId, messageId, reply, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  } else {
+    await sendTelegramMessage(chatId, reply, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
+
+  return { ok: true, action: 'read_list', page: validPage, totalCount };
+}
+
+/**
  * Handles /dashboard command and dock menu '🌐 Dashboard': sends prompt with web link.
  */
 export async function handleDashboardCommand(
@@ -825,7 +972,7 @@ export async function handleDashboardCommand(
 
 export const syncCooldownMap = new Map<string, number>();
 export const syncInProgressSet = new Set<string>();
-export const SYNC_COOLDOWN_MS = 5000;
+export const SYNC_COOLDOWN_MS = 10000;
 
 /**
  * Handles /sync, /organize, /rapikan or dock menu '🔄 Sync' trigger
@@ -846,15 +993,11 @@ export async function handleSyncCommand(
     return { ok: true, action: 'sync_in_progress' };
   }
 
-  // Anti-Spam: Cek cooldown 5 detik
+  // Anti-Spam: Cek cooldown 10 detik
   const lastSync = syncCooldownMap.get(userId) || 0;
   const elapsed = Date.now() - lastSync;
   if (elapsed < SYNC_COOLDOWN_MS) {
-    const remainingSec = Math.ceil((SYNC_COOLDOWN_MS - elapsed) / 1000);
-    const cooldownMsg =
-      activeLocale === 'en'
-        ? `Please wait ${remainingSec}s before syncing again.`
-        : `Mohon tunggu ${remainingSec} detik sebelum melakukan sinkronisasi kembali.`;
+    const cooldownMsg = getTelegramMsg('sync_cooldown', activeLocale);
 
     await sendTelegramMessage(chatId, cooldownMsg, {
       parse_mode: 'Markdown',
@@ -997,10 +1140,8 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'blocked_during_sync' };
   }
 
-  // 1. Deteksi file / media (foto, dokumen, video, audio, voice, sticker, dsb.)
-  const isMedia = Boolean(
-    (message.photo && message.photo.length > 0) ||
-    message.document ||
+  // 1a. Deteksi file media yang tidak didukung (video, voice, audio, video_note, sticker, animation)
+  const isUnsupportedMedia = Boolean(
     message.video ||
     message.voice ||
     message.audio ||
@@ -1009,7 +1150,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     message.animation
   );
 
-  if (isMedia) {
+  if (isUnsupportedMedia) {
     const [existingKey] = await db
       .select()
       .from(apiKeys)
@@ -1029,6 +1170,149 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'unsupported_media' };
   }
 
+  // 1b. Deteksi lampiran multimedia yang didukung (foto dan dokumen)
+  const isSupportedMedia = Boolean(
+    (message.photo && message.photo.length > 0) ||
+    message.document
+  );
+
+  if (isSupportedMedia) {
+    const [existingKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!existingKey) {
+      const activeLocale = detectTelegramLocale(message, null);
+      await sendTelegramMessage(
+        chatId,
+        getTelegramMsg('unauthenticated', activeLocale),
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: true, action: 'unauthenticated' };
+    }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, existingKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(message, matchedUser?.preferredLocale);
+
+    const quotaInfo = await checkUserQuotaAndTier(existingKey.userId);
+    if (!quotaInfo.allowed) {
+      const quotaMsg = getTelegramQuotaExceededMessage(process.env.BETTER_AUTH_URL, activeLocale);
+      await sendTelegramMessage(chatId, quotaMsg.text, {
+        parse_mode: 'Markdown',
+        reply_markup: quotaMsg.replyMarkup,
+      });
+      return { ok: false, error: 'monthly_quota_exceeded' };
+    }
+
+    const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB limit
+    let rawAtt: RawAttachmentInput;
+
+    if (message.photo && message.photo.length > 0) {
+      const photoItem = message.photo[message.photo.length - 1];
+      const fileSize = photoItem.file_size || 0;
+      if (fileSize > MAX_FILE_SIZE) {
+        await sendTelegramMessage(chatId, getTelegramMsg('media_size_exceeded', activeLocale), {
+          reply_markup: PERSISTENT_DOCK_KEYBOARD,
+        });
+        return { ok: false, error: 'media_size_exceeded' };
+      }
+      rawAtt = {
+        fileId: photoItem.file_id,
+        type: 'image',
+        sizeBytes: fileSize,
+      };
+    } else {
+      const doc = message.document;
+      const fileSize = doc.file_size || 0;
+      if (fileSize > MAX_FILE_SIZE) {
+        await sendTelegramMessage(chatId, getTelegramMsg('media_size_exceeded', activeLocale), {
+          reply_markup: PERSISTENT_DOCK_KEYBOARD,
+        });
+        return { ok: false, error: 'media_size_exceeded' };
+      }
+      const isImageMime = doc.mime_type?.startsWith('image/');
+      rawAtt = {
+        fileId: doc.file_id,
+        type: isImageMime ? 'image' : 'file',
+        fileName: doc.file_name,
+        mimeType: doc.mime_type,
+        sizeBytes: fileSize,
+      };
+    }
+
+    const captionText = (message.caption || '').trim();
+    // Jika pesan tunggal tanpa caption teks (dan bukan bagian media group album), tolak langsung
+    if (!message.media_group_id && !captionText) {
+      await sendTelegramMessage(chatId, getTelegramMsg('media_missing_caption', activeLocale), {
+        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      });
+      return { ok: false, error: 'media_missing_caption' };
+    }
+
+    // Buffer ke debounceMap (mendukung album / multi-media grouping)
+    if (debounceMap.has(chatId)) {
+      const existing = debounceMap.get(chatId)!;
+      clearTimeout(existing.timer);
+      if (captionText) {
+        existing.messages.push(captionText);
+      }
+      if (!existing.rawAttachments) {
+        existing.rawAttachments = [];
+      }
+      existing.rawAttachments.push(rawAtt);
+      existing.hasMedia = true;
+      existing.locale = activeLocale;
+      existing.timer = setTimeout(() => {
+        flushDebounceBuffer(chatId).catch((err) =>
+          console.error('[Debounce Auto Flush Error]:', err)
+        );
+      }, DEBOUNCE_DELAY_MS);
+
+      return {
+        ok: true,
+        action: 'buffered_media',
+        noteId: existing.noteId,
+        bufferedCount: existing.messages.length,
+      };
+    }
+
+    const noteId = crypto.randomUUID();
+    const messages = captionText ? [captionText] : [];
+    const timer = setTimeout(() => {
+      flushDebounceBuffer(chatId).catch((err) =>
+        console.error('[Debounce Auto Flush Error]:', err)
+      );
+    }, DEBOUNCE_DELAY_MS);
+
+    debounceMap.set(chatId, {
+      timer,
+      messages,
+      activeKey: existingKey,
+      chatId,
+      noteId,
+      createdAt: new Date(),
+      tier: quotaInfo.isPro ? 'pro' : 'free',
+      locale: activeLocale,
+      rawAttachments: [rawAtt],
+      mediaGroupId: message.media_group_id,
+      hasMedia: true,
+    });
+
+    return {
+      ok: true,
+      action: 'buffered_media',
+      noteId,
+      bufferedCount: messages.length,
+    };
+  }
+
   const rawText: string | undefined = message.text || message.caption;
 
   if (!rawText || !rawText.trim()) {
@@ -1038,7 +1322,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '🔄 Sync' || text === 'Sync' || text === '❌ Tutup Menu';
+  const isDockAction = text === '📖 Read' || text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '🔄 Sync' || text === 'Sync' || text === '❌ Tutup Menu';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -1376,6 +1660,11 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 6b. /pin atau tombol dock '⭐️ Pin' / '⭐ Pin'
   if (text === '/pin' || /^(\/pin)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '⭐️ Pin' || text === '⭐ Pin') {
     return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
+  }
+
+  // 6b2. /read atau tombol dock '📖 Read'
+  if (text === '/read' || /^(\/read)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '📖 Read') {
+    return await handleReadCommand(chatId, activeKey.userId, 1, activeLocale);
   }
 
   // 6c. /dashboard
@@ -1870,7 +2159,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const parts = data.split(':');
     const noteId = parts[2];
     const nav = noteNavMap.get(noteId);
-    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
     let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
 
@@ -1907,7 +2196,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const parts = data.split(':');
     const noteId = parts[2];
     const nav = noteNavMap.get(noteId);
-    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
     let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
 
@@ -1940,7 +2229,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const parts = data.split(':');
     const noteId = parts[2];
     const nav = noteNavMap.get(noteId);
-    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
     let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
 
@@ -1972,7 +2261,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const parts = data.split(':');
     const noteId = parts[2];
     const nav = noteNavMap.get(noteId);
-    const type = (parts[3] as 'tags' | 'search' | 'pin') || nav?.type || 'tags';
+    const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
     let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
 
@@ -2033,6 +2322,38 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
     const res = await handlePinList(chatId, activeKey.userId, pageNum, activeLocale, messageId);
+    await answerTelegramCallbackQuery(callbackId);
+    return res;
+  }
+
+  // 1h. Pagination untuk /read: page:read:<queryVal>:<page_num>
+  if (data.startsWith('page:read:')) {
+    const parts = data.split(':');
+    const pageNum = parseInt(parts[3] || '1', 10) || 1;
+
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
+
+    const res = await handleReadCommand(chatId, activeKey.userId, pageNum, activeLocale, messageId);
     await answerTelegramCallbackQuery(callbackId);
     return res;
   }

@@ -49,9 +49,14 @@ export type TelegramMessageKey =
   | 'dashboard_prompt'
   | 'sync_loading_base'
   | 'sync_lock_active'
+  | 'sync_cooldown'
   | 'sync_completed'
   | 'sync_empty'
-  | 'sync_failed';
+  | 'sync_failed'
+  | 'media_size_exceeded'
+  | 'media_missing_caption'
+  | 'read_empty'
+  | 'read_header';
 
 export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocale, string>> = {
   dashboard_prompt: {
@@ -329,19 +334,44 @@ Simply send any text message or link directly to this bot. Our AI will automatic
     en: `Synchronizing notes... Please wait until the process completes before sending new messages or commands. ⏳`,
   },
 
+  sync_cooldown: {
+    id: `⏳ Tunggu sebentar sebelum melakukan sinkronisasi lagi ya!`,
+    en: `⏳ Please wait a moment before synchronizing again!`,
+  },
+
   sync_completed: {
-    id: `Sinkronisasi selesai!`,
-    en: `Synchronization complete!`,
+    id: `✅ Sinkronisasi selesai!`,
+    en: `✅ Synchronization complete!`,
   },
 
   sync_empty: {
-    id: `Belum ada catatan baru!`,
-    en: `No new notes!`,
+    id: `ℹ️ Belum ada catatan baru!`,
+    en: `ℹ️ No new notes!`,
   },
 
   sync_failed: {
     id: `Gagal melakukan sinkronisasi catatan.`,
     en: `Failed to synchronize notes.`,
+  },
+
+  media_size_exceeded: {
+    id: `⚠️ Ukuran file melebihi batas maksimal 3MB. Catatan tidak disimpan.`,
+    en: `⚠️ File size exceeds maximum limit of 3MB. Note was not saved.`,
+  },
+
+  media_missing_caption: {
+    id: `⚠️ Catatan gambar/file wajib menyertakan caption teks. Catatan tidak disimpan.`,
+    en: `⚠️ Image/file notes must include a text caption. Note was not saved.`,
+  },
+
+  read_empty: {
+    id: `Belum ada catatan yang tersimpan!`,
+    en: `No notes found yet!`,
+  },
+
+  read_header: {
+    id: `📖 *Catatan Terakhir*`,
+    en: `📖 *Latest Notes*`,
   },
 };
 

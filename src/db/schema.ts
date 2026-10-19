@@ -104,10 +104,27 @@ export const notes = pgTable('notes', {
   vaultKey: varchar('vault_key', { length: 100 }),
   isPinned: boolean('is_pinned').default(false).notNull(),
   isProcessed: boolean('is_processed').default(false).notNull(),
+  attachments: jsonb('attachments').$type<Array<{
+    fileId: string;
+    type: 'image' | 'file';
+    mimeType?: string;
+    fileName?: string;
+    sizeBytes?: number;
+    localPath?: string;
+  }>>().default([]).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('notes_user_processed_idx').on(t.userId, t.isProcessed),
 ]);
+
+export type NoteAttachment = {
+  fileId: string;
+  type: 'image' | 'file';
+  mimeType?: string;
+  fileName?: string;
+  sizeBytes?: number;
+  localPath?: string;
+};
 
 export const paymentLogs = pgTable('payment_logs', {
   id: text('id').primaryKey(),
