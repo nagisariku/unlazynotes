@@ -22,18 +22,29 @@ import {
   getTelegramQuotaExceededMessage,
   getTelegramProGatedMessage,
 } from '@/lib/quota-service';
-import { taggingQueue } from '@/lib/tagging-queue';
 import { getTelegramMsg, detectTelegramLocale, type SupportedLocale } from '@/lib/i18n/telegram';
+import { cleanLocalFormat } from '@/lib/formatter';
+import { detectLocalCredential } from '@/lib/ai/credential-detector';
+import { getOrFetchUnorganizedCount, incrementUnorganizedCount } from '@/lib/cache';
+import { organizeUserNotes, formatOrganizedSummary } from '@/lib/ai/batch-organizer';
 
 export const PAGE_SIZE = 9;
 export const DEBOUNCE_DELAY_MS = 3000;
 
-export const PERSISTENT_DOCK_KEYBOARD = {
-  keyboard: [
+export function getDockKeyboard(unorganizedCount: number = 0) {
+  const rows: Array<Array<{ text: string }>> = [
     [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
-  ],
-  resize_keyboard: true,
-};
+  ];
+  if (unorganizedCount > 0) {
+    rows.push([{ text: `🪄 Organize (${unorganizedCount})` }]);
+  }
+  return {
+    keyboard: rows,
+    resize_keyboard: true,
+  };
+}
+
+export const PERSISTENT_DOCK_KEYBOARD = getDockKeyboard(0);
 
 export function getWebDashboardUrl(forInlineButton = false): string {
   const envUrl = process.env.BETTER_AUTH_URL;
@@ -83,68 +94,80 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
   clearTimeout(item.timer);
   debounceMap.delete(chatId);
 
-  const mergedText = item.messages.join('\n\n');
+  const rawMergedText = item.messages.join('\n\n');
+  // 1. Pembersihan format lokal (Zero AI)
+  const mergedText = cleanLocalFormat(rawMergedText);
   const noteId = item.noteId;
 
   try {
-    // 1. Simpan satu catatan utuh ke database
-    await db.insert(notes).values({
-      id: noteId,
-      userId: item.activeKey.userId,
-      content: mergedText,
-      category: 'others',
-      specificTags: [],
-      source: 'telegram',
-      createdAt: item.createdAt,
-    });
+    // 2. Deteksi kredensial lokal (Local Privacy Shield)
+    const credCheck = detectLocalCredential(mergedText);
 
-    // 2. Update monthly notes usage (+1)
-    const newCount = await incrementUserMonthlyNotes(item.activeKey.userId);
+    if (credCheck.isCredential) {
+      // Alur Khusus Kredensial:
+      // Simpan dengan category = 'credential', isProcessed = true, ZERO AI eksternal
+      await db.insert(notes).values({
+        id: noteId,
+        userId: item.activeKey.userId,
+        content: mergedText,
+        category: 'credential',
+        specificTags: credCheck.tags,
+        source: 'telegram',
+        isProcessed: true,
+        createdAt: item.createdAt,
+      });
 
-    // Peringatan Mendekati Limit (Note ke-25 s.d. ke-29 untuk Free Tier)
-    if (item.tier === 'free' && newCount >= 25 && newCount < 30) {
-      const remaining = 30 - newCount;
+      // Update monthly notes usage (+1)
+      const newCount = await incrementUserMonthlyNotes(item.activeKey.userId);
+
+      // Peringatan Mendekati Limit (Note ke-25 s.d. ke-29 untuk Free Tier)
+      if (item.tier === 'free' && newCount >= 25 && newCount < 30) {
+        const remaining = 30 - newCount;
+        await sendTelegramMessage(
+          chatId,
+          getTelegramMsg('quota_warning_footer', item.locale, { remaining }),
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      // Kirim notifikasi tips keamanan Telegram (security_tip)
       await sendTelegramMessage(
         chatId,
-        getTelegramMsg('quota_warning_footer', item.locale, { remaining }),
+        getTelegramMsg('security_tip', item.locale),
         { parse_mode: 'Markdown' }
       );
+    } else {
+      // Alur Catatan Umum (Deferred Batch Organization):
+      // Simpan dengan status isProcessed = false, category = 'others', specificTags = []
+      await db.insert(notes).values({
+        id: noteId,
+        userId: item.activeKey.userId,
+        content: mergedText,
+        category: 'others',
+        specificTags: [],
+        source: 'telegram',
+        isProcessed: false,
+        createdAt: item.createdAt,
+      });
+
+      // Update monthly notes usage (+1)
+      const newCount = await incrementUserMonthlyNotes(item.activeKey.userId);
+
+      // Peringatan Mendekati Limit (Note ke-25 s.d. ke-29 untuk Free Tier)
+      if (item.tier === 'free' && newCount >= 25 && newCount < 30) {
+        const remaining = 30 - newCount;
+        await sendTelegramMessage(
+          chatId,
+          getTelegramMsg('quota_warning_footer', item.locale, { remaining }),
+          { parse_mode: 'Markdown' }
+        );
+      }
+
+      // Update cache counter catatan unorganized pengguna (unorganized_count:{userId} += 1)
+      await incrementUnorganizedCount(item.activeKey.userId, 1);
+
+      // SILENT CAPTURE (NO SPAM): Tetap hening tanpa respon teks chat
     }
-
-    // 3. Background AI Categorization & Tagging via Priority Queue (Fast-lane Pro)
-    taggingQueue.enqueue({
-      noteId,
-      userId: item.activeKey.userId,
-      content: mergedText,
-      tier: item.tier,
-      onComplete: async ({ category }) => {
-        // Notifikasi security_tip HANYA dikirim jika:
-        // 1. Kategori yang dihasilkan AI adalah credential, DAN
-        // 2. Teks memuat indikasi nilai rahasia riil (misal ada assignment password:, pin atm, atau PIN numerik kartu),
-        //    BUKAN sekadar kata benda UI atau tugas teknis.
-        // Jika kategori dari AI adalah todo, draft, schedule, atau lainnya, DILARANG KERAS mengirim notifikasi security_tip.
-        if (category === 'credential') {
-          const lower = mergedText.toLowerCase();
-          const hasRealSecretValue =
-            /\b(password|passwd|pass|kata\s*sandi|sandi|secret|token|api[_-]?key)\s*[:=]\s*\S+/i.test(lower) ||
-            /\b(password|kata\s*sandi)\s*(nya)?\s+[^\s]+/i.test(lower) ||
-            /\b(pin\s*atm|pin\s*kartu|pin\s*debit|pin\s*kredit)\b/i.test(lower) ||
-            /\bpin\s*[:=]\s*\d{4,6}\b/i.test(lower) ||
-            /\b(no(mor)?\s*rek(ening)?|rekening)\b[^\n\r]*?\b\d{6,}\b/i.test(lower) ||
-            /\b(nik|ktp|sim|paspor|passport)\b[^\n\r]*?\b\d{4,}\b/i.test(lower) ||
-            /\b(ssh-ed\d+|ssh-rsa|private\s*key|seed\s*phrase)\b/i.test(lower) ||
-            /\b(cvv|otp)\s*[:=]?\s*\d{3,6}\b/i.test(lower);
-
-          if (hasRealSecretValue) {
-            await sendTelegramMessage(
-              chatId,
-              getTelegramMsg('security_tip', item.locale),
-              { parse_mode: 'Markdown' }
-            );
-          }
-        }
-      },
-    });
 
     return noteId;
   } catch (err) {
@@ -247,23 +270,36 @@ export const ALL_CATEGORIES = [
 /**
  * Builds Telegram Inline Keyboard for categories with at least 1 note.
  */
-export function buildCategoriesGridKeyboard(availableCategories?: Set<string>) {
+export function buildCategoriesGridKeyboard(availableCategories?: Set<string>, unorganizedCount: number = 0) {
   const categoriesToDisplay = availableCategories
     ? ALL_CATEGORIES.filter((c) => availableCategories.has(c.key))
     : ALL_CATEGORIES;
 
-  if (categoriesToDisplay.length === 0) return undefined;
-
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-  const chunkSize = categoriesToDisplay.length <= 4 ? 2 : 3;
-  for (let i = 0; i < categoriesToDisplay.length; i += chunkSize) {
-    rows.push(
-      categoriesToDisplay.slice(i, i + chunkSize).map((cat) => ({
-        text: cat.label,
-        callback_data: `page:tags:${cat.key}:1`,
-      }))
-    );
+
+  if (categoriesToDisplay.length > 0) {
+    const chunkSize = categoriesToDisplay.length <= 4 ? 2 : 3;
+    for (let i = 0; i < categoriesToDisplay.length; i += chunkSize) {
+      rows.push(
+        categoriesToDisplay.slice(i, i + chunkSize).map((cat) => ({
+          text: cat.label,
+          callback_data: `page:tags:${cat.key}:1`,
+        }))
+      );
+    }
   }
+
+  // Jika ada catatan unorganized, tampilkan tombol inline di bawah daftar tag: [ 🪄 Rapikan {N} Catatan ]
+  if (unorganizedCount > 0) {
+    rows.push([
+      {
+        text: `🪄 Rapikan ${unorganizedCount} Catatan`,
+        callback_data: 'organize:run',
+      },
+    ]);
+  }
+
+  if (rows.length === 0) return undefined;
 
   return {
     inline_keyboard: rows,
@@ -791,6 +827,68 @@ export async function handleDashboardCommand(
 }
 
 /**
+ * Handles /organize or /rapikan or dock menu trigger
+ */
+export async function handleOrganizeCommand(
+  chatId: string,
+  userId: string,
+  activeLocale: SupportedLocale = 'id'
+): Promise<TelegramProcessResult> {
+  // Flush any pending debounced messages for this user first
+  if (debounceMap.has(chatId)) {
+    await flushDebounceBuffer(chatId);
+  }
+
+  const count = await getOrFetchUnorganizedCount(userId);
+
+  if (count === 0) {
+    const emptyMsg =
+      activeLocale === 'en'
+        ? 'All notes are organized! No new notes to organize.'
+        : 'Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan.';
+
+    await sendTelegramMessage(chatId, emptyMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: getDockKeyboard(0),
+    });
+    return { ok: true, action: 'organize_empty', count: 0 };
+  }
+
+  const statusText =
+    activeLocale === 'en'
+      ? `Organizing ${count} notes with AI... ⏳`
+      : `Sedang merapikan ${count} catatan dengan AI... ⏳`;
+
+  const statusMsg = await sendTelegramMessageWithId(chatId, statusText, {
+    parse_mode: 'Markdown',
+  });
+
+  const result = await organizeUserNotes(userId);
+  const summary = formatOrganizedSummary(result);
+
+  if (statusMsg.ok && statusMsg.messageId) {
+    try {
+      await editTelegramMessage(chatId, statusMsg.messageId, summary, {
+        parse_mode: 'Markdown',
+        reply_markup: getDockKeyboard(0),
+      });
+    } catch {
+      await sendTelegramMessage(chatId, summary, {
+        parse_mode: 'Markdown',
+        reply_markup: getDockKeyboard(0),
+      });
+    }
+  } else {
+    await sendTelegramMessage(chatId, summary, {
+      parse_mode: 'Markdown',
+      reply_markup: getDockKeyboard(0),
+    });
+  }
+
+  return { ok: true, action: 'organize_success', count: result.total };
+}
+
+/**
  * Core Telegram Message Processor.
  * Shared between Webhook handler and direct VPS Long Polling worker.
  */
@@ -1118,8 +1216,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 5. /tags (tanpa argumen) atau tombol dock '🏷 Tags'
   if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '🏷 Tags') {
     const overview = await getTagsOverviewData(activeKey.userId);
+    const unorganizedCount = await getOrFetchUnorganizedCount(activeKey.userId);
 
-    if (!overview.hasNotes) {
+    if (!overview.hasNotes && unorganizedCount === 0) {
       await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale));
       return { ok: true, action: 'tags_empty' };
     }
@@ -1135,7 +1234,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       recentTagsText: overview.recentTagsText,
     });
 
-    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories);
+    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories, unorganizedCount);
 
     await sendTelegramMessage(chatId, msg, {
       parse_mode: 'HTML',
@@ -1179,6 +1278,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 6c. /dashboard
   if (text === '/dashboard' || /^(\/dashboard)(@[a-zA-Z0-9_]+)?$/.test(text)) {
     return await handleDashboardCommand(chatId, activeLocale);
+  }
+
+  // 6d. /organize atau /rapikan atau tombol dock '🪄 Organize (N)' / '🪄 Organize' / '🪄 Rapikan'
+  if (
+    /^\/?(organize|rapikan)\b/i.test(text) ||
+    text.startsWith('🪄 Organize') ||
+    text.startsWith('🪄 Rapikan')
+  ) {
+    return await handleOrganizeCommand(chatId, activeKey.userId, activeLocale);
   }
 
   // 7. /search <kata_kunci>
@@ -1335,6 +1443,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       isEncrypted: true,
       vaultKey: vaultKey.trim(),
       source: 'telegram',
+      isProcessed: true,
       createdAt: new Date(),
     });
 
@@ -1826,6 +1935,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
     const overview = await getTagsOverviewData(activeKey.userId);
+    const unorganizedCount = await getOrFetchUnorganizedCount(activeKey.userId);
 
     // Perbarui session state nomor tag untuk chatId ini
     tagSessionMap.set(chatId, {
@@ -1838,7 +1948,7 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
       recentTagsText: overview.recentTagsText,
     });
 
-    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories);
+    const keyboard = buildCategoriesGridKeyboard(overview.existingCategories, unorganizedCount);
 
     if (messageId) {
       await editTelegramMessage(chatId, messageId, msg, {
@@ -1849,6 +1959,90 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     await answerTelegramCallbackQuery(callbackId);
     return { ok: true, action: 'callback_menu_tags' };
+  }
+
+  // 1c. Trigger Organize from Inline Keyboard: organize:run
+  if (data === 'organize:run') {
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', 'id'),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [matchedUser] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, activeKey.userId))
+      .limit(1);
+
+    const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
+
+    await answerTelegramCallbackQuery(callbackId, {
+      text: activeLocale === 'en' ? 'Organizing notes...' : 'Sedang merapikan catatan...',
+    });
+
+    const count = await getOrFetchUnorganizedCount(activeKey.userId);
+    if (count === 0) {
+      const emptyMsg =
+        activeLocale === 'en'
+          ? 'All notes are organized! No new notes to organize.'
+          : 'Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan.';
+
+      if (messageId) {
+        await editTelegramMessage(chatId, messageId, emptyMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: getDockKeyboard(0),
+        });
+      } else {
+        await sendTelegramMessage(chatId, emptyMsg, {
+          parse_mode: 'Markdown',
+          reply_markup: getDockKeyboard(0),
+        });
+      }
+      return { ok: true, action: 'organize_empty', count: 0 };
+    }
+
+    const statusText =
+      activeLocale === 'en'
+        ? `Sedang merapikan ${count} catatan dengan AI... ⏳`
+        : `Sedang merapikan ${count} catatan dengan AI... ⏳`;
+
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, statusText, {
+        parse_mode: 'Markdown',
+      });
+    }
+
+    const result = await organizeUserNotes(activeKey.userId);
+    const summary = formatOrganizedSummary(result);
+
+    if (messageId) {
+      try {
+        await editTelegramMessage(chatId, messageId, summary, {
+          parse_mode: 'Markdown',
+          reply_markup: getDockKeyboard(0),
+        });
+      } catch {
+        await sendTelegramMessage(chatId, summary, {
+          parse_mode: 'Markdown',
+          reply_markup: getDockKeyboard(0),
+        });
+      }
+    } else {
+      await sendTelegramMessage(chatId, summary, {
+        parse_mode: 'Markdown',
+        reply_markup: getDockKeyboard(0),
+      });
+    }
+
+    return { ok: true, action: 'organize_success', count: result.total };
   }
 
   // 2. Pagination untuk /search: page:search:<query>:<page_num>

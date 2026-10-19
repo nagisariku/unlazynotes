@@ -148,6 +148,7 @@ export const POST: APIRoute = async ({ request }) => {
         category: validCategory,
         specificTags: tagResult.specific_tags || [],
         source: tagResult.source || 'web',
+        isProcessed: true,
         createdAt: now,
       })
       .returning();

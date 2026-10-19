@@ -4,6 +4,8 @@ import { eq, and, gte, desc } from 'drizzle-orm';
 import { subDays } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
+import { getOrFetchUnorganizedCount } from './cache';
+import { organizeUserNotes } from './ai/batch-organizer';
 
 /**
  * Formats a Date object into human-friendly Asia/Jakarta short datetime
@@ -53,6 +55,16 @@ export async function answerNoteQuestion(
   userId: string,
   question: string
 ): Promise<string> {
+  // 0. Auto-organize unorganized notes silently before answering question
+  const unorganizedCount = await getOrFetchUnorganizedCount(userId);
+  if (unorganizedCount > 0) {
+    try {
+      await organizeUserNotes(userId);
+    } catch (err) {
+      console.warn('[Ask] Failed silent auto-organize before question:', err);
+    }
+  }
+
   const now = new Date();
   const nowFormatted = formatCurrentTime(now);
   const ninetyDaysAgo = subDays(now, 90);

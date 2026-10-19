@@ -17,9 +17,11 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **AI Gateway**: Cosmoshub API (`claude-haiku-5.5`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
-  - `scripts/test-enhancements.ts`: 137/137 assertions lolos (100% PASS, termasuk auto-chunking safeguard)
+  - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
+  - `scripts/test-intent-classifier.ts`: 38/38 Live AI & 38/38 Heuristic (100% PASS)
+  - `scripts/test-phase4-polishes.ts`: 33/33 tests lolos (100% PASS)
+  - `scripts/test-enhancements.ts`: 145/145 assertions lolos (100% PASS)
   - `scripts/test-ask-temporal.ts`: 100% PASS (Dynamic Scope Broad & Targeted, Anchor Time Math, Claude Haiku 5.5 inference)
-  - `scripts/test-intent-classifier.ts`: 31/31 unit test Live AI & Heuristic lolos (100% PASS)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
   - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
@@ -383,6 +385,51 @@ Mengatasi layout rusak di layar HP pengguna akibat tabel Markdown dan heading be
    - Metrik fisik langkah kaki (`10k langkah`) diamankan dari pencocokan mata uang `10k`.
 5. **Verifikasi Test Suite**:
    - 38/38 skenario (100% PASS) pada `scripts/test-intent-classifier.ts` baik untuk Live AI Pipeline maupun Heuristic Fallback.
+
+### G. Deferred Batch Organization & Local Privacy Shield (Okt 2026)
+Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta perapian cerdas on-demand:
+1. **Database Schema & Backfill (`src/db/schema.ts`)**:
+   - Menambahkan kolom status proses: `isProcessed: boolean('is_processed').default(false).notNull()`.
+   - Index komposit efisiensi query: `index('notes_user_processed_idx').on(t.userId, t.isProcessed)`.
+   - 702 catatan lama di database berhasil dimigrasi dan ditandai `is_processed = true`.
+2. **Local Formatting Cleanup (Zero AI) (`src/lib/formatter.ts`)**:
+   - Fungsi `cleanLocalFormat(content)`:
+     - Normalisasi baris baru (`\r\n` dan `\r` $\rightarrow$ `\n`).
+     - Pembersihan spasi akhir baris (`line.trimEnd()`).
+     - Pembatasan jeda enter berlebih maksimal 2 baris kosong berturut-turut (`\n\n\n`).
+     - Standarisasi bullet `• ` dan `* ` menjadi `- ` dengan mempertahankan indentasi.
+     - **Aturan Mutlak**: Menjaga 100% keaslian huruf besar-kecil, ejaan kata, bahasa gaul, singkatan, angka, dan tanda baca pengguna.
+3. **Local Credential Pre-Detection (Local Privacy Shield) (`src/lib/ai/credential-detector.ts`)**:
+   - Deteksi nilai rahasia riil di mesin lokal menggunakan Complex Regex:
+     - Password assignments (`password:`, `sandi =`, `passwordnya ...`).
+     - PIN ATM / Kartu (`pin atm`, `pin: 1234`).
+     - Nomor Rekening Bank (diikuti digit $\ge 6$).
+     - API Key, Secret Token, Private Key (`ssh-ed25519`, `bearer token`).
+     - CVV & Kartu Identitas bernomor (`ktp`, `nik`, `sim` dengan nomor $\ge 6$ digit).
+   - **Zero-Knowledge Privacy Guard**: Catatan kredensial langsung ditandai `category = 'credential'`, `isProcessed = true`, dan diekstrak tag lokalnya tanpa pernah dikirim ke AI eksternal, disertai pengiriman `security_tip`.
+4. **Silent Capture di Telegram Handler (`src/lib/telegram-handler.ts`)**:
+   - Catatan baru diformat lokal, dicek kredensialnya, dan disimpan ke database:
+     - Kredensial: `isProcessed: true, category: 'credential'`.
+     - Catatan umum: `isProcessed: false, category: 'others'`.
+   - Tetap hening tanpa spam teks "tersimpan!" ke chat.
+   - Cache counter bertambah secara instan: `unorganized_count:{userId} += 1`.
+5. **Tombol Menu & Trigger "Organize"**:
+   - Mendukung command `/organize` dan `/rapikan`.
+   - Tombol dock dinamis `🪄 Organize (N)` yang hanya muncul jika $N > 0$.
+   - Validasi: jika $N = 0$, membalas ramah: *"Semua catatan sudah rapi! Belum ada catatan baru untuk dirapikan."*; jika $N > 0$, menampilkan status sementara *"Sedang merapikan {count} catatan dengan AI... ⏳"*.
+6. **Batch AI Organizer (`src/lib/ai/batch-organizer.ts`)**:
+   - Chunking safeguard: Memproses per chunk (maksimal 10–12 catatan per panggilan LLM) untuk melindungi limit output token Claude Haiku 5.5.
+   - Mengirimkan payload batch ke model dengan menyertakan konteks tag lama user (`userTagContext`) agar tag konsisten.
+   - Hierarki Tag: `specific_tags[0]` adalah Main Tag (payung topik utama), `specific_tags[1..]` adalah entitas detail dan konteks.
+   - Bulk update database: `isProcessed = true, category = ..., specificTags = ...`.
+   - Otomatis menginvalidasi cache tag user dan mereset unorganized counter ke 0.
+7. **Ringkasan Cantik (Organized Result Message)**:
+   - Menghasilkan satu pesan rekapitulasi estetik yang dikelompokkan per kategori (`📁 Todo`, `💰 Finance`, `📅 Schedule`, `📝 Draft`, `🔖 Bookmark`, `🔐 Credential`, `📚 Reference`, `💭 Random Yap`, `📦 Others`) lengkap dengan single-line preview dan `#tag-utama` `#tag-spesifik`.
+8. **Smart Caching Layer (`src/lib/cache.ts`)**:
+   - In-memory cache `user_tags:{userId}` (TTL 1 jam) dan `unorganized_count:{userId}` (TTL 24 jam) untuk kecepatan performa tanpa query berulang ke DB.
+9. **Integrasi `/ask` dan `/tags`**:
+   - `/ask`: Melakukan silent auto-organize catatan unorganized sebelum kalkulasi analisis dieksekusi agar rekap data keuangan/jadwal 100% akurat.
+   - `/tags`: Menampilkan tombol inline `[ 🪄 Rapikan {N} Catatan ]` di bawah daftar tag saat ada catatan unorganized.
 
 ---
 

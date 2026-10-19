@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, varchar, timestamp, boolean, integer, jsonb, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 // 9 Kategori Wajib
 export const categoryEnum = pgEnum('note_category', [
@@ -103,8 +103,11 @@ export const notes = pgTable('notes', {
   isEncrypted: boolean('is_encrypted').default(false).notNull(),
   vaultKey: varchar('vault_key', { length: 100 }),
   isPinned: boolean('is_pinned').default(false).notNull(),
+  isProcessed: boolean('is_processed').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  index('notes_user_processed_idx').on(t.userId, t.isProcessed),
+]);
 
 export const paymentLogs = pgTable('payment_logs', {
   id: text('id').primaryKey(),
