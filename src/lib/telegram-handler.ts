@@ -293,16 +293,6 @@ export function buildCategoriesGridKeyboard(availableCategories?: Set<string>, u
     }
   }
 
-  // Jika ada catatan unorganized, tampilkan tombol inline di bawah daftar tag: [ 🪄 Rapikan {N} Catatan ]
-  if (unorganizedCount > 0) {
-    rows.push([
-      {
-        text: `🪄 Rapikan ${unorganizedCount} Catatan`,
-        callback_data: 'organize:run',
-      },
-    ]);
-  }
-
   if (rows.length === 0) return undefined;
 
   return {
@@ -1010,7 +1000,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '❌ Tutup Menu';
+  const isDockAction = text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '🔄 Sync' || text === 'Sync' || text === '❌ Tutup Menu';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -1356,6 +1346,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleSyncCommand(chatId, activeKey.userId, activeLocale);
   }
 
+  // 6e. /dock atau /menu (Refresh dock keyboard)
+  if (text === '/dock' || text === '/menu') {
+    await sendTelegramMessage(chatId, activeLocale === 'id' ? 'Menu dock telah disegarkan.' : 'Dock menu refreshed.', {
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
+    return { ok: true, action: 'dock_refreshed' };
+  }
+
   // 7. /search <kata_kunci>
   if (text.startsWith('/search')) {
     const keyword = text.replace(/^\/search\s*/, '').trim();
@@ -1642,7 +1640,9 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
   // 10b. Invalid Command Guard (pesan berawalan '/' tanpa command yang cocok)
   if (text.startsWith('/')) {
-    await sendTelegramMessage(chatId, getTelegramMsg('invalid_command', activeLocale));
+    await sendTelegramMessage(chatId, getTelegramMsg('invalid_command', activeLocale), {
+      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    });
     return { ok: true, action: 'invalid_command' };
   }
 
