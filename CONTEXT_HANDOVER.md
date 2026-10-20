@@ -14,7 +14,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
   - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`) – *Profil & Prompt Archive Claude Haiku 5.5 terdokumentasi lengkap di [`CLAUDE_HAIKU_AI_PROFILE.md`](./CLAUDE_HAIKU_AI_PROFILE.md)*
+- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`) – *Profil & Prompt Archive lengkap di [`DEEPSEEK_FLASH_AI_PROFILE.md`](./DEEPSEEK_FLASH_AI_PROFILE.md) & [`CLAUDE_HAIKU_AI_PROFILE.md`](./CLAUDE_HAIKU_AI_PROFILE.md)*
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
   - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
