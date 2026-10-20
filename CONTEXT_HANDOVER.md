@@ -539,3 +539,12 @@ Evaluasi teknis arsitektur saat menangani beban 1.000 hingga 10.000 pengguna:
   2. Restore database dump (`pg_dump` $\rightarrow$ `psql`).
   3. Konfigurasi file `.env.production` (koneksi DB, bot token, API keys, DOKU production).
   4. Jalankan via Docker Compose atau Systemd + Nginx SSL Reverse Proxy sesuai panduan di [`DEPLOYMENT.md`](file:///home/rikushiro/projects/unlazynotes/DEPLOYMENT.md).
+
+---
+
+## 5. Ide Fitur & Backlog Eksperimental (Future Features)
+
+Seluruh ide pengembangan, rancangan UX, dan backlog teknis yang statusnya ditahan (*held*) terdokumentasi terpusat di:
+- [`FUTURE_FEATURES.md`](./FUTURE_FEATURES.md)
+  - **Fitur 1**: *Multi-Bubble & Long-Note Continuation Buffer (Double Comma `,,`)*: Solusi penggabungan catatan multi-bubble dan dokumen panjang pemecah batas 4.096 karakter Telegram.
+
