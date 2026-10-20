@@ -26,80 +26,102 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     return 'todo';
   }
 
-  // Pure URL without extra commentary -> always bookmark
-  const urlRegex = /(https?:\/\/[^\s]+)/gi;
-  const strippedOfUrl = text.replace(urlRegex, '').trim();
+  // Any note containing a URL (unless it is an extensive markdown draft >200 chars) is a bookmark
   const hasUrl = /(https?:\/\/[^\s]+)/i.test(text);
-  if (hasUrl && strippedOfUrl.length === 0) {
+  if (hasUrl && text.length < 250) {
     return 'bookmark';
   }
 
-  // 2. Jika rawCat ada, percayai LLM (Claude Haiku 5.5) dan petakan sinonim ke 9 kategori baku:
+  const routed = routeNoteIntent(content);
+
+  // 2. Jika rawCat ada, petakan sinonim ke 9 kategori baku:
+  let mappedCategory: NoteCategory | null = null;
   if (rawCat) {
     const c = rawCat.toLowerCase().trim();
 
     // Mapping sinonim LLM
     if (['todo', 'task', 'tasks', 'action', 'actions', 'checklist', 'backlog', 'chores', 'job'].includes(c)) {
-      return 'todo';
-    }
-    if (['finance', 'expense', 'expenses', 'spending', 'income', 'money', 'bill', 'bills', 'payment', 'transaksi'].includes(c)) {
-      return 'finance';
-    }
-    if (['schedule', 'event', 'events', 'appointment', 'calendar', 'meeting', 'jadwal'].includes(c)) {
-      return 'schedule';
-    }
-    if (['random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought', 'uneg-uneg', 'opini'].includes(c)) {
-      return 'random-yap';
-    }
-    if (['bookmark', 'link', 'url', 'web', 'site'].includes(c)) {
-      return 'bookmark';
-    }
-    if (['credential', 'password', 'passwords', 'secret', 'secrets', 'auth', 'token', 'token-key'].includes(c)) {
-      return 'credential';
-    }
-    if (['draft', 'writing', 'article', 'doc', 'docs', 'spec', 'specification', 'document'].includes(c)) {
-      return 'draft';
-    }
-    if (['reference', 'recipe', 'quote', 'quotes', 'snippet', 'documentation', 'scripture'].includes(c)) {
-      return 'reference';
-    }
-    if (['others', 'other', 'idea', 'ideas', 'konsep', 'log'].includes(c)) {
-      return 'others';
-    }
-
-    if (CATEGORIES.includes(c as NoteCategory)) {
-      return c as NoteCategory;
+      mappedCategory = 'todo';
+    } else if (['finance', 'expense', 'expenses', 'spending', 'income', 'money', 'bill', 'bills', 'payment', 'transaksi'].includes(c)) {
+      mappedCategory = 'finance';
+    } else if (['schedule', 'event', 'events', 'appointment', 'calendar', 'meeting', 'jadwal'].includes(c)) {
+      mappedCategory = 'schedule';
+    } else if (['random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought', 'uneg-uneg', 'opini'].includes(c)) {
+      mappedCategory = 'random-yap';
+    } else if (['bookmark', 'link', 'url', 'web', 'site'].includes(c)) {
+      mappedCategory = 'bookmark';
+    } else if (['credential', 'password', 'passwords', 'secret', 'secrets', 'auth', 'token', 'token-key'].includes(c)) {
+      mappedCategory = 'credential';
+    } else if (['draft', 'writing', 'article', 'doc', 'docs', 'spec', 'specification', 'document'].includes(c)) {
+      mappedCategory = 'draft';
+    } else if (['reference', 'recipe', 'quote', 'quotes', 'snippet', 'documentation', 'scripture'].includes(c)) {
+      mappedCategory = 'reference';
+    } else if (['others', 'other', 'idea', 'ideas', 'konsep', 'log'].includes(c)) {
+      mappedCategory = 'others';
+    } else if (CATEGORIES.includes(c as NoteCategory)) {
+      mappedCategory = c as NoteCategory;
     }
   }
 
-  // 3. Fallback Heuristik (HANYA jika LLM gagal atau mengembalikan nilai aneh):
-  const fallbackModule = routeNoteIntent(content);
-  switch (fallbackModule) {
-    case 'bookmark':
-      return 'bookmark';
-    case 'credential':
-      return 'credential';
-    case 'schedule':
-      return 'schedule';
-    case 'finance':
-      return 'finance';
-    case 'todo':
-      return 'todo';
-    case 'general':
-    default: {
-      const isArabic = /[\u0600-\u06FF]/.test(content);
-      const isScripture = isArabic || /\b(surah|qs\b|q\.s\b|ayat|al-qur'?an|quran|hadits|hadist|rasulullah|allah|bismillah|alhamdulillah|doa|quote|kutipan)\b/i.test(lower);
-      if (isScripture) return text.length > 250 ? 'draft' : 'reference';
-
-      if (text.length > 200 || /^#{1,6}\s+/m.test(text) || text.includes('\n#')) return 'draft';
-
-      if (/\b(kadang mikir|kepikiran|kenapa ya|heran|curhat|uneg-uneg|capek banget|males banget|kok bisa|shower thought|renungan)\b/i.test(lower)) {
-        return 'random-yap';
-      }
-
-      return 'others';
+  // Fallback ke router jika model tidak mengembalikan kategori valid
+  if (!mappedCategory) {
+    switch (routed) {
+      case 'bookmark': return 'bookmark';
+      case 'credential': return 'credential';
+      case 'schedule': return 'schedule';
+      case 'finance': return 'finance';
+      case 'todo': return 'todo';
+      default: return 'others';
     }
   }
+
+  // 3. Safety Guardrails against Model Misclassification (Deterministic Boundary Protection):
+  // Guard A: Data rahasia / rekening bank tidak boleh salah masuk ke finance atau todo
+  if (routed === 'credential') {
+    return 'credential';
+  }
+
+  // Guard B: Transaksi keuangan riil tidak boleh didegradasi ke random-yap atau others
+  if ((mappedCategory === 'random-yap' || mappedCategory === 'others') && routed === 'finance') {
+    return 'finance';
+  }
+
+  // Guard C: Catatan aksi / komunikasi tidak boleh didegradasi ke random-yap
+  if (mappedCategory === 'random-yap' && routed === 'todo') {
+    return 'todo';
+  }
+
+  // Guard D: Catatan ide mentah pendek (<150 karakter) adalah others, bukan draft atau todo
+  if ((mappedCategory === 'draft' || mappedCategory === 'todo') && /^\s*ide\s+/i.test(lower) && text.length < 150) {
+    return 'others';
+  }
+
+  // Guard E: Catatan gejala kesehatan & obat adalah others, bukan todo, random-yap, atau credential
+  if ((mappedCategory === 'todo' || mappedCategory === 'random-yap' || mappedCategory === 'credential') && /\b(migrain|pusing|mual|demam|flu|batuk|paracetamol|panadol|bodrex)\b/i.test(lower)) {
+    return 'others';
+  }
+
+  // Guard F: Catatan olahraga / repetisi / jarak ("10k langkah", "squat 60kg") adalah others
+  if ((mappedCategory === 'random-yap' || mappedCategory === 'finance' || mappedCategory === 'todo') && /\b(leg\s*day|workout|gym|squat|push\s*up|bench\s*press|\d+(\.\d+)?\s*(k\s*)?(langkah|steps?|set|reps?))\b/i.test(lower)) {
+    return 'others';
+  }
+
+  // Guard G: Catatan riset / pencarian aksi ("cari info ...", "bandingin harga ...") adalah todo, bukan reference
+  if (mappedCategory === 'reference' && /\b(cari|bandingin|cek|riset|tanya|hubungi|survey)\b/i.test(lower)) {
+    return 'todo';
+  }
+
+  // Guard H: Dokumen berformat markdown (#, ##) adalah draft, bukan reference
+  if (mappedCategory === 'reference' && (/^#{1,6}\s+/m.test(text) || text.includes('\n#'))) {
+    return 'draft';
+  }
+
+  // Guard I: Instruksi teknis / bullet task list ("app: - feature") adalah todo, bukan reference atau others
+  if ((mappedCategory === 'reference' || mappedCategory === 'others') && (/:\s*-\s+/i.test(text) || lower.startsWith('todo:') || /-\s+latest\s+notes/i.test(lower))) {
+    return 'todo';
+  }
+
+  return mappedCategory;
 }
 
 /**
@@ -557,7 +579,7 @@ export async function processGeneralNote(
   existingUserTags?: string[]
 ): Promise<NoteTagResult> {
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
 
   if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
     return heuristicFallback(content);
@@ -587,17 +609,17 @@ Analyze the user's note and return a strict JSON object with:
 3. "source": detected platform source string or null.
 
 PRIMARY INTENT CATEGORIES (Classify strictly by user's CORE SEMANTIC INTENT, regardless of casual or unformatted writing style):
-- todo: Segala catatan yang hakikatnya berupa aksi, tugas, pekerjaan, perintah, instruksi teknis/pembangunan (dev tasks), pesanan, follow-up, atau daftar belanja yang harus ditindaklanjuti. Berlaku untuk gaya penulisan APAPUN (kalimat santai, instruksi teknis, bullet list, catatan ringkas tanpa bullet, e.g. "bikin tombol share di detail notes unlazynotes", "unlazynotes: - latest notes up to 50 notes", "tambahin opsi pin untuk note penting", "pesen martabak", "chat rizky tanya proposal", "perpanjang sim a...").
-- finance: Segala catatan transaksi riil arus kas dompet user di dunia nyata (pengeluaran, pemasukan, utang-piutang, pembayaran, tagihan) yang memuat nominal harga/uang (e.g. "cimin 20k", "ubed minjem 100k", "subscription cursor 20 usd").
-  PENTING: Jika angka/harga muncul dalam konteks dokumen spesifikasi fitur, rencana tier harga SaaS (misal: "# SaaS Spec \n # free ... # pro $1/month"), jumlah langkah/olahraga ("10k langkah"), atau perbandingan spek barang, HAKIKATNYA adalah draft, todo, atau others, BUKAN finance!
+- todo: Segala catatan yang hakikatnya berupa aksi, tugas, pekerjaan, perintah, follow-up/komunikasi (e.g. "chat rizky tanya proposal"), instruksi teknis/pembangunan (dev tasks), pesanan ("pesen martabak manis gojek"), riset/komparasi ("cari info biaya kuliah s2 itb", "bandingin harga macbook m3 vs m4"), birokrasi ("perpanjang sim a..."), atau daftar belanja yang harus ditindaklanjuti. Berlaku untuk gaya penulisan APAPUN (kalimat santai, instruksi teknis, bullet list, catatan ringkas tanpa bullet).
+- finance: Segala catatan transaksi riil pengeluaran, jajan, makanan/minuman berbayar, pemasukan, utang-piutang, pembayaran dengan nominal harga/angka (e.g. "cimin 20k", "cimin 12k", "jajan cilok 5rebu", "kopi kenangan 22k", "ubed minjem 100k", "subscription cursor 20 usd").
+  PENTING: Catatan makanan/jajan/belanja dengan nominal uang (seperti 20k, 12k, 22k, 5rb, 100k) ADALAH MUTLAK finance (BUKAN random-yap atau others)! Hanya BUKAN finance jika berupa spek SaaS ("# SaaS Spec \n # pro $1/month"), jumlah langkah olahraga ("10k langkah"), atau tugas banding harga ("bandingin harga macbook").
 - schedule: Segala kegiatan yang terikat pada titik waktu pelaksanaan (jam spesifik, tanggal kalender, hari, waktu ibadah/kultural seperti sholat/maghrib/kajian e.g. "ba'da maghrib ada kajian", maupun periode relatif seperti nanti sore, besok malam, minggu depan e.g. "nanti sorean mau jogging").
 - credential: Brankas penyimpanan nilai rahasia aktual (password akun, PIN kartu/ATM, nomor rekening bank, token/API key, private key).
   PENTING: Penyebutan nama fitur (seperti "pin note", "tambahin opsi pin untuk note penting", "fitur password") atau tugas mengganti/memperpanjang tanpa mencantumkan nilai rahasia BUKAN credential (masuk ke todo)!
 - draft: Dokumen terstruktur, spesifikasi fitur produk, rancangan arsitektur, esai, tulisan panjang (>200 karakter).
 - reference: Rujukan statis, kutipan, ayat suci (Quran, hadits, doa), resep masakan, kode pemrograman referensi. SCRIPTURES & QUOTES ARE NEVER TODO!
-- bookmark: Tautan URL/link yang ingin disimpan atau dibaca (baik URL murni maupun dengan teks pengantar).
-- random-yap: Curahan hati, uneg-uneg, keluhan, renungan santai, shower thoughts tanpa aksi (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja...").
-- others: Log terstruktur non-aksi spesifik: gejala kesehatan & obat, catatan repetisi gym/workout ("leg day 4 set squat 60kg", "10k langkah keliling komplek"), ide bisnis/fitur mentah.
+- bookmark: Tautan URL/link yang ingin disimpan atau dibaca (baik URL murni maupun teks yang memuat URL/link seperti "https://youtu.be/xyz referensi animasi web", "https://medium.com/p/123 bacaan devops bagus"). JIKA teks memuat URL, kategori WAJIB bookmark (BUKAN reference)!
+- random-yap: Curahan hati, uneg-uneg, keluhan, renungan santai, shower thoughts TANPA nominal uang dan TANPA tugas aksi (e.g. "kadang mikir kenapa orang rela macet-macetan tiap hari demi kerja..."). JANGAN PERNAH gunakan random-yap jika ada nominal harga/uang atau tugas!
+- others: Gejala kesehatan & obat ("migrain minum paracetamol"), ide bisnis/konten/fitur mentah ("ide konten tiktok soal app fatigue", "ide fitur: voice note transcription"), dan catatan repetisi gym/workout ("leg day 4 set squat 60kg", "10k langkah keliling komplek").
 
 CORE TAGGING PRINCIPLES:
 0. Concrete Domain Entity Rule (Strict Anti-Meta):

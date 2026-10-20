@@ -14,7 +14,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
   - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`claude-haiku-5.5`)
+- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`)
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
   - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
