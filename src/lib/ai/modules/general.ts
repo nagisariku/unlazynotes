@@ -81,8 +81,8 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     return 'credential';
   }
 
-  // Guard B: Transaksi keuangan riil tidak boleh didegradasi ke random-yap atau others
-  if ((mappedCategory === 'random-yap' || mappedCategory === 'others') && routed === 'finance') {
+  // Guard B: Transaksi keuangan riil tidak boleh didegradasi ke random-yap, others, atau todo tunggal
+  if ((mappedCategory === 'random-yap' || mappedCategory === 'others' || mappedCategory === 'todo') && routed === 'finance' && !text.includes('\n')) {
     return 'finance';
   }
 
@@ -101,8 +101,8 @@ export function normalizeCategory(rawCat: string | undefined, content: string): 
     return 'others';
   }
 
-  // Guard F: Catatan olahraga / repetisi / jarak ("10k langkah", "squat 60kg") adalah others
-  if ((mappedCategory === 'random-yap' || mappedCategory === 'finance' || mappedCategory === 'todo') && /\b(leg\s*day|workout|gym|squat|push\s*up|bench\s*press|\d+(\.\d+)?\s*(k\s*)?(langkah|steps?|set|reps?))\b/i.test(lower)) {
+  // Guard F: Catatan olahraga / repetisi / jarak ("10k langkah", "squat 60kg", "deadlift 80kg") adalah others
+  if ((mappedCategory === 'random-yap' || mappedCategory === 'finance' || mappedCategory === 'todo' || mappedCategory === 'schedule') && /\b(leg\s*day|back\s*day|chest\s*day|arm\s*day|push\s*day|pull\s*day|workout|gym|deadlift|squat|push\s*up|bench\s*press|\d+(\.\d+)?\s*(k\s*)?(langkah|steps?|set|reps?))\b/i.test(lower)) {
     return 'others';
   }
 
