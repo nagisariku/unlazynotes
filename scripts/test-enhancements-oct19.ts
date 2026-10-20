@@ -16,6 +16,8 @@ import {
   handleReadCommand,
   handleSyncCommand,
   processTelegramMessage,
+  processTelegramCallbackQuery,
+  displayNoteDetail,
   PERSISTENT_DOCK_KEYBOARD,
 } from '../src/lib/telegram-handler';
 import { processTelegramAttachment } from '../src/lib/media-processor';
@@ -280,6 +282,34 @@ async function runTests() {
       Array.isArray(savedAttachNote.attachments) && savedAttachNote.attachments.length === 1,
       'Attachment array saved into database schema jsonb column'
     );
+
+    // 3f. Test on-demand File/Media button & callback
+    const detailAttachRes = await displayNoteDetail(testChatId, undefined, noteWithAttachId, 'read', '', 1);
+    assert(detailAttachRes.ok === true && detailAttachRes.action === 'note_detail_view', 'displayNoteDetail returns ok without auto-sending media');
+
+    const cbMediaRes = await processTelegramCallbackQuery({
+      id: 'cb-media-test-1',
+      from: { id: testChatId, first_name: 'Test' },
+      message: { message_id: 999, chat: { id: testChatId } },
+      data: `note:media:${noteWithAttachId}`,
+    });
+    assert(cbMediaRes.ok === true && cbMediaRes.action === 'note_media_sent', 'Clicking 📥 File/Media sends attachments on-demand');
+
+    // Multi-attachment label verification (2 attachments -> "📥 File/Media (2)")
+    const multiAttachNoteId = `note-multi-attach-${Date.now()}`;
+    await db.insert(notes).values({
+      id: multiAttachNoteId,
+      userId: testUserId,
+      content: 'Kwitansi 2 lembar',
+      category: 'finance',
+      specificTags: ['kwitansi'],
+      attachments: [processedMock, processedMock],
+      source: 'telegram',
+      isProcessed: true,
+      createdAt: new Date(),
+    });
+    const multiDetailRes = await displayNoteDetail(testChatId, undefined, multiAttachNoteId, 'read', '', 1);
+    assert(multiDetailRes.ok === true, 'Multi-attachment note detail view executed successfully');
 
     // -------------------------------------------------------------
     // MODULE 4: Zero-Vision AI Prepend

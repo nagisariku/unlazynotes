@@ -470,10 +470,12 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
      - Gambar tidak pernah dikirim ke Vision API Claude/LLM (menghemat token dan menjaga privasi 100%).
      - Konten catatan yang dikirimkan ke AI Organizer secara otomatis disisipi awalan penanda:
        `[Catatan ini memiliki lampiran gambar/file]\n{isi caption}`.
-   - **Tampilan Detail Catatan**:
-     - Saat detail catatan dibuka (`displayNoteDetail`), berkas foto/dokumen dikirimkan kembali ke chat (`sendTelegramPhoto` / `sendTelegramDocument`) bersama teks detail catatan.
+   - **Tampilan Detail Catatan & On-Demand Media Delivery**:
+     - Berkas foto/dokumen **tidak lagi dikirim otomatis** saat detail catatan dibuka (`displayNoteDetail`), menjaga riwayat chat pengguna tetap bersih dan hemat kuota data.
+     - Inline keyboard detail catatan menyisipkan tombol kondisional `📥 File/Media` (atau `📥 File/Media (${count})` jika memiliki lebih dari 1 berkas lampiran) di antara tombol aksi baris 1 dan tombol navigasi baris 2 hanya jika catatan memiliki lampiran.
+     - Mengklik tombol memicu callback query `note:media:${note.id}` yang mengirimkan notifikasi toast Telegram `📥 Mengirim file/media...` dan mengirimkan seluruh lampiran berkas secara *on-demand* (`sendTelegramPhoto` / `sendTelegramDocument`).
 4. **Verifikasi Test Suite**:
-   - `scripts/test-enhancements-oct19.ts`: 24/24 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, dan zero-vision AI payload).
+   - `scripts/test-enhancements-oct19.ts`: 27/27 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, zero-vision AI payload, serta on-demand file/media button & callback).
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
