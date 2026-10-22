@@ -25,3 +25,7 @@ dist/
 
 # Logs
 *.log
+
+# Local media storage
+storage/
+
