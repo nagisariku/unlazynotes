@@ -479,6 +479,26 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
+### AA. Penyelarasan Web UI Redesign, TargetDate Schema, & Human Intent Lock (Okt 2026)
+1. **Pembaruan Skema Database (`src/db/schema.ts`)**:
+   - Kolom `targetDate: timestamp('target_date', { withTimezone: true })` nullable untuk mendukung komponen Calendar Web.
+   - Index komposit: `index('notes_user_target_date_idx').on(t.userId, t.targetDate)`.
+   - Drizzle kit push tersinkronisasi aman tanpa mengubah data yang sudah ada.
+2. **Hukum "Human Intent Trumps AI" & Web Intent Lock (`POST & PATCH /api/notes`)**:
+   - Catatan yang dibuat di tab spesifik Web (Todo, Schedule, Bookmarks, Vault) langsung berstatus `isProcessed = true` dengan kategori terpilih (tanpa token LLM).
+   - Catatan yang dibuat di tab umum (`others`) tetap `isProcessed = false` agar diproses batch sync di background.
+   - Setiap kali user menyimpan edit dari Web (`PATCH /api/notes/[id]`), otomatis dikunci `isProcessed = true` agar terlindungi dari modifikasi atau overwrite AI di masa depan.
+   - Mendukung penghapusan lampiran berkas via tombol '✕' pada dialog edit.
+3. **Logika Calendar Multi-Schedule (Earliest Anchor Date) (`src/lib/date-extractor.ts`)**:
+   - Deteksi otomatis tanggal terlengkap dalam teks jadwal: ISO, DMY, bulan bahasa Indonesia/Inggris, nama hari, kata relatif (besok, lusa), dan waktu (jam).
+   - Jika catatan schedule memuat banyak tanggal (misal "Senin 24 Okt meeting, Rabu 26 Okt flight, Jumat 28 Okt demo"), kolom `targetDate` HANYA diisi dengan tanggal terawal yang akan datang (Earliest Upcoming Anchor Date) tanpa memecah baris catatan.
+4. **Penyelarasan Bookmarks & Attachments**:
+   - Platform tags bookmark dibatasi maksimal Top 3 dominan untuk mencegah tag sprawl pada Table of Contents.
+   - Field `attachments` (jsonb) dikembalikan utuh pada `GET /api/notes`, `GET /api/notes/[id]`, `POST`, dan `PATCH`.
+5. **Verifikasi Test Suite**:
+   - `scripts/test-web-sync-alignment.ts`: 31/31 skenario pengujian PASS (100%).
+   - `npm run typecheck` & `npm run build`: 0 error (100% lulus).
+
 ### Z. Non-Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
 1. **2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
    - **Grid Simetris 2x2**:

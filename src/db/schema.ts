@@ -112,10 +112,15 @@ export const notes = pgTable('notes', {
     sizeBytes?: number;
     localPath?: string;
   }>>().default([]).notNull(),
+  targetDate: timestamp('target_date', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('notes_user_processed_idx').on(t.userId, t.isProcessed),
+  index('notes_user_target_date_idx').on(t.userId, t.targetDate),
 ]);
+
+export type Note = typeof notes.$inferSelect;
+export type NewNote = typeof notes.$inferInsert;
 
 export type NoteAttachment = {
   fileId: string;

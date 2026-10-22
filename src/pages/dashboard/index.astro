@@ -47,6 +47,8 @@ const serializedNotes = userNotes.map((n) => ({
   isEncrypted: n.isEncrypted,
   vaultKey: n.vaultKey,
   isPinned: n.isPinned,
+  isProcessed: n.isProcessed,
+  targetDate: n.targetDate ? n.targetDate.toISOString() : null,
   attachments: n.attachments,
   createdAt: n.createdAt.toISOString(),
 }));

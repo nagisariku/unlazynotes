@@ -31,6 +31,7 @@ export interface ScheduleItem {
   specificTags?: string[] | null;
   source?: string | null;
   isPinned?: boolean;
+  targetDate?: string | Date | null;
   createdAt: string;
 }
 
@@ -76,7 +77,8 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
   const scheduleMap = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
     for (const item of items) {
-      const key = format(new Date(item.createdAt), 'yyyy-MM-dd');
+      const dateToUse = item.targetDate ? new Date(item.targetDate) : new Date(item.createdAt);
+      const key = format(dateToUse, 'yyyy-MM-dd');
       const existing = map.get(key) || [];
       existing.push(item);
       map.set(key, existing);

@@ -10,6 +10,8 @@ import { generateNoteTags } from '@/lib/ai';
 import { encryptSecret } from '@/lib/crypto';
 import { ensureUserInitialResources } from '@/lib/auth';
 import { checkUserQuotaAndTier, incrementUserMonthlyNotes } from '@/lib/quota-service';
+import { extractEarliestScheduleDate } from '@/lib/date-extractor';
+import { incrementUnorganizedCount } from '@/lib/cache';
 import crypto from 'node:crypto';
 
 export const prerender = false;
@@ -140,30 +142,54 @@ export const POST: APIRoute = async ({ request }) => {
 
     const shouldEncrypt = Boolean(body.isEncrypted || body.category === 'credential');
     const vaultKey = body.vaultKey ? String(body.vaultKey).trim() : null;
+    const isPinned = Boolean(body.isPinned);
+    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+    const now = new Date();
 
     let finalContent = trimmedContent;
     let finalCategory: NoteCategory = 'others';
     let finalTags: string[] = [];
     let isEncrypted = false;
+    let isProcessed = false;
+    let targetDate: Date | null = null;
+
+    // Parse targetDate from payload if provided
+    if (body.targetDate) {
+      const parsed = new Date(body.targetDate);
+      if (!isNaN(parsed.getTime())) {
+        targetDate = parsed;
+      }
+    }
 
     if (shouldEncrypt) {
       finalContent = encryptSecret(trimmedContent, user.id);
       finalCategory = 'credential';
-      finalTags = Array.isArray(body.specificTags)
+      finalTags = Array.isArray(body.specificTags) && body.specificTags.length > 0
         ? body.specificTags
         : ['vault', 'credential'];
       isEncrypted = true;
+      isProcessed = true; // Human intent: explicitly stored in vault
+    } else if (body.category && CATEGORIES.includes(body.category as NoteCategory) && body.category !== 'others') {
+      // Human Intent Trumps AI: Explicit category selected in UI (todo, schedule, bookmark, etc.)
+      finalCategory = body.category as NoteCategory;
+      finalTags = Array.isArray(body.specificTags) && body.specificTags.length > 0
+        ? body.specificTags
+        : [finalCategory];
+      isProcessed = true; // Lock from AI modification, zero token spent!
+
+      if (finalCategory === 'schedule' && !targetDate) {
+        targetDate = extractEarliestScheduleDate(trimmedContent, now);
+      }
     } else {
-      // AI Categorization & Tagging
-      const tagResult = await generateNoteTags(trimmedContent, existingUserTags);
-      finalCategory = CATEGORIES.includes(tagResult.category as NoteCategory)
-        ? (tagResult.category as NoteCategory)
-        : 'others';
-      finalTags = tagResult.specific_tags || [];
+      // General note created without specific category (defaults to 'others')
+      // Kept as isProcessed = false so it can be curated later by AI background batch sync
+      finalCategory = 'others';
+      finalTags = Array.isArray(body.specificTags) ? body.specificTags : [];
+      isProcessed = false;
+      await incrementUnorganizedCount(user.id);
     }
 
     const noteId = crypto.randomUUID();
-    const now = new Date();
 
     const [newNote] = await db
       .insert(notes)
@@ -176,7 +202,10 @@ export const POST: APIRoute = async ({ request }) => {
         source: body.source || 'web',
         isEncrypted,
         vaultKey,
-        isProcessed: true,
+        isPinned,
+        isProcessed,
+        targetDate,
+        attachments,
         createdAt: now,
       })
       .returning();
@@ -196,6 +225,7 @@ export const POST: APIRoute = async ({ request }) => {
           vaultKey: newNote.vaultKey,
           isPinned: newNote.isPinned,
           isProcessed: newNote.isProcessed,
+          targetDate: newNote.targetDate ? newNote.targetDate.toISOString() : null,
           attachments: newNote.attachments,
           createdAt: newNote.createdAt.toISOString(),
         },

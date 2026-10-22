@@ -44,6 +44,7 @@ const serializedItems = scheduleNotes.map((n) => ({
   specificTags: n.specificTags,
   source: n.source,
   isPinned: n.isPinned,
+  targetDate: n.targetDate ? n.targetDate.toISOString() : null,
   createdAt: n.createdAt.toISOString(),
 }));
 ---

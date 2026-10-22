@@ -134,15 +134,17 @@ export function processBookmarkNote(content: string): NoteTagResult {
   }
 
   const classifiedList = matches.map((u) => classifyUrl(u));
-  const rawTags: string[] = [];
 
+  // Extract platform tags and limit to Top 3 dominant platforms to prevent TOC tag sprawl
+  const platformTags: string[] = [];
   for (const item of classifiedList) {
     for (const t of item.tags) {
-      if (!rawTags.includes(t)) {
-        rawTags.push(t);
+      if (!platformTags.includes(t)) {
+        platformTags.push(t);
       }
     }
   }
+  const rawTags: string[] = platformTags.slice(0, 3);
 
   // Extract semantic tags from caption if accompanying text exists
   const textWithoutUrls = text.replace(urlRegex, '').trim();

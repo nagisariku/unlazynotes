@@ -26,9 +26,7 @@ import { eq, and } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import {
   handleSyncCommand,
-  syncInProgressSet,
   processTelegramMessage,
-  processTelegramCallbackQuery,
 } from '../src/lib/telegram-handler';
 
 function assert(condition: boolean, message: string) {
@@ -242,31 +240,12 @@ async function runTests() {
   const syncResCooldown = await handleSyncCommand(syncChatId, syncUserId, 'id');
   assert(syncResCooldown.ok === true && syncResCooldown.action === 'sync_cooldown', 'Rapid sync call triggers anti-spam cooldown');
 
-  // Scenario C: Non-parallel lock barrier during active sync
-  syncInProgressSet.add(syncChatId);
-  syncInProgressSet.add(syncUserId);
-
-  const blockedMsgRes = await processTelegramMessage({
+  // Scenario C: Non-blocking background sync architecture (User can continue writing notes freely)
+  const nonBlockingMsgRes = await processTelegramMessage({
     chat: { id: syncChatId },
     text: 'catatan baru saat sedang sync',
   });
-  assert(blockedMsgRes.action === 'blocked_during_sync', 'Incoming message is blocked while sync is in progress');
-
-  const blockedCommandRes = await processTelegramMessage({
-    chat: { id: syncChatId },
-    text: '/tags',
-  });
-  assert(blockedCommandRes.action === 'blocked_during_sync', 'Incoming command is blocked while sync is in progress');
-
-  const blockedCallbackRes = await processTelegramCallbackQuery({
-    id: 'cb_test_sync_lock',
-    data: 'page:tags:todo:1',
-    message: { chat: { id: syncChatId } },
-  });
-  assert(blockedCallbackRes.action === 'blocked_during_sync', 'Callback query is blocked while sync is in progress');
-
-  syncInProgressSet.delete(syncChatId);
-  syncInProgressSet.delete(syncUserId);
+  assert(nonBlockingMsgRes.ok === true, 'Incoming message is accepted smoothly in background sync architecture');
 
   // Clean up
   await db.delete(apiKeys).where(eq(apiKeys.userId, syncUserId));

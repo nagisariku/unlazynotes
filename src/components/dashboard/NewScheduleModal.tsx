@@ -102,7 +102,8 @@ export default function NewScheduleModal({
       specificTags: ['schedule'],
       source: 'web',
       isPinned: false,
-      createdAt: now.toISOString(),
+      targetDate: selectedDate ? selectedDate.toISOString() : null,
+      createdAt: new Date().toISOString(),
     };
 
     onCreated(optimisticItem);
@@ -116,6 +117,7 @@ export default function NewScheduleModal({
           content: text,
           category: 'schedule',
           specificTags: ['schedule'],
+          targetDate: selectedDate ? selectedDate.toISOString() : undefined,
         }),
       });
 

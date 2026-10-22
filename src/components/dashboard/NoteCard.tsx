@@ -25,6 +25,8 @@ export interface NoteCardItem {
   isEncrypted?: boolean;
   vaultKey?: string | null;
   isPinned?: boolean;
+  isProcessed?: boolean;
+  targetDate?: string | Date | null;
   attachments?: any;
   createdAt: string | Date;
 }

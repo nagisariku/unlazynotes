@@ -5,8 +5,63 @@ import { eq, and } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { CATEGORIES } from '@/lib/constants';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
+import { extractEarliestScheduleDate } from '@/lib/date-extractor';
 
 export const prerender = false;
+
+export const GET: APIRoute = async ({ params, request }) => {
+  const user = await getSessionUser(request);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { id } = params;
+  if (!id) {
+    return new Response(JSON.stringify({ error: 'Missing note ID' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const [note] = await db
+    .select()
+    .from(notes)
+    .where(and(eq(notes.id, id), eq(notes.userId, user.id)))
+    .limit(1);
+
+  if (!note) {
+    return new Response(JSON.stringify({ error: 'Note not found' }), {
+      status: 404,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  return new Response(
+    JSON.stringify({
+      note: {
+        id: note.id,
+        content: note.isEncrypted ? decryptSecret(note.content, user.id) : note.content,
+        category: note.category,
+        specificTags: note.specificTags,
+        source: note.source,
+        isEncrypted: note.isEncrypted,
+        vaultKey: note.vaultKey,
+        isPinned: note.isPinned,
+        isProcessed: note.isProcessed,
+        targetDate: note.targetDate ? note.targetDate.toISOString() : null,
+        attachments: note.attachments,
+        createdAt: note.createdAt.toISOString(),
+      },
+    }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+};
 
 export const DELETE: APIRoute = async ({ params, request }) => {
   const user = await getSessionUser(request);
@@ -78,7 +133,7 @@ export const PATCH: APIRoute = async ({ params, request }) => {
 
   try {
     const body = await request.json();
-    const { content, category, specificTags, isPinned, isProcessed, vaultKey } = body;
+    const { content, category, specificTags, targetDate, attachments, isPinned, isProcessed, vaultKey } = body;
 
     const updates: Partial<{
       content: string;
@@ -86,6 +141,8 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       specificTags: string[];
       isPinned: boolean;
       isProcessed: boolean;
+      targetDate: Date | null;
+      attachments: any;
       vaultKey: string | null;
     }> = {};
 
@@ -95,10 +152,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
 
     if (isPinned !== undefined) {
       updates.isPinned = Boolean(isPinned);
-    }
-
-    if (isProcessed !== undefined) {
-      updates.isProcessed = Boolean(isProcessed);
     }
 
     if (content !== undefined) {
@@ -137,6 +190,29 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       updates.specificTags = Array.from(new Set(sanitized));
     }
 
+    if (targetDate !== undefined) {
+      if (targetDate === null || targetDate === '') {
+        updates.targetDate = null;
+      } else {
+        const parsed = new Date(targetDate);
+        if (!isNaN(parsed.getTime())) {
+          updates.targetDate = parsed;
+        }
+      }
+    } else if (category === 'schedule' && !existing.targetDate) {
+      const textToInspect = content !== undefined ? content : (existing.isEncrypted ? decryptSecret(existing.content, user.id) : existing.content);
+      updates.targetDate = extractEarliestScheduleDate(textToInspect);
+    }
+
+    if (attachments !== undefined) {
+      if (Array.isArray(attachments)) {
+        updates.attachments = attachments;
+      }
+    }
+
+    // Human Intent Trumps AI: Any explicit edit from web locks the note from future AI batch sync overwrites
+    updates.isProcessed = true;
+
     if (Object.keys(updates).length === 0) {
       return new Response(JSON.stringify({ error: 'Tidak ada perubahan yang diberikan' }), {
         status: 400,
@@ -161,6 +237,9 @@ export const PATCH: APIRoute = async ({ params, request }) => {
           category: updated.category,
           specificTags: updated.specificTags,
           source: updated.source,
+          isProcessed: updated.isProcessed,
+          targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
+          attachments: updated.attachments,
           createdAt: updated.createdAt.toISOString(),
         },
       }),

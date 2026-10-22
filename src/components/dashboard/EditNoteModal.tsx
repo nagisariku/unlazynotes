@@ -49,6 +49,7 @@ export default function EditNoteModal({
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [vaultKey, setVaultKey] = useState('');
+  const [attachments, setAttachments] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
@@ -100,6 +101,7 @@ export default function EditNoteModal({
       setVaultKey(note.vaultKey || '');
       setIsCategoryOpen(false);
       setTags(note.specificTags || []);
+      setAttachments(note.attachments || []);
       setTagInput('');
       requestAnimationFrame(() => {
         adjustTextareaHeight();
@@ -212,6 +214,7 @@ export default function EditNoteModal({
           content: content.trim(),
           category,
           specificTags: isVaultNote ? [] : tags,
+          attachments,
           vaultKey: isVaultNote ? vaultKey.trim() || null : undefined,
         }),
       });
@@ -346,23 +349,31 @@ export default function EditNoteModal({
                 className="w-full bg-transparent text-ink placeholder:text-mute text-body-md leading-relaxed resize-none focus:outline-none font-sans select-text min-h-[180px] sm:min-h-[220px] p-0 border-0 overflow-hidden block"
               />
 
-              {/* Attachments if any (read-only indicator) */}
-              {note.attachments && note.attachments.length > 0 && (
+              {/* Attachments if any (with delete support) */}
+              {attachments && attachments.length > 0 && (
                 <div className="pt-2 space-y-2 select-none">
                   <div className="flex flex-wrap gap-2">
-                    {note.attachments.map((att: any, i: number) => (
+                    {attachments.map((att: any, i: number) => (
                       <div
                         key={att.fileId || i}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-soft text-caption-sm text-ink max-w-full"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-soft text-caption-sm text-ink max-w-full group"
                       >
                         {att.type === 'image' ? (
                           <ImageIcon className="w-4 h-4 text-mute shrink-0" />
                         ) : (
                           <FileText className="w-4 h-4 text-mute shrink-0" />
                         )}
-                        <span className="truncate max-w-[200px] sm:max-w-xs font-mono">
+                        <span className="truncate max-w-[180px] sm:max-w-xs font-mono">
                           {att.fileName || `Attachment-${i + 1}`}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                          className="text-mute hover:text-terminal-red cursor-pointer ml-1 p-0.5 rounded hover:bg-surface-soft/80"
+                          title="Hapus lampiran"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     ))}
                   </div>

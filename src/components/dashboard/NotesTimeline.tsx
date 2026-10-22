@@ -35,6 +35,8 @@ export interface NoteItem {
   isEncrypted?: boolean;
   vaultKey?: string | null;
   isPinned?: boolean;
+  isProcessed?: boolean;
+  targetDate?: string | Date | null;
   attachments?: any;
   createdAt: string;
 }

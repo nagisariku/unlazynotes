@@ -4,6 +4,8 @@ import { db } from '@/db';
 import { notes, type NoteCategory } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { generateNoteTags } from '@/lib/ai';
+import { extractEarliestScheduleDate } from '@/lib/date-extractor';
+import { resetUnorganizedCount } from '@/lib/cache';
 
 export const prerender = false;
 
@@ -16,11 +18,12 @@ export const POST: APIRoute = async ({ request }) => {
     });
   }
 
-  // 1. Fetch user's uncategorized notes (category: 'others')
+  // 1. Fetch user's strictly unorganized notes (isProcessed = false)
+  // Human Intent Trumps AI: AI Batch Sync DILARANG KERAS menyentuh isProcessed = true!
   const uncategorizedList = await db
     .select()
     .from(notes)
-    .where(and(eq(notes.userId, user.id), eq(notes.category, 'others')))
+    .where(and(eq(notes.userId, user.id), eq(notes.isProcessed, false)))
     .limit(20);
 
   if (uncategorizedList.length === 0) {
@@ -57,37 +60,44 @@ export const POST: APIRoute = async ({ request }) => {
         new Set([...(n.specificTags || []), ...(tagResult.specific_tags || [])])
       );
 
-      // Only update if category changed from 'others' or new tags were discovered
-      if (newCategory !== 'others' || newTags.length > (n.specificTags || []).length) {
-        const [updated] = await db
-          .update(notes)
-          .set({
-            category: newCategory,
-            specificTags: newTags,
-            isProcessed: true,
-          })
-          .where(and(eq(notes.id, n.id), eq(notes.userId, user.id)))
-          .returning();
+      const targetDate = newCategory === 'schedule'
+        ? extractEarliestScheduleDate(n.content, n.createdAt)
+        : null;
 
-        if (updated) {
-          updatedNotes.push({
-            id: updated.id,
-            content: updated.content,
-            category: updated.category,
-            specificTags: updated.specificTags,
-            source: updated.source,
-            isEncrypted: updated.isEncrypted,
-            vaultKey: updated.vaultKey,
-            isPinned: updated.isPinned,
-            attachments: updated.attachments,
-            createdAt: updated.createdAt.toISOString(),
-          });
-        }
+      // Always mark isProcessed = true once organized
+      const [updated] = await db
+        .update(notes)
+        .set({
+          category: newCategory,
+          specificTags: newTags,
+          isProcessed: true,
+          targetDate: targetDate || undefined,
+        })
+        .where(and(eq(notes.id, n.id), eq(notes.userId, user.id)))
+        .returning();
+
+      if (updated) {
+        updatedNotes.push({
+          id: updated.id,
+          content: updated.content,
+          category: updated.category,
+          specificTags: updated.specificTags,
+          source: updated.source,
+          isEncrypted: updated.isEncrypted,
+          vaultKey: updated.vaultKey,
+          isPinned: updated.isPinned,
+          isProcessed: updated.isProcessed,
+          targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
+          attachments: updated.attachments,
+          createdAt: updated.createdAt.toISOString(),
+        });
       }
     } catch (err) {
       console.error(`Failed to categorize note ${n.id} with AI:`, err);
     }
   }
+
+  resetUnorganizedCount(user.id);
 
   return new Response(
     JSON.stringify({

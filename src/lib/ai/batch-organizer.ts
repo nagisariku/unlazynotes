@@ -7,6 +7,7 @@ import { heuristicTagNote } from '../ai';
 import { sanitizeTags } from './sanitizer';
 import { detectLocalCredential } from './credential-detector';
 import { getOrFetchUserTags, invalidateUserTagsCache, resetUnorganizedCount } from '../cache';
+import { extractEarliestScheduleDate } from '../date-extractor';
 
 export interface OrganizedNoteItem {
   id: string;
@@ -236,12 +237,19 @@ Formatting:
 
     // 4. Bulk Update Database untuk setiap catatan dalam chunk
     for (const item of chunkProcessed) {
+      const origNote = chunk.find((n) => n.id === item.id);
+      const targetDate =
+        item.category === 'schedule'
+          ? extractEarliestScheduleDate(item.content, origNote ? origNote.createdAt : new Date())
+          : null;
+
       await db
         .update(notes)
         .set({
           isProcessed: true,
           category: item.category,
           specificTags: item.specificTags,
+          targetDate: targetDate || undefined,
         })
         .where(eq(notes.id, item.id));
 
