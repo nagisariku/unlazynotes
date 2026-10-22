@@ -103,7 +103,7 @@ export async function answerNoteQuestion(
     .join('\n\n');
 
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   if (!apiKey || apiKey.startsWith('mock-')) {

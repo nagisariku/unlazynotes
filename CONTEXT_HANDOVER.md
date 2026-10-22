@@ -14,7 +14,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
   - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`claude-haiku-5.5`)
+- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`) – *Profil & Prompt Archive lengkap di [`DEEPSEEK_FLASH_AI_PROFILE.md`](./DEEPSEEK_FLASH_AI_PROFILE.md) & [`CLAUDE_HAIKU_AI_PROFILE.md`](./CLAUDE_HAIKU_AI_PROFILE.md)*
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
   - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
@@ -470,22 +470,24 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
      - Gambar tidak pernah dikirim ke Vision API Claude/LLM (menghemat token dan menjaga privasi 100%).
      - Konten catatan yang dikirimkan ke AI Organizer secara otomatis disisipi awalan penanda:
        `[Catatan ini memiliki lampiran gambar/file]\n{isi caption}`.
-   - **Tampilan Detail Catatan**:
-     - Saat detail catatan dibuka (`displayNoteDetail`), berkas foto/dokumen dikirimkan kembali ke chat (`sendTelegramPhoto` / `sendTelegramDocument`) bersama teks detail catatan.
+   - **Tampilan Detail Catatan & On-Demand Media Delivery**:
+     - Berkas foto/dokumen **tidak lagi dikirim otomatis** saat detail catatan dibuka (`displayNoteDetail`), menjaga riwayat chat pengguna tetap bersih dan hemat kuota data.
+     - Inline keyboard detail catatan menyisipkan tombol kondisional `📥 File/Media` (atau `📥 File/Media (${count})` jika memiliki lebih dari 1 berkas lampiran) di antara tombol aksi baris 1 dan tombol navigasi baris 2 hanya jika catatan memiliki lampiran.
+     - Mengklik tombol memicu callback query `note:media:${note.id}` yang mengirimkan notifikasi toast Telegram `📥 Mengirim file/media...` dan mengirimkan seluruh lampiran berkas secara *on-demand* (`sendTelegramPhoto` / `sendTelegramDocument`).
 4. **Verifikasi Test Suite**:
-   - `scripts/test-enhancements-oct19.ts`: 24/24 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, dan zero-vision AI payload).
+   - `scripts/test-enhancements-oct19.ts`: 27/27 skenario pengujian lolos 100% PASS (/read pagination max 27, [unorganized] badge, 🖼️/📎 icons, sync cooldown 10s, media size >3MB rejection, media missing caption rejection, Sharp WebP compression, database jsonb persistence, zero-vision AI payload, serta on-demand file/media button & callback).
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
-### Z. Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
-1. **Persistent 2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
+### Z. Non-Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
+1. **2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
    - **Grid Simetris 2x2**:
      ```
      [ 📖 Read ] [ 🔄 Sync ]
      [ 🏷 Tags ] [ ⭐️ Pin ]
      ```
-   - **Fix Dock Auto-Minimizing**: Mengaktifkan `is_persistent: true` dan `resize_keyboard: true` sehingga tombol dock tetap terbuka di klien Telegram Desktop & Mobile tanpa perlu mengetik ulang `/dock`.
-   - **Menghapus Tombol `❌ Tutup Menu`**: Mengeliminasi risiko keyboard terhapus secara permanen dari UI klien karena aksi `remove_keyboard`.
+   - **Non-Persistent (Dapat Ditutup Bebas)**: `is_persistent` dinonaktifkan agar pengguna dapat menutup/meminimalkan atau membuka kembali dock secara alami melalui kontrol keyboard bawaan Telegram (ikon keyboard / swipe), tanpa mengunci UI layar.
+   - **Tanpa Tombol "Tutup Dock"**: Tidak lagi memerlukan tombol `❌ Tutup Menu` khusus yang memakan ruang baris.
 2. **Background Non-Blocking Sync Engine (`src/lib/telegram-handler.ts`)**:
    - **Respon Instan (<200ms)**: Menghapus synchronous blocking barrier (`syncInProgressSet` tidak lagi menolak pesan user/callback). Saat tombol `🔄 Sync` ditekan, bot langsung merespons pesan awal:
      `🔄 Sedang merapikan {count} catatan di latar belakang... Kamu bisa lanjut mencatat seperti biasa!`
@@ -537,3 +539,12 @@ Evaluasi teknis arsitektur saat menangani beban 1.000 hingga 10.000 pengguna:
   2. Restore database dump (`pg_dump` $\rightarrow$ `psql`).
   3. Konfigurasi file `.env.production` (koneksi DB, bot token, API keys, DOKU production).
   4. Jalankan via Docker Compose atau Systemd + Nginx SSL Reverse Proxy sesuai panduan di [`DEPLOYMENT.md`](file:///home/rikushiro/projects/unlazynotes/DEPLOYMENT.md).
+
+---
+
+## 5. Ide Fitur & Backlog Eksperimental (Future Features)
+
+Seluruh ide pengembangan, rancangan UX, dan backlog teknis yang statusnya ditahan (*held*) terdokumentasi terpusat di:
+- [`FUTURE_FEATURES.md`](./FUTURE_FEATURES.md)
+  - **Fitur 1**: *Multi-Bubble & Long-Note Continuation Buffer (Double Comma `,,`)*: Solusi penggabungan catatan multi-bubble dan dokumen panjang pemecah batas 4.096 karakter Telegram.
+

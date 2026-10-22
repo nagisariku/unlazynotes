@@ -49,7 +49,6 @@ export const PERSISTENT_DOCK_KEYBOARD = {
     [{ text: '🏷 Tags' }, { text: '⭐️ Pin' }],
   ],
   resize_keyboard: true,
-  is_persistent: true,
 };
 
 export function getDockKeyboard(_unorganizedCount: number = 0) {
@@ -626,20 +625,6 @@ export async function displayNoteDetail(
 
   noteNavMap.set(note.id, { type, queryVal, page: currentPage });
 
-  // Kirim lampiran foto/file jika ada (sendPhoto / sendDocument)
-  if (note.attachments && Array.isArray(note.attachments) && note.attachments.length > 0) {
-    for (const att of note.attachments) {
-      const fileTarget = att.fileId || att.localPath;
-      if (fileTarget) {
-        if (att.type === 'image') {
-          await sendTelegramPhoto(chatId, fileTarget);
-        } else {
-          await sendTelegramDocument(chatId, fileTarget);
-        }
-      }
-    }
-  }
-
   const pinIcon = note.isPinned ? '📌⭐️' : '📌';
   const dateTimeStr = formatNoteDateWib(new Date(note.createdAt));
 
@@ -678,6 +663,18 @@ export async function displayNoteDetail(
           callback_data: `note:copy:${note.id}`,
         };
 
+  // Tombol File/Media jika catatan memiliki lampiran
+  const attachmentCount = Array.isArray(note.attachments) ? note.attachments.length : 0;
+  const mediaButtonRow =
+    attachmentCount > 0
+      ? [
+          {
+            text: attachmentCount > 1 ? `📥 File/Media (${attachmentCount})` : '📥 File/Media',
+            callback_data: `note:media:${note.id}`,
+          },
+        ]
+      : null;
+
   const detailKeyboard = {
     inline_keyboard: [
       [
@@ -691,6 +688,7 @@ export async function displayNoteDetail(
           callback_data: delCb,
         },
       ],
+      ...(mediaButtonRow ? [mediaButtonRow] : []),
       [
         {
           text: '⬅️ Kembali ke Daftar',
@@ -2255,6 +2253,42 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     await answerTelegramCallbackQuery(callbackId, { text: '🗑 Catatan dihapus' });
     return { ok: true, action: 'note_deleted', noteId };
+  }
+
+  // 1f2. Kirim Berkas/Media Catatan: note:media:<noteId>
+  if (data.startsWith('note:media:')) {
+    const parts = data.split(':');
+    const noteId = parts[2];
+    const [note] = await db
+      .select()
+      .from(notes)
+      .where(eq(notes.id, noteId))
+      .limit(1);
+
+    if (!note || !note.attachments || !Array.isArray(note.attachments) || note.attachments.length === 0) {
+      await answerTelegramCallbackQuery(callbackId, {
+        text: '⚠️ Lampiran file/media tidak ditemukan.',
+        show_alert: true,
+      });
+      return { ok: false, error: 'attachments_not_found', noteId };
+    }
+
+    await answerTelegramCallbackQuery(callbackId, {
+      text: '📥 Mengirim file/media...',
+    });
+
+    for (const att of note.attachments) {
+      const fileTarget = att.fileId || att.localPath;
+      if (fileTarget) {
+        if (att.type === 'image') {
+          await sendTelegramPhoto(chatId, fileTarget);
+        } else {
+          await sendTelegramDocument(chatId, fileTarget);
+        }
+      }
+    }
+
+    return { ok: true, action: 'note_media_sent', noteId };
   }
 
   // 1g. Pagination untuk /pin: page:pin:<queryVal>:<page_num>
