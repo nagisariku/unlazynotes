@@ -4,8 +4,8 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import NotesTimeline from '../../components/dashboard/NotesTimeline';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { notes, users } from '../../db/schema';
-import { eq, desc } from 'drizzle-orm';
+import { notes, users, apiKeys } from '../../db/schema';
+import { eq, desc, and, ne, count, or } from 'drizzle-orm';
 
 export const prerender = false;
 
@@ -20,10 +20,22 @@ const [userRecord] = await db
   .where(eq(users.id, user.id))
   .limit(1);
 
+const [apiKeyRecord] = await db
+  .select()
+  .from(apiKeys)
+  .where(eq(apiKeys.userId, user.id))
+  .limit(1);
+
 const userNotes = await db
   .select()
   .from(notes)
-  .where(eq(notes.userId, user.id))
+  .where(
+    and(
+      eq(notes.userId, user.id),
+      ne(notes.category, 'credential'),
+      eq(notes.isEncrypted, false)
+    )
+  )
   .orderBy(desc(notes.createdAt));
 
 const serializedNotes = userNotes.map((n) => ({
@@ -34,15 +46,68 @@ const serializedNotes = userNotes.map((n) => ({
   source: n.source,
   isEncrypted: n.isEncrypted,
   vaultKey: n.vaultKey,
+  isPinned: n.isPinned,
+  attachments: n.attachments,
   createdAt: n.createdAt.toISOString(),
 }));
+
+// Query category counts for the 4 shortcut cards
+const [todoCountRecord] = await db
+  .select({ value: count() })
+  .from(notes)
+  .where(and(eq(notes.userId, user.id), eq(notes.category, 'todo')));
+
+const [scheduleCountRecord] = await db
+  .select({ value: count() })
+  .from(notes)
+  .where(and(eq(notes.userId, user.id), eq(notes.category, 'schedule')));
+
+const [bookmarksCountRecord] = await db
+  .select({ value: count() })
+  .from(notes)
+  .where(and(eq(notes.userId, user.id), eq(notes.category, 'bookmark')));
+
+const [vaultCountRecord] = await db
+  .select({ value: count() })
+  .from(notes)
+  .where(
+    and(
+      eq(notes.userId, user.id),
+      or(eq(notes.category, 'credential'), eq(notes.isEncrypted, true))
+    )
+  );
+
+const categoryCounts = {
+  todo: Number(todoCountRecord?.value ?? 0),
+  schedule: Number(scheduleCountRecord?.value ?? 0),
+  bookmarks: Number(bookmarksCountRecord?.value ?? 0),
+  vault: Number(vaultCountRecord?.value ?? 0),
+};
+
+const telegramConnectUrl = apiKeyRecord?.rawKey
+  ? `https://t.me/unlazynotes_bot?start=${encodeURIComponent(apiKeyRecord.rawKey)}`
+  : 'https://t.me/unlazynotes_bot';
 ---
 
 <Layout title="Notes – UnlazyNotes">
-  <div class="flex flex-col md:flex-row min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard" user={user} subscriptionPlan={userRecord?.tier || 'free'} />
-    <main class="flex-1 min-w-0 pb-24 md:pb-8 overflow-y-auto">
-      <NotesTimeline client:load initialNotes={serializedNotes} />
+  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+    <Sidebar
+      client:load
+      currentPath="/dashboard"
+      user={user}
+      subscriptionPlan={userRecord?.tier || 'free'}
+      isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
+      rawApiKey={apiKeyRecord?.rawKey || null}
+    />
+    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+      <NotesTimeline
+        client:load
+        initialNotes={serializedNotes}
+        userName={user.name || user.email.split('@')[0]}
+        isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
+        telegramConnectUrl={telegramConnectUrl}
+        categoryCounts={categoryCounts}
+      />
     </main>
   </div>
 </Layout>

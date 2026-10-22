@@ -1,0 +1,71 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Sidebar from '../../components/dashboard/Sidebar';
+import TodoView from '../../components/dashboard/TodoView';
+import { getSessionUser } from '../../lib/session';
+import { db } from '../../db';
+import { notes, users, apiKeys } from '../../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const [userRecord] = await db
+  .select({ tier: users.tier })
+  .from(users)
+  .where(eq(users.id, user.id))
+  .limit(1);
+
+const [apiKeyRecord] = await db
+  .select()
+  .from(apiKeys)
+  .where(eq(apiKeys.userId, user.id))
+  .limit(1);
+
+const todoNotes = await db
+  .select()
+  .from(notes)
+  .where(
+    and(
+      eq(notes.userId, user.id),
+      eq(notes.category, 'todo')
+    )
+  )
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt));
+
+const serializedItems = todoNotes.map((n) => ({
+  id: n.id,
+  content: n.content,
+  category: n.category,
+  specificTags: n.specificTags,
+  source: n.source,
+  isPinned: n.isPinned,
+  isProcessed: n.isProcessed,
+  attachments: n.attachments,
+  createdAt: n.createdAt.toISOString(),
+}));
+---
+
+<Layout title="To Do – UnlazyNotes">
+  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+    <Sidebar
+      client:load
+      currentPath="/dashboard/todo"
+      user={user}
+      subscriptionPlan={userRecord?.tier || 'free'}
+      isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
+      rawApiKey={apiKeyRecord?.rawKey || null}
+    />
+    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+      <TodoView
+        client:load
+        initialItems={serializedItems}
+        userName={user.name || user.email.split('@')[0]}
+      />
+    </main>
+  </div>
+</Layout>

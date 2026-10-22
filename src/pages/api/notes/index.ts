@@ -7,6 +7,7 @@ import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import { CATEGORIES } from '@/lib/constants';
 import { generateNoteTags } from '@/lib/ai';
+import { encryptSecret } from '@/lib/crypto';
 import { ensureUserInitialResources } from '@/lib/auth';
 import { checkUserQuotaAndTier, incrementUserMonthlyNotes } from '@/lib/quota-service';
 import crypto from 'node:crypto';
@@ -25,6 +26,8 @@ export const GET: APIRoute = async ({ request }) => {
   const url = new URL(request.url);
   const q = url.searchParams.get('q')?.trim();
   const category = url.searchParams.get('category')?.trim();
+  const categoriesParam = url.searchParams.get('categories')?.trim();
+  const uncategorizedParam = url.searchParams.get('uncategorized')?.trim();
   const tag = url.searchParams.get('tag')?.trim();
   const range = url.searchParams.get('range')?.trim();
   const startDateStr = url.searchParams.get('startDate')?.trim();
@@ -36,7 +39,14 @@ export const GET: APIRoute = async ({ request }) => {
     conditions.push(buildFlexibleSearchCondition(q));
   }
 
-  if (category) {
+  if (uncategorizedParam === 'true') {
+    conditions.push(sql`${notes.category}::text = 'others'`);
+  } else if (categoriesParam) {
+    const cats = categoriesParam.split(',').map((c) => c.trim()).filter(Boolean);
+    if (cats.length > 0) {
+      conditions.push(sql`${notes.category}::text IN (${sql.join(cats.map((c) => sql`${c}`), sql`, `)})`);
+    }
+  } else if (category) {
     conditions.push(sql`${notes.category}::text = ${category}`);
   }
 
@@ -128,13 +138,29 @@ export const POST: APIRoute = async ({ request }) => {
       // Non-fatal
     }
 
-    // AI Categorization & Tagging
-    const tagResult = await generateNoteTags(trimmedContent, existingUserTags);
-    const validCategory: NoteCategory = CATEGORIES.includes(
-      tagResult.category as NoteCategory
-    )
-      ? (tagResult.category as NoteCategory)
-      : 'others';
+    const shouldEncrypt = Boolean(body.isEncrypted || body.category === 'credential');
+    const vaultKey = body.vaultKey ? String(body.vaultKey).trim() : null;
+
+    let finalContent = trimmedContent;
+    let finalCategory: NoteCategory = 'others';
+    let finalTags: string[] = [];
+    let isEncrypted = false;
+
+    if (shouldEncrypt) {
+      finalContent = encryptSecret(trimmedContent, user.id);
+      finalCategory = 'credential';
+      finalTags = Array.isArray(body.specificTags)
+        ? body.specificTags
+        : ['vault', 'credential'];
+      isEncrypted = true;
+    } else {
+      // AI Categorization & Tagging
+      const tagResult = await generateNoteTags(trimmedContent, existingUserTags);
+      finalCategory = CATEGORIES.includes(tagResult.category as NoteCategory)
+        ? (tagResult.category as NoteCategory)
+        : 'others';
+      finalTags = tagResult.specific_tags || [];
+    }
 
     const noteId = crypto.randomUUID();
     const now = new Date();
@@ -144,10 +170,12 @@ export const POST: APIRoute = async ({ request }) => {
       .values({
         id: noteId,
         userId: user.id,
-        content: trimmedContent,
-        category: validCategory,
-        specificTags: tagResult.specific_tags || [],
-        source: tagResult.source || 'web',
+        content: finalContent,
+        category: finalCategory,
+        specificTags: finalTags,
+        source: body.source || 'web',
+        isEncrypted,
+        vaultKey,
         isProcessed: true,
         createdAt: now,
       })
@@ -164,6 +192,11 @@ export const POST: APIRoute = async ({ request }) => {
           category: newNote.category,
           specificTags: newNote.specificTags,
           source: newNote.source,
+          isEncrypted: newNote.isEncrypted,
+          vaultKey: newNote.vaultKey,
+          isPinned: newNote.isPinned,
+          isProcessed: newNote.isProcessed,
+          attachments: newNote.attachments,
           createdAt: newNote.createdAt.toISOString(),
         },
       }),
@@ -183,4 +216,3 @@ export const POST: APIRoute = async ({ request }) => {
     );
   }
 };
-

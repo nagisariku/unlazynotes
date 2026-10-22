@@ -4,6 +4,7 @@ import { notes, type NoteCategory } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { CATEGORIES } from '@/lib/constants';
+import { encryptSecret, decryptSecret } from '@/lib/crypto';
 
 export const prerender = false;
 
@@ -77,13 +78,28 @@ export const PATCH: APIRoute = async ({ params, request }) => {
 
   try {
     const body = await request.json();
-    const { content, category, specificTags } = body;
+    const { content, category, specificTags, isPinned, isProcessed, vaultKey } = body;
 
     const updates: Partial<{
       content: string;
       category: NoteCategory;
       specificTags: string[];
+      isPinned: boolean;
+      isProcessed: boolean;
+      vaultKey: string | null;
     }> = {};
+
+    if (vaultKey !== undefined) {
+      updates.vaultKey = vaultKey ? String(vaultKey).trim() : null;
+    }
+
+    if (isPinned !== undefined) {
+      updates.isPinned = Boolean(isPinned);
+    }
+
+    if (isProcessed !== undefined) {
+      updates.isProcessed = Boolean(isProcessed);
+    }
 
     if (content !== undefined) {
       if (typeof content !== 'string' || !content.trim()) {
@@ -92,7 +108,9 @@ export const PATCH: APIRoute = async ({ params, request }) => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      updates.content = content.trim();
+      updates.content = existing.isEncrypted
+        ? encryptSecret(content.trim(), user.id)
+        : content.trim();
     }
 
     if (category !== undefined) {
@@ -137,7 +155,9 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         success: true,
         note: {
           id: updated.id,
-          content: updated.content,
+          content: content !== undefined ? content.trim() : (existing.isEncrypted ? decryptSecret(updated.content, user.id) : updated.content),
+          vaultKey: updated.vaultKey,
+          isPinned: updated.isPinned,
           category: updated.category,
           specificTags: updated.specificTags,
           source: updated.source,

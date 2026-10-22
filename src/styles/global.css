@@ -1,16 +1,314 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap');
+
+@theme {
+  /* Colors (20 tokens) */
+  --color-primary: #000000;
+  --color-on-primary: #ffffff;
+  --color-ink: #000000;
+  --color-ink-deep: #090909;
+  --color-charcoal: #525252;
+  --color-body: #737373;
+  --color-mute: #a3a3a3;
+  --color-canvas: #ffffff;
+  --color-surface-soft: #fafafa;
+  --color-surface-card: #ffffff;
+  --color-hairline: #e5e5e5;
+  --color-hairline-strong: #d4d4d4;
+  --color-on-dark: #ffffff;
+  --color-on-dark-mute: rgba(255, 255, 255, 0.7);
+  --color-surface-dark: #171717;
+  --color-focus-ring: transparent;
+  --color-link: #000000;
+  --color-link-mute: #737373;
+  --color-terminal-red: #ff5f56;
+  --color-terminal-yellow: #ffbd2e;
+  --color-terminal-green: #27c93f;
+
+  /* Typography Font Families */
+  --font-display: "SF Pro Rounded", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-tangerine: "Tangerine", cursive;
+
+  /* Rounded Corner Radii (5 tokens) */
+  --radius-none: 0px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* Box Shadow Reset - 100% Flat Geometric Paper-White System */
+  --shadow-none: none;
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+  --shadow-2xl: none;
+}
+
+:root {
+  /* Spacing Tokens from DESIGN.md */
+  --spacing-xxs: 2px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+  --spacing-xxl: 32px;
+  --spacing-section: 88px;
+}
+
+/* Typography Utilities (13 tokens from DESIGN.md) */
+@utility text-display-xl {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 1.11;
+  letter-spacing: 0;
+}
+
+@utility text-display-lg {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+@utility text-heading-lg {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.33;
+  letter-spacing: 0;
+}
+
+@utility text-heading-md {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+@utility text-heading-sm {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.56;
+  letter-spacing: 0;
+}
+
+@utility text-body-md {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+@utility text-body-strong {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+@utility text-body-sm {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.43;
+  letter-spacing: 0;
+}
+
+@utility text-body-sm-strong {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.43;
+  letter-spacing: 0;
+}
+
+@utility text-caption-sm {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.33;
+  letter-spacing: 0;
+}
+
+@utility text-caption-xs {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.33;
+  letter-spacing: 0;
+}
+
+@utility text-code-md {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+@utility text-code-sm {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.43;
+  letter-spacing: 0;
+}
+
+@utility text-button-md {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+@utility tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility font-tangerine {
+  font-family: var(--font-tangerine);
+}
+
+.tangerine-regular {
+  font-family: "Tangerine", cursive;
+  font-weight: 400;
+  font-style: normal;
+}
+
+.tangerine-bold {
+  font-family: "Tangerine", cursive;
+  font-weight: 700;
+  font-style: normal;
+}
 
 @layer base {
-  :root {
-    color-scheme: dark;
+  *, ::before, ::after {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
   }
+
   body {
-    background-color: #09090b;
-    color: #f4f4f5;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-sans);
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-on-primary);
+  }
+
+  input, textarea {
+    caret-color: var(--color-ink);
+  }
+
+  ::placeholder {
+    color: var(--color-body);
+    opacity: 0.85;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  /* Complete Zero Ring / Zero Outline Policy Across All Elements, Form Fields, and Interactive Controls */
+  *, *:focus, *:focus-visible {
+    outline: none !important;
+    --tw-ring-shadow: none !important;
+    --tw-ring-offset-shadow: none !important;
+  }
+
+  input, textarea, select, button {
+    outline: none !important;
+    box-shadow: none !important;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input:focus, textarea:focus, select:focus, button:focus,
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    --tw-ring-shadow: none !important;
+    --tw-ring-offset-shadow: none !important;
+  }
+
+  /* Minimal hairline scrollbar aligned with design tokens */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-hairline-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-hairline-strong);
+    border-radius: 9999px;
   }
 }
 
 .safe-area-bottom {
   padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
+
+/* Utility to hide scrollbars while preserving swipe/touch scrolling */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Calendar continuous range pill styles */
+.rdp-month_grid {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.rdp-range_start {
+  border-top-left-radius: 9999px !important;
+  border-bottom-left-radius: 9999px !important;
+  border-top-right-radius: 0px !important;
+  border-bottom-right-radius: 0px !important;
+}
+
+.rdp-range_middle {
+  border-radius: 0px !important;
+}
+
+.rdp-range_end {
+  border-top-right-radius: 9999px !important;
+  border-bottom-right-radius: 9999px !important;
+  border-top-left-radius: 0px !important;
+  border-bottom-left-radius: 0px !important;
+}
+
+.rdp-range_start.rdp-range_end,
+.rdp-selected:not(.rdp-range_start):not(.rdp-range_middle):not(.rdp-range_end) {
+  border-radius: 9999px !important;
+}
+

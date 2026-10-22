@@ -13,15 +13,18 @@ const {
 ---
 
 <!doctype html>
-<html lang="id" class="dark">
+<html lang="id">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap" rel="stylesheet">
     <title>{title}</title>
     <meta name="description" content={description} />
   </head>
-  <body class="bg-zinc-950 text-zinc-100 min-h-screen selection:bg-indigo-500/30 selection:text-indigo-200 antialiased">
+  <body class="min-h-screen antialiased bg-canvas text-ink selection:bg-primary selection:text-on-primary font-sans">
     <slot />
   </body>
 </html>
