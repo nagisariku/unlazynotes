@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { X, Check, Sparkles, Shield, Zap, ArrowRight, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Shield, Zap, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button, FeatureBullet, CommandTag } from '../ui';
 
 interface UpgradeModalProps {
   isOpen: boolean;
@@ -28,6 +29,17 @@ export default function UpgradeModal({
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(false);
 
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const currentPrice = PRICING[currency][period];
@@ -53,31 +65,46 @@ export default function UpgradeModal({
         toast.error(data.error || 'Gagal memulai proses pembayaran');
         setLoading(false);
       }
-    } catch (err) {
+    } catch {
       toast.error('Terjadi kesalahan jaringan');
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in">
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-zinc-800 bg-zinc-950 p-5 sm:p-8 shadow-2xl text-zinc-100 space-y-5 sm:space-y-6">
-        {/* Close Button */}
+    <>
+      {/* Full-screen Backdrop covering 100% viewport */}
+      <div
+        className="fixed inset-0 w-screen h-screen min-h-[100dvh] z-50 bg-black/40 backdrop-blur-xs"
+        style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Modal Dialog Container */}
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+        style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+      >
+        <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-lg border border-hairline bg-canvas p-6 text-ink space-y-5 pointer-events-auto">
+          {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+          className="absolute top-5 right-5 p-1.5 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
         {/* Modal Header */}
         <div className="space-y-1.5 pr-8">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>UnlazyNotes Pro</span>
+          <div className="inline-flex items-center gap-1.5 mb-1">
+            <CommandTag>
+              <Sparkles className="w-3 h-3 inline mr-1" />
+              UnlazyNotes Pro
+            </CommandTag>
           </div>
-          <h2 className="text-xl font-bold tracking-tight">Upgrade ke Paket Pro</h2>
-          <p className="text-xs text-zinc-400">
+          <h2 className="text-heading-lg text-ink font-semibold">Upgrade ke Paket Pro</h2>
+          <p className="text-body-sm text-body">
             Tingkatkan produktivitas tanpa batas kuota harian dan nikmati asisten cerdas AI.
           </p>
         </div>
@@ -85,48 +112,32 @@ export default function UpgradeModal({
         {/* Currency & Period Toggles */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           {/* Billing Cycle */}
-          <div className="flex items-center p-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
+          <div className="flex items-center p-1 rounded-full bg-surface-soft border border-hairline text-caption-sm">
             <button
               onClick={() => setPeriod('monthly')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                period === 'monthly'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              className={`px-3 py-1 rounded-full font-medium cursor-pointer ${ period === 'monthly' ? 'bg-primary text-on-primary' : 'text-body hover:text-ink' }`}
             >
               Bulanan
             </button>
             <button
               onClick={() => setPeriod('yearly')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                period === 'yearly'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
+              className={`px-3 py-1 rounded-full font-medium cursor-pointer ${ period === 'yearly' ? 'bg-primary text-on-primary' : 'text-body hover:text-ink' }`}
             >
               Tahunan (-17%)
             </button>
           </div>
 
           {/* Currency Toggle */}
-          <div className="flex items-center p-1 rounded-xl bg-zinc-900 border border-zinc-800 text-xs">
+          <div className="flex items-center p-1 rounded-full bg-surface-soft border border-hairline text-caption-sm">
             <button
               onClick={() => setCurrency('IDR')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                currency === 'IDR'
-                  ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              className={`px-3 py-1 rounded-full font-medium cursor-pointer ${ currency === 'IDR' ? 'bg-primary text-on-primary' : 'text-body hover:text-ink' }`}
             >
               IDR (Rp)
             </button>
             <button
               onClick={() => setCurrency('USD')}
-              className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                currency === 'USD'
-                  ? 'bg-zinc-800 text-zinc-100 shadow-sm'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              className={`px-3 py-1 rounded-full font-medium cursor-pointer ${ currency === 'USD' ? 'bg-primary text-on-primary' : 'text-body hover:text-ink' }`}
             >
               USD ($)
             </button>
@@ -134,56 +145,44 @@ export default function UpgradeModal({
         </div>
 
         {/* Price Card */}
-        <div className="p-4 rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-indigo-950/30 to-zinc-900/60 flex items-baseline justify-between">
+        <div className="p-4 rounded-lg border border-hairline bg-surface-soft flex items-baseline justify-between">
           <div>
-            <span className="text-3xl font-extrabold text-zinc-100">{currentPrice.label}</span>
-            <span className="text-xs text-zinc-400 ml-1.5">{currentPrice.periodLabel}</span>
+            <span className="text-display-lg text-ink">{currentPrice.label}</span>
+            <span className="text-body-sm text-body ml-2">{currentPrice.periodLabel}</span>
           </div>
-          <span className="text-[11px] text-indigo-400 font-semibold uppercase tracking-wider">
-            DOKU Payment Gateway
-          </span>
+          <CommandTag>DOKU GATEWAY</CommandTag>
         </div>
 
         {/* Feature List */}
-        <div className="space-y-2.5 text-xs text-zinc-300">
-          <p className="font-semibold text-zinc-200">Keuntungan Paket Pro:</p>
+        <div className="space-y-3 text-body-sm">
+          <p className="font-semibold text-ink text-caption-sm uppercase tracking-wider">Keuntungan Paket Pro:</p>
           <div className="space-y-2">
-            <div className="flex items-center gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="w-3 h-3" />
-              </div>
-              <span><strong>UNLIMITED Notes</strong> (Bebas dari batas 30 catatan/bulan Free Tier)</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                <Shield className="w-3 h-3" />
-              </div>
-              <span><strong>Private Encrypted Vault (<code className="text-indigo-300">/secure</code>)</strong> enkripsi AES-256-GCM</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
-                <Zap className="w-3 h-3" />
-              </div>
-              <span><strong>AI Otak Kedua (<code className="text-indigo-300">/ask</code>)</strong> temporal RAG di Telegram</span>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-5 h-5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                <Check className="w-3 h-3" />
-              </div>
-              <span><strong>Prioritas Fast-Lane Tagging</strong> pemrosesan AI prioritas tinggi</span>
-            </div>
+            <FeatureBullet>
+              <span><strong>UNLIMITED Notes</strong> (Bebas batas 30 catatan/bulan)</span>
+            </FeatureBullet>
+            <FeatureBullet icon={<Shield className="w-3.5 h-3.5" />}>
+              <span><strong>Private Encrypted Vault (<code className="font-mono text-ink">/secure</code>)</strong> enkripsi AES-256-GCM</span>
+            </FeatureBullet>
+            <FeatureBullet icon={<Zap className="w-3.5 h-3.5" />}>
+              <span><strong>AI Otak Kedua (<code className="font-mono text-ink">/ask</code>)</strong> temporal RAG di Telegram</span>
+            </FeatureBullet>
+            <FeatureBullet>
+              <span><strong>Prioritas Fast-Lane Tagging</strong> pemrosesan AI instan</span>
+            </FeatureBullet>
           </div>
         </div>
 
         {/* Checkout Button */}
-        <button
+        <Button
           onClick={handleCheckout}
           disabled={loading}
-          className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2"
+          variant="primary"
+          fullWidth
+          className="h-10 gap-2"
         >
           {loading ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader2 className="w-4 h-4" />
               <span>Menyiapkan Invoice DOKU...</span>
             </>
           ) : (
@@ -192,14 +191,15 @@ export default function UpgradeModal({
               <ArrowRight className="w-4 h-4" />
             </>
           )}
-        </button>
+        </Button>
 
         {/* Footer Note */}
-        <p className="text-[11px] text-zinc-500 text-center flex items-center justify-center gap-1.5">
-          <Shield className="w-3 h-3 text-zinc-400" />
+        <p className="text-caption-sm text-body text-center flex items-center justify-center gap-1.5">
+          <Shield className="w-3 h-3 text-mute" />
           <span>Diproses melalui gateway berlisensi DOKU Payment (QRIS, VA, E-Wallet).</span>
         </p>
       </div>
     </div>
+  </>
   );
 }

@@ -12,45 +12,45 @@ const period = url.searchParams.get('period') || 'monthly';
 ---
 
 <Layout title="DOKU Payment Simulator – UnlazyNotes">
-  <div class="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
-    <div class="w-full max-w-lg p-6 sm:p-8 rounded-3xl border border-zinc-800 bg-zinc-900/60 shadow-2xl space-y-6">
-      <div class="flex items-center justify-between border-b border-zinc-800 pb-4">
+  <div class="min-h-screen bg-canvas text-ink flex items-center justify-center p-4">
+    <div class="w-full max-w-lg p-6 sm:p-8 rounded-lg border border-hairline bg-canvas space-y-6">
+      <div class="flex items-center justify-between border-b border-hairline pb-4">
         <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center text-white font-bold text-sm">
+          <div class="w-7 h-7 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs">
             D
           </div>
-          <span class="font-bold text-zinc-100 text-sm">DOKU Checkout Simulator</span>
+          <span class="font-semibold text-ink text-body-sm-strong">DOKU Checkout Simulator</span>
         </div>
-        <span class="text-[11px] px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono font-medium">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full bg-surface-soft text-ink font-sans font-medium text-caption-xs">
           Sandbox Mode
         </span>
       </div>
 
       <div class="space-y-3">
-        <div class="p-4 rounded-xl border border-zinc-800 bg-zinc-950 space-y-2 text-xs">
-          <div class="flex justify-between text-zinc-400">
+        <div class="p-4 rounded-lg border border-hairline bg-surface-soft space-y-2 text-body-sm">
+          <div class="flex justify-between text-body">
             <span>Invoice / Order ID:</span>
-            <span class="font-mono text-zinc-200 font-semibold" id="val-order-id">{orderId}</span>
+            <span class="font-mono text-ink font-semibold" id="val-order-id">{orderId}</span>
           </div>
-          <div class="flex justify-between text-zinc-400">
+          <div class="flex justify-between text-body">
             <span>Paket:</span>
-            <span class="text-zinc-200 font-semibold uppercase">{plan} ({period})</span>
+            <span class="text-ink font-semibold uppercase">{plan} ({period})</span>
           </div>
-          <div class="flex justify-between text-zinc-400">
+          <div class="flex justify-between text-body">
             <span>Total Tagihan:</span>
-            <span class="text-emerald-400 font-bold text-sm">
+            <span class="text-ink font-bold text-body-md font-mono tabular-nums">
               {currency === 'USD' ? `$${amount}` : `Rp${Number(amount).toLocaleString('id-ID')}`}
             </span>
           </div>
         </div>
 
-        <div class="p-4 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs text-zinc-400">
-          <p class="font-semibold text-zinc-300 mb-2">Simulasi Metode Pembayaran:</p>
+        <div class="p-4 rounded-lg border border-hairline bg-canvas text-body-sm text-body">
+          <p class="font-semibold text-ink mb-2">Simulasi Metode Pembayaran:</p>
           <div class="grid grid-cols-2 gap-2">
-            <div class="p-2.5 rounded-lg border border-zinc-700 bg-zinc-800/60 text-zinc-300 font-medium text-center">
+            <div class="p-2.5 rounded-full border border-hairline bg-surface-soft text-ink font-medium text-center text-caption-sm">
               QRIS / E-Wallet
             </div>
-            <div class="p-2.5 rounded-lg border border-zinc-700 bg-zinc-800/60 text-zinc-300 font-medium text-center">
+            <div class="p-2.5 rounded-full border border-hairline bg-surface-soft text-ink font-medium text-center text-caption-sm">
               Virtual Account
             </div>
           </div>
@@ -61,20 +61,22 @@ const period = url.searchParams.get('period') || 'monthly';
       <div class="space-y-3 pt-2">
         <button
           id="btn-pay-success"
-          class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-all shadow-lg shadow-emerald-600/20"
+          type="button"
+          class="w-full h-10 px-5 rounded-full bg-primary hover:bg-ink-deep text-on-primary text-button-md cursor-pointer select-none"
         >
-          ✅ Simulasikan Bayar Sukses (Lunas)
+          Simulasikan Bayar Sukses (Lunas)
         </button>
 
         <button
           id="btn-pay-fail"
-          class="w-full py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 font-medium text-xs transition-colors"
+          type="button"
+          class="w-full h-10 px-5 rounded-full border border-hairline bg-surface-soft hover:bg-canvas text-body hover:text-ink text-button-md cursor-pointer select-none"
         >
-          ❌ Batalkan Transaksi
+          Batalkan Transaksi
         </button>
       </div>
 
-      <p class="text-[11px] text-zinc-500 text-center leading-normal">
+      <p class="text-caption-sm text-body text-center leading-normal">
         Halaman simulator internal UnlazyNotes untuk menguji integrasi webhook DOKU secara nyata tanpa memotong saldo.
       </p>
     </div>
@@ -107,7 +109,7 @@ const period = url.searchParams.get('period') || 'monthly';
           } else {
             alert('Gagal memproses webhook pembayaran');
             btnSuccess.removeAttribute('disabled');
-            btnSuccess.textContent = '✅ Simulasikan Bayar Sukses (Lunas)';
+            btnSuccess.textContent = 'Simulasikan Bayar Sukses (Lunas)';
           }
         } catch {
           alert('Terjadi kesalahan jaringan');

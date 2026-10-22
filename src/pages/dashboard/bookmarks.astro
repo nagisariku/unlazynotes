@@ -4,7 +4,7 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import BookmarksView from '../../components/dashboard/BookmarksView';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { notes, users } from '../../db/schema';
+import { notes, users, apiKeys } from '../../db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 
 export const prerender = false;
@@ -20,26 +20,45 @@ const [userRecord] = await db
   .where(eq(users.id, user.id))
   .limit(1);
 
+const [apiKeyRecord] = await db
+  .select()
+  .from(apiKeys)
+  .where(eq(apiKeys.userId, user.id))
+  .limit(1);
+
 const bookmarkNotes = await db
   .select()
   .from(notes)
   .where(and(eq(notes.userId, user.id), eq(notes.category, 'bookmark')))
-  .orderBy(desc(notes.createdAt));
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt));
 
 const serializedBookmarks = bookmarkNotes.map((b) => ({
   id: b.id,
   content: b.content,
   specificTags: b.specificTags,
   source: b.source,
+  isPinned: b.isPinned,
+  attachments: b.attachments,
   createdAt: b.createdAt.toISOString(),
 }));
 ---
 
 <Layout title="Bookmarks – UnlazyNotes">
-  <div class="flex flex-col md:flex-row min-h-screen bg-zinc-950">
-    <Sidebar client:load currentPath="/dashboard/bookmarks" user={user} subscriptionPlan={userRecord?.tier || 'free'} />
-    <main class="flex-1 min-w-0 pb-24 md:pb-8 overflow-y-auto">
-      <BookmarksView client:load initialBookmarks={serializedBookmarks} />
+  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+    <Sidebar
+      client:load
+      currentPath="/dashboard/bookmarks"
+      user={user}
+      subscriptionPlan={userRecord?.tier || 'free'}
+      isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
+      rawApiKey={apiKeyRecord?.rawKey || null}
+    />
+    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+      <BookmarksView
+        client:load
+        initialBookmarks={serializedBookmarks}
+        userName={user.name || user.email.split('@')[0]}
+      />
     </main>
   </div>
 </Layout>

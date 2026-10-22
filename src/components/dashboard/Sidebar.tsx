@@ -1,130 +1,173 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
-  FileText,
+  LayoutDashboard,
+  CheckSquare,
+  Calendar,
   Bookmark,
-  Settings,
-  LogOut,
-  ExternalLink,
   ShieldAlert,
-  Sparkles,
+  Shield,
+  Bot,
+  ExternalLink,
   Menu,
   X,
+  Copy,
+  Check,
+  Send,
 } from 'lucide-react';
+import { CommandTag } from '../ui';
+import UpgradeModal from './UpgradeModal';
+import { toast } from 'sonner';
 
 interface SidebarProps {
   currentPath: string;
   user: {
+    id?: string;
     name?: string | null;
     email: string;
     image?: string | null;
     role?: string;
   };
   subscriptionPlan?: string;
+  isTelegramConnected?: boolean;
+  botUsername?: string;
+  rawApiKey?: string | null;
 }
 
-export default function Sidebar({ currentPath, user, subscriptionPlan = 'standard' }: SidebarProps) {
+export default function Sidebar({
+  currentPath,
+  user,
+  subscriptionPlan = 'free',
+  isTelegramConnected = false,
+  botUsername = 'unlazynotes_bot',
+  rawApiKey = null,
+}: SidebarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
 
+  // Lock body scroll when mobile drawer or connect modal is open
+  useEffect(() => {
+    if (mobileMenuOpen || isConnectModalOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [mobileMenuOpen, isConnectModalOpen]);
+
+  // Wireframe Menu Items:
+  // 1. Workspace
+  // 2. To Do & Schedule
+  // 3. Bookmarks
+  // 4. Vault & Credentials
+  // 5. Admin Panel (Conditional)
   const navItems = [
-    { label: 'All Notes', href: '/dashboard', icon: FileText },
+    { label: 'Workspace', href: '/dashboard', icon: LayoutDashboard },
+    { label: 'To Do', href: '/dashboard/todo', icon: CheckSquare },
+    { label: 'Schedule', href: '/dashboard/schedule', icon: Calendar },
     { label: 'Bookmarks', href: '/dashboard/bookmarks', icon: Bookmark },
-    { label: 'Settings', href: '/dashboard/settings', icon: Settings },
+    { label: 'Vault & Credentials', href: '/dashboard/vault', icon: ShieldAlert },
   ];
 
   if (user.role === 'admin') {
-    navItems.push({ label: 'Admin Panel', href: '/admin', icon: ShieldAlert });
+    navItems.push({ label: 'Admin Panel', href: '/admin', icon: Shield });
   }
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.href = '/';
-    } catch {
-      window.location.href = '/';
-    }
-  };
 
   const isPro = subscriptionPlan === 'pro';
 
+  const handleCopyLoginCommand = async () => {
+    if (!rawApiKey) {
+      toast.info('API Key dapat dilihat di menu Settings');
+      return;
+    }
+    const cmd = `/login ${rawApiKey}`;
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopiedKey(true);
+      toast.success('Perintah login berhasil disalin ke clipboard');
+      setTimeout(() => setCopiedKey(false), 2000);
+    } catch {
+      toast.error('Gagal menyalin perintah');
+    }
+  };
+
+  const handleBotButtonClick = () => {
+    if (isTelegramConnected) {
+      window.open(`https://t.me/${botUsername}`, '_blank', 'noopener,noreferrer');
+    } else {
+      setIsConnectModalOpen(true);
+    }
+  };
+
+  const handleProfileClick = () => {
+    window.location.href = '/dashboard/settings';
+  };
+
   return (
     <>
-      {/* ============================================================ */}
-      {/* 1. MOBILE TOP HEADER (< md)                                 */}
-      {/* ============================================================ */}
-      <header className="md:hidden sticky top-0 z-40 bg-zinc-950/95 backdrop-blur-md border-b border-zinc-800 px-4 py-3 flex items-center justify-between">
-        <a href="/dashboard" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm shadow-sm">
+      {/* =========================================================================
+          1. MOBILE TOP HEADER (< md)
+          ========================================================================= */}
+      <header className="md:hidden sticky top-0 z-40 bg-canvas px-4 py-2 flex items-center justify-between text-ink">
+        <a href="/dashboard" className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm select-none">
             U
           </div>
-          <span className="font-bold tracking-tight text-zinc-100 text-sm">UnlazyNotes</span>
+          <span className="font-display font-medium tracking-tight text-ink text-[18px]">UnlazyNotes</span>
         </a>
 
-        <div className="flex items-center gap-2">
-          <span
-            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-              isPro
-                ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-            }`}
-          >
-            {isPro ? 'Pro' : 'Free'}
-          </span>
-
-          {!isPro && (
-            <a
-              href="/dashboard/settings#upgrade"
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-[11px] font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors"
-            >
-              <Sparkles className="w-3 h-3" />
-              <span>Upgrade to Pro</span>
-            </a>
-          )}
-
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-1.5 rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-colors"
-            aria-label="Toggle menu"
-          >
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
-        </div>
+        <button
+          onClick={() => setMobileMenuOpen(true)}
+          className="p-1 text-ink hover:text-charcoal cursor-pointer flex items-center justify-center -mr-1"
+          aria-label="Buka menu navigasi"
+        >
+          <Menu className="w-7 h-7" />
+        </button>
       </header>
 
-      {/* ============================================================ */}
-      {/* 2. MOBILE SLIDE-OVER DRAWER (< md)                          */}
-      {/* ============================================================ */}
+      {/* =========================================================================
+          2. MOBILE SLIDE-OVER DRAWER (< md)
+          ========================================================================= */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-50 md:hidden animate-in fade-in duration-200">
-          {/* Backdrop */}
+        <div
+          className="fixed inset-0 z-50 md:hidden w-screen h-screen min-h-[100dvh]"
+          style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+        >
           <div
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 w-screen h-screen min-h-[100dvh] bg-black/40 backdrop-blur-xs"
+            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
             onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
           />
 
-          {/* Drawer Content */}
-          <div className="fixed inset-y-0 right-0 w-[85%] max-w-xs bg-zinc-950 border-l border-zinc-800 p-5 flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200">
-            <div>
-              {/* Drawer Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-zinc-800 mb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
+          <div
+            className="fixed inset-y-0 right-0 w-[85%] max-w-xs h-full min-h-[100dvh] bg-canvas border-l border-hairline p-5 flex flex-col justify-between text-ink z-10"
+            style={{ minHeight: '100dvh' }}
+          >
+            {/* Top Part: App Logo, Enlarge Close Button & Nav Links */}
+            <div className="flex flex-col flex-1 min-h-0">
+              <div className="flex items-center justify-between pb-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm select-none">
                     U
                   </div>
-                  <div>
-                    <span className="font-bold tracking-tight text-zinc-100 text-sm block">UnlazyNotes</span>
-                    <span className="text-[10px] text-zinc-500">Navigation Menu</span>
-                  </div>
+                  <span className="font-display font-medium tracking-tight text-ink text-[18px] block leading-none">
+                    UnlazyNotes
+                  </span>
                 </div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
-                  className="p-1.5 rounded-xl text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+                  className="p-1 text-body hover:text-ink hover:bg-surface-soft rounded-full cursor-pointer flex items-center justify-center"
+                  aria-label="Tutup menu"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-7 h-7" />
                 </button>
               </div>
 
-              {/* Drawer Nav List */}
-              <nav className="space-y-1 mb-5">
+              {/* Navigation Links */}
+              <nav className="space-y-1 overflow-y-auto flex-1 flex flex-col items-start">
                 {navItems.map((item) => {
                   const Icon = item.icon;
                   const isActive = currentPath === item.href;
@@ -133,224 +176,315 @@ export default function Sidebar({ currentPath, user, subscriptionPlan = 'standar
                       key={item.href}
                       href={item.href}
                       onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                      className={`inline-flex items-center gap-3 px-4 py-2.5 rounded-full text-body-sm font-medium transition-colors ${
                         isActive
-                          ? 'bg-indigo-600/15 text-indigo-400 border border-indigo-500/20'
-                          : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                          ? 'w-fit bg-surface-soft text-ink font-semibold'
+                          : 'w-full text-body hover:text-ink hover:bg-surface-soft'
                       }`}
                     >
-                      <Icon className="w-4 h-4" />
+                      <Icon className="w-4 h-4 shrink-0" />
                       <span>{item.label}</span>
                     </a>
                   );
                 })}
               </nav>
-
-              {/* Upgrade CTA in Drawer */}
-              {!isPro && (
-                <div className="mb-4">
-                  <a
-                    href="/dashboard/settings#upgrade"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="block p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-950/20 hover:bg-indigo-950/40 text-xs transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5 text-indigo-400 font-semibold mb-1">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Upgrade ke Pro</span>
-                    </div>
-                    <p className="text-[11px] text-zinc-400 leading-tight">
-                      Catatan tanpa batas &amp; AI <code className="text-indigo-300">/ask</code> bot.
-                    </p>
-                  </a>
-                </div>
-              )}
-
-              {/* Telegram Bot Banner */}
-              <div className="p-3.5 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs">
-                <p className="text-zinc-400 mb-1.5 font-medium">Quick Capture Bot:</p>
-                <a
-                  href="https://t.me/unlazynotes_bot"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 font-semibold"
-                >
-                  <span>@unlazynotes_bot</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
             </div>
 
-            {/* User Profile & Logout */}
-            <div className="pt-4 border-t border-zinc-800 flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300 shrink-0 uppercase overflow-hidden">
-                  {user.image ? (
-                    <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    (user.name || user.email)[0]
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-xs font-semibold text-zinc-200 truncate">{user.name || 'User'}</p>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                        isPro
-                          ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                          : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                      }`}
-                    >
-                      {isPro ? 'Pro' : 'Free'}
-                    </span>
-                    {!isPro && (
-                      <a
-                        href="/dashboard/settings#upgrade"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-indigo-600 text-white text-[10px] font-semibold"
-                      >
-                        <Sparkles className="w-2.5 h-2.5" />
-                        <span>Upgrade to Pro</span>
-                      </a>
+            {/* Bottom Part: Connect Bot Button & Profile Card (identical to desktop sidebar, no divider) */}
+            <div className="pt-2 space-y-2 shrink-0">
+              {/* Bot Button: Positioned before profile user like desktop */}
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleBotButtonClick();
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-full border border-hairline bg-surface-soft hover:bg-canvas text-body-sm font-medium text-ink cursor-pointer"
+              >
+                <Bot className="w-4 h-4 text-ink shrink-0" />
+                <span className="truncate">
+                  {isTelegramConnected ? 'Open Telegram Bot' : 'Connect Bot'}
+                </span>
+              </button>
+
+              {/* Profile Area & Separate Upgrade Button (Two separate components, no arrow right) */}
+              <div className="flex items-center gap-2 w-full">
+                {/* Component 1: Profile (Avatar + User Name + PRO badge if pro) */}
+                <div
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleProfileClick();
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className="flex-1 min-w-0 h-14 p-2 rounded-xl hover:bg-surface-soft cursor-pointer flex items-center gap-3 text-left transition-colors"
+                  title="Klik untuk ke Pengaturan Profil"
+                >
+                  <div className="w-10 h-10 rounded-full bg-surface-soft border border-hairline flex items-center justify-center text-sm font-bold text-ink shrink-0 uppercase overflow-hidden">
+                    {user.image ? (
+                      <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      (user.name || user.email)[0]
                     )}
                   </div>
-                  <p className="text-[11px] text-zinc-500 truncate">{user.email}</p>
+                  <div className="min-w-0 flex-1 flex flex-col justify-center">
+                    <span className="text-body-sm font-semibold text-ink truncate leading-tight block">
+                      {user.name || 'User'}
+                    </span>
+                    <div className="mt-1 flex items-center">
+                      {isPro ? (
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-ink text-canvas select-none shadow-xs">
+                          PRO
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-surface-soft border border-hairline text-body select-none">
+                          FREE
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <button
-                onClick={handleLogout}
-                title="Keluar"
-                className="p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-zinc-900 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
+                {/* Component 2: Upgrade Button (Standard button height, white background matching profile, hover:bg-surface-soft, no border) */}
+                {!isPro && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      setIsUpgradeModalOpen(true);
+                    }}
+                    className="h-9 px-3.5 rounded-full bg-canvas hover:bg-surface-soft text-ink text-caption-sm font-semibold cursor-pointer transition-colors shrink-0 inline-flex items-center justify-center select-none"
+                    title="Upgrade ke Pro"
+                  >
+                    <span>Upgrade</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ============================================================ */}
-      {/* 3. MOBILE BOTTOM NAVIGATION BAR (< md)                       */}
-      {/* ============================================================ */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-zinc-950/95 backdrop-blur-md border-t border-zinc-800 px-3 py-2 flex items-center justify-around safe-area-bottom shadow-xl">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentPath === item.href;
-          return (
-            <a
-              key={item.href}
-              href={item.href}
-              className={`flex flex-col items-center justify-center gap-1 py-1 px-3 rounded-xl transition-all ${
-                isActive
-                  ? 'text-indigo-400 font-semibold'
-                  : 'text-zinc-500 hover:text-zinc-300'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span className="text-[10px] tracking-tight">{item.label}</span>
-            </a>
-          );
-        })}
-      </nav>
-
-      {/* ============================================================ */}
-      {/* 4. DESKTOP PERMANENT SIDEBAR (>= md)                        */}
-      {/* ============================================================ */}
-      <aside className="hidden md:flex w-64 border-r border-zinc-800 bg-zinc-950 flex-col h-screen sticky top-0 shrink-0">
-        {/* Brand */}
-        <div className="p-5 border-b border-zinc-800 flex items-center justify-between">
-          <a href="/dashboard" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-base shadow-sm">
-              U
-            </div>
-            <span className="font-bold tracking-tight text-zinc-100">UnlazyNotes</span>
-          </a>
-        </div>
-
-        {/* Nav List */}
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentPath === item.href;
-            return (
-              <a
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-600/10 text-indigo-400 border border-indigo-500/20'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{item.label}</span>
-              </a>
-            );
-          })}
-        </nav>
-
-        {/* Telegram Bot Link Quick Banner */}
-        <div className="px-4 py-3 mx-3 mb-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 text-xs">
-          <p className="text-zinc-400 mb-1.5 font-medium">Quick Capture Bot:</p>
-          <a
-            href="https://t.me/unlazynotes_bot"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 font-semibold"
-          >
-            <span>@unlazynotes_bot</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
-        </div>
-
-        {/* User Footer */}
-        <div className="p-3 border-t border-zinc-800 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs font-bold text-zinc-300 shrink-0 uppercase overflow-hidden">
-              {user.image ? (
-                <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
-              ) : (
-                (user.name || user.email)[0]
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <p className="text-xs font-semibold text-zinc-200 truncate max-w-[95px]">
-                  {user.name || 'User'}
-                </p>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase tracking-wider shrink-0 ${
-                    isPro
-                      ? 'bg-indigo-500/15 text-indigo-400 border border-indigo-500/30'
-                      : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
-                  }`}
-                >
-                  {isPro ? 'Pro' : 'Free'}
-                </span>
+      {/* =========================================================================
+          3. DESKTOP PERMANENT SIDEBAR (>= md)
+          Wireframe Architecture:
+          - Top Logo: UnlazyNotes
+          - Menu Items: Workspace, To Do & Schedule, Bookmarks, Vault & Credentials, Admin Panel
+          - Button: Connect/Open bot
+          - Profile Component: Avatar, Name, Badge, Upgrade Button, Click -> Settings
+          ========================================================================= */}
+      <aside className="hidden md:flex w-64 border-r border-hairline bg-canvas flex-col h-screen sticky top-0 shrink-0 text-ink justify-between">
+        {/* Top Part: Logo & Menu Items */}
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* App Logo */}
+          <div className="p-5 flex items-center justify-between">
+            <a href="/dashboard" className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-base select-none">
+                U
               </div>
-              {!isPro ? (
-                <a
-                  href="/dashboard/settings#upgrade"
-                  className="inline-flex items-center gap-1 px-2 py-0.5 mt-0.5 rounded-md bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-[10px] font-semibold transition-all"
-                >
-                  <Sparkles className="w-2.5 h-2.5" />
-                  <span>Upgrade to Pro</span>
-                </a>
-              ) : (
-                <p className="text-[11px] text-zinc-500 truncate">{user.email}</p>
-              )}
-            </div>
+              <span className="font-display font-medium tracking-tight text-ink text-[21px] block leading-none">
+                UnlazyNotes
+              </span>
+            </a>
           </div>
 
+          {/* Navigation Items */}
+          <nav className="p-3 space-y-1 overflow-y-auto flex-1">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentPath === item.href;
+              return (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-full text-body-sm font-medium transition-colors ${ isActive ? 'bg-surface-soft text-ink font-semibold' : 'text-body hover:text-ink hover:bg-surface-soft' }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{item.label}</span>
+                </a>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Bottom Part: Bot Button & Profile Card */}
+        <div className="p-3 space-y-2 bg-canvas shrink-0">
+          {/* Wireframe Button: Connect / Open bot */}
           <button
-            onClick={handleLogout}
-            title="Sign Out"
-            className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-900 transition-colors shrink-0"
+            onClick={handleBotButtonClick}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-full border border-hairline bg-surface-soft hover:bg-canvas text-body-sm font-medium text-ink cursor-pointer"
           >
-            <LogOut className="w-4 h-4" />
+            <Bot className="w-4 h-4 text-ink shrink-0" />
+            <span className="truncate">
+              {isTelegramConnected ? 'Open Telegram Bot' : 'Connect Bot'}
+            </span>
           </button>
+
+          {/* Profile Card:
+              - Avatar circle (w-10 h-10)
+              - Name & Badge
+              - No box by default, appears on hover
+              - Click opens settings
+          */}
+          {/* Profile Card & Separate Upgrade Button (Two separate components) */}
+          <div className="flex items-center gap-2 w-full">
+            {/* Component 1: Profile (Avatar + User Name + PRO badge if pro) */}
+            <div
+              onClick={handleProfileClick}
+              role="button"
+              tabIndex={0}
+              title="Buka Pengaturan Akun"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  handleProfileClick();
+                }
+              }}
+              className="flex-1 min-w-0 h-14 p-2 rounded-xl hover:bg-surface-soft cursor-pointer flex items-center gap-3 text-left transition-colors"
+            >
+              <div className="w-10 h-10 rounded-full bg-surface-soft border border-hairline flex items-center justify-center text-sm font-bold text-ink shrink-0 uppercase overflow-hidden">
+                {user.image ? (
+                  <img src={user.image} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  (user.name || user.email)[0]
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1 flex flex-col justify-center">
+                <span className="text-body-sm font-semibold text-ink truncate leading-tight block">
+                  {user.name || 'User'}
+                </span>
+                <div className="mt-1 flex items-center">
+                  {isPro ? (
+                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase bg-ink text-canvas select-none shadow-xs">
+                      PRO
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wider uppercase bg-surface-soft border border-hairline text-body select-none">
+                      FREE
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Component 2: Upgrade Button (Standard button height, white background matching profile, hover:bg-surface-soft, no border) */}
+            {!isPro && (
+              <button
+                type="button"
+                onClick={() => setIsUpgradeModalOpen(true)}
+                className="h-9 px-3.5 rounded-full bg-canvas hover:bg-surface-soft text-ink text-caption-sm font-semibold cursor-pointer transition-colors shrink-0 inline-flex items-center justify-center select-none"
+                title="Upgrade ke Pro"
+              >
+                <span>Upgrade</span>
+              </button>
+            )}
+          </div>
         </div>
       </aside>
+
+      {/* =========================================================================
+          5. MODALS: UPGRADE MODAL & CONNECT TELEGRAM BOT MODAL
+          ========================================================================= */}
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={() => setIsUpgradeModalOpen(false)}
+      />
+
+      {/* Connect Bot Instructions Modal */}
+      {isConnectModalOpen && (
+        <>
+          {/* Full-screen Backdrop covering 100% viewport */}
+          <div
+            className="fixed inset-0 w-screen h-screen min-h-[100dvh] z-50 bg-black/40 backdrop-blur-xs"
+            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+            onClick={() => setIsConnectModalOpen(false)}
+            aria-hidden="true"
+          />
+
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+          >
+            <div className="relative w-full max-w-md rounded-lg border border-hairline bg-canvas p-6 text-ink space-y-5 pointer-events-auto">
+            <button
+              onClick={() => setIsConnectModalOpen(false)}
+              className="absolute top-5 right-5 p-1.5 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="space-y-1.5 pr-8">
+              <div className="inline-flex items-center gap-1.5">
+                <CommandTag>
+                  <Send className="w-3 h-3 inline mr-1" />
+                  Telegram Quick Capture
+                </CommandTag>
+              </div>
+              <h2 className="text-heading-lg text-ink font-semibold">
+                Hubungkan Akun Telegram
+              </h2>
+              <p className="text-body-sm text-body">
+                Kirim catatan, audio, tautan, atau tugas langsung dari obrolan Telegram ke dashboard Anda.
+              </p>
+            </div>
+
+            <div className="space-y-3 p-4 rounded-lg bg-surface-soft border border-hairline text-body-sm">
+              <p className="font-semibold text-ink text-caption-sm uppercase tracking-wide">
+                Langkah Cepat:
+              </p>
+              <ol className="list-decimal list-inside space-y-2 text-body-sm text-ink leading-relaxed">
+                <li>
+                  Buka bot resmi di Telegram:{' '}
+                  <a
+                    href={`https://t.me/${botUsername}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-semibold text-ink underline"
+                  >
+                    @{botUsername}
+                  </a>
+                </li>
+                <li>
+                  Kirim perintah berikut ke bot:
+                  <div className="mt-1.5 flex items-center gap-2 p-2 rounded-full bg-canvas border border-hairline font-mono text-caption-sm">
+                    <span className="truncate flex-1 text-ink">
+                      {rawApiKey ? `/login ${rawApiKey}` : '/login <API_KEY_ANDA>'}
+                    </span>
+                    <button
+                      onClick={handleCopyLoginCommand}
+                      className="p-1 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer shrink-0"
+                      title="Salin Perintah"
+                    >
+                      {copiedKey ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </li>
+                <li>Selesai! Akun Telegram Anda akan langsung tersinkronisasi.</li>
+              </ol>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <a
+                href="/dashboard/settings"
+                className="text-caption-sm text-body hover:text-ink underline"
+              >
+                Lihat API Key di Pengaturan
+              </a>
+
+              <a
+                href={`https://t.me/${botUsername}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary text-button-md cursor-pointer hover:opacity-90"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Buka Bot Telegram</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </>
+      )}
     </>
   );
 }

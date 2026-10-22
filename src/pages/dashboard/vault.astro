@@ -1,0 +1,83 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Sidebar from '../../components/dashboard/Sidebar';
+import VaultView from '../../components/dashboard/VaultView';
+import { getSessionUser } from '../../lib/session';
+import { db } from '../../db';
+import { notes, users, apiKeys } from '../../db/schema';
+import { eq, and, or, desc } from 'drizzle-orm';
+import { decryptSecret } from '../../lib/crypto';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const [userRecord] = await db
+  .select({ tier: users.tier })
+  .from(users)
+  .where(eq(users.id, user.id))
+  .limit(1);
+
+const [apiKeyRecord] = await db
+  .select()
+  .from(apiKeys)
+  .where(eq(apiKeys.userId, user.id))
+  .limit(1);
+
+const vaultNotes = await db
+  .select()
+  .from(notes)
+  .where(
+    and(
+      eq(notes.userId, user.id),
+      or(eq(notes.category, 'credential'), eq(notes.isEncrypted, true))
+    )
+  )
+  .orderBy(desc(notes.createdAt));
+
+const serializedVaultNotes = vaultNotes.map((n) => {
+  let plainContent = n.content;
+  if (n.isEncrypted) {
+    try {
+      plainContent = decryptSecret(n.content, user.id);
+    } catch {
+      plainContent = n.content;
+    }
+  }
+
+  return {
+    id: n.id,
+    content: plainContent,
+    category: n.category,
+    specificTags: n.specificTags,
+    source: n.source,
+    isEncrypted: n.isEncrypted,
+    vaultKey: n.vaultKey,
+    isPinned: n.isPinned,
+    createdAt: n.createdAt.toISOString(),
+  };
+});
+---
+
+<Layout title="Vault & Credentials – UnlazyNotes">
+  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+    <Sidebar
+      client:load
+      currentPath="/dashboard/vault"
+      user={user}
+      subscriptionPlan={userRecord?.tier || 'free'}
+      isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
+      rawApiKey={apiKeyRecord?.rawKey || null}
+    />
+    <main class="flex-1 min-w-0 h-full overflow-hidden">
+      <VaultView
+        client:load
+        initialVaultNotes={serializedVaultNotes}
+        userName={user.name || user.email.split('@')[0]}
+      />
+    </main>
+  </div>
+</Layout>

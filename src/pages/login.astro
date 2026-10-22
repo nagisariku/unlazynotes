@@ -11,23 +11,24 @@ if (user) {
 ---
 
 <Layout title="Sign In – UnlazyNotes">
-  <div class="min-h-screen flex items-center justify-center p-4 bg-zinc-950">
-    <div class="w-full max-w-md p-5 sm:p-8 rounded-3xl border border-zinc-800 bg-zinc-900/40 shadow-2xl space-y-6">
+  <div class="min-h-screen flex items-center justify-center p-6 bg-canvas text-ink">
+    <div class="w-full max-w-sm p-8 rounded-lg border border-hairline bg-canvas space-y-6">
       <div class="text-center">
-        <a href="/" class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-indigo-600 text-white font-bold text-xl mb-4 shadow-lg shadow-indigo-600/30">
+        <a href="/" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-primary text-on-primary font-bold text-sm mb-4 select-none">
           U
         </a>
-        <h1 class="text-2xl font-bold tracking-tight text-zinc-100">Welcome to UnlazyNotes</h1>
-        <p class="text-zinc-400 text-xs mt-1.5 leading-relaxed">
+        <h1 class="text-heading-lg text-ink font-semibold">Welcome to UnlazyNotes</h1>
+        <p class="text-body-sm text-body mt-2 leading-relaxed">
           Masuk untuk mengakses dashboard catatan, mengelola integrasi bot Telegram, dan mengekspor bookmark.
         </p>
       </div>
 
       <!-- Google Sign In -->
-      <div class="space-y-3">
+      <div class="space-y-4">
         <button
           id="google-signin-btn"
-          class="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold text-sm transition-all shadow-sm"
+          type="button"
+          class="w-full flex items-center justify-center gap-3 h-10 px-5 rounded-full border border-hairline bg-canvas hover:bg-surface-soft active:bg-hairline text-ink text-button-md cursor-pointer select-none"
         >
           <svg class="w-4 h-4" viewBox="0 0 24 24">
             <path
@@ -53,11 +54,11 @@ if (user) {
         <!-- Sandbox / Local Quick Test Login -->
         <div class="relative py-2">
           <div class="absolute inset-0 flex items-center">
-            <div class="w-full border-t border-zinc-800"></div>
+            <div class="w-full border-t border-hairline"></div>
           </div>
           <div class="relative flex justify-center text-[10px] uppercase">
-            <span class="bg-zinc-900 px-2 text-zinc-500 font-semibold tracking-wider">
-              Atau Uji Coba Cepat (Sandbox)
+            <span class="bg-canvas px-2 text-body font-medium tracking-wider">
+              Uji Coba Cepat (Sandbox)
             </span>
           </div>
         </div>
@@ -67,22 +68,22 @@ if (user) {
             <input
               type="email"
               id="dev-email"
-              placeholder="Masukkan email uji coba (contoh: riku@test.com)"
+              placeholder="riku.test@unlazynotes.local"
               value="riku.test@unlazynotes.local"
               required
-              class="w-full px-3.5 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-200 placeholder-zinc-500 text-xs focus:outline-none focus:border-indigo-500"
+              class="w-full h-10 px-4 rounded-full border border-hairline bg-canvas text-ink placeholder:text-body/70 text-body-sm focus:outline-none focus:border-ink"
             />
           </div>
           <button
             type="submit"
-            class="w-full py-2.5 px-4 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-semibold text-xs transition-colors"
+            class="w-full h-10 px-5 rounded-full bg-primary hover:bg-ink-deep text-on-primary text-button-md cursor-pointer select-none"
           >
-            Masuk Langsung ke Dashboard &rarr;
+            Masuk ke Dashboard
           </button>
         </form>
       </div>
 
-      <p class="text-[11px] text-zinc-500 text-center leading-normal">
+      <p class="text-caption-sm text-body text-center leading-normal">
         Dengan masuk, Anda menyetujui Ketentuan Layanan dan Kebijakan Privasi UnlazyNotes.
       </p>
     </div>
