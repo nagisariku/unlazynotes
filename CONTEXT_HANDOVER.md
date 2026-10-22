@@ -7,16 +7,18 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 ## 1. Status Lingkungan & Layanan Saat Ini (Sandbox VPS)
 
 - **Repositori Git**: `/home/rikushiro/projects/unlazynotes`
-- **Branch Kolaborasi**: `gamma/dev` (Dedicated branch untuk Agent Gamma, branch `main` diproteksi ketat)
+- **Branch Kolaborasi**: `gamma/dev` (Dedicated branch untuk Agent Gamma, Commit terbaru: `038b6da`, branch `main` diproteksi ketat)
 - **Layanan Aktif (Systemd)**:
   - `unlazynotes.service`: Server Astro 5 SSR (Port `4321` / `localhost:4321`)
   - `unlazynotes-bot.service`: Polling daemon Telegram `@unlazynotes_bot` (Long Polling)
 - **Database**: PostgreSQL 16 lokal port `5432` (`unlazynotes_dev`) via Drizzle ORM
   - Ekstensi aktif: `pg_trgm` (Trigram similarity & fuzzy matching)
-  - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`)
-- **AI Gateway**: Cosmoshub API (`deepseek-v4.1-flash`) – *Profil & Prompt Archive lengkap di [`DEEPSEEK_FLASH_AI_PROFILE.md`](./DEEPSEEK_FLASH_AI_PROFILE.md) & [`CLAUDE_HAIKU_AI_PROFILE.md`](./CLAUDE_HAIKU_AI_PROFILE.md)*
+  - Index aktif: `notes_content_trgm_idx` (`GIN (content gin_trgm_ops)`), `notes_user_target_date_idx`, `notes_user_processed_idx`
+  - Kolom Skema Tambahan: `target_date` (timestamp with timezone nullable untuk calendar view), `attachments` (jsonb untuk file/media)
+- **AI Gateway**: Cosmoshub API (`claude-haiku-5.5` active model) – *Profil & Prompt Archive lengkap di [`CLAUDE_HAIKU_AI_PROFILE.md`](./CLAUDE_HAIKU_AI_PROFILE.md) & [`DEEPSEEK_FLASH_AI_PROFILE.md`](./DEEPSEEK_FLASH_AI_PROFILE.md)*
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
+  - `scripts/test-web-sync-alignment.ts`: 31/31 skenario lolos (100% PASS - TargetDate schema, Human Intent Lock, multi-schedule calendar logic, bookmark platform tag capping, attachment handling)
   - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
   - `scripts/test-intent-classifier.ts`: 38/38 Live AI & 38/38 Heuristic (100% PASS)
   - `scripts/test-phase4-polishes.ts`: 33/33 tests lolos (100% PASS)
@@ -24,7 +26,7 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
   - `scripts/test-ask-temporal.ts`: 100% PASS (Dynamic Scope Broad & Targeted, Anchor Time Math, Claude Haiku 5.5 inference)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
-  - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
+  - `npm run typecheck` & `npm run check` & `npm run build`: 0 error (100% Type-Safe & Build Ready)
 
 ---
 
@@ -550,19 +552,61 @@ Evaluasi teknis arsitektur saat menangani beban 1.000 hingga 10.000 pengguna:
 
 ---
 
-## 4. Konteks Migrasi ke VPS Production (Singapore)
+## 4. Konteks Migrasi ke VPS Production (Singapore) & SOP Zero Data Loss
 
 - Server Tencent saat ini adalah **Sandbox / Dev VPS**.
 - Semua credential real (Google OAuth Production & Akun DOKU Merchant Production) akan diintegrasikan saat persiapan pindah ke VPS Singapore.
-- Prosedur migrasi:
-  1. `git clone` dari GitHub `origin main`.
-  2. Restore database dump (`pg_dump` $\rightarrow$ `psql`).
-  3. Konfigurasi file `.env.production` (koneksi DB, bot token, API keys, DOKU production).
-  4. Jalankan via Docker Compose atau Systemd + Nginx SSL Reverse Proxy sesuai panduan di [`DEPLOYMENT.md`](file:///home/rikushiro/projects/unlazynotes/DEPLOYMENT.md).
+
+### A. SOP & Best Practice Migrasi Database Antar VPS (Zero Data Loss)
+Jika aplikasi sudah memiliki pengguna aktif (*live users*) dan perlu migrasi ke VPS baru:
+1. **Turunkan DNS TTL**:
+   - 24 jam sebelum hari migrasi, turunkan TTL domain di Cloudflare / DNS Manager menjadi 60–300 detik (5 menit).
+2. **Maintenance Window Singkat (Read-Only Mode)**:
+   - Pasang banner pemeliharaan singkat di Web UI dan hentikan sementara service Telegram bot (`sudo systemctl stop unlazynotes-bot.service`) agar tidak ada catatan baru yang masuk selama proses dump.
+3. **Dump Database PostgreSQL**:
+   ```bash
+   pg_dump -U rikushiro -d unlazynotes_dev -F c -b -v -f /tmp/unlazynotes_backup.dump
+   ```
+4. **Transfer File Media & Database**:
+   - Pindahkan file dump dan direktori lampiran media ke VPS baru:
+     ```bash
+     rsync -avzP /tmp/unlazynotes_backup.dump user@vps-baru:/tmp/
+     rsync -avzP /home/rikushiro/projects/unlazynotes/storage/attachments/ user@vps-baru:/path/to/storage/attachments/
+     ```
+5. **Restore di VPS Baru**:
+   ```bash
+   pg_restore -U rikushiro -d unlazynotes_prod -v /tmp/unlazynotes_backup.dump
+   ```
+6. **Deploy & Jalankan Service di VPS Baru**:
+   - Konfigurasi `.env.production`, lalu jalankan `unlazynotes.service` dan `unlazynotes-bot.service` di VPS baru.
+   - Uji verifikasi (login akun, buat catatan web/bot, tes upload lampiran).
+7. **Switch DNS IP**:
+   - Arahkan A record domain ke IP VPS baru. Berkat TTL 5 menit, propagasi berlangsung instan tanpa user menyadari perpindahan server.
+8. **Kembalikan TTL ke Normal (Auto / 1 Hari)**.
 
 ---
 
-## 5. Ide Fitur & Backlog Eksperimental (Future Features)
+## 5. Catatan Operasional & Troubleshooting Lintas Lingkungan (Dev / Local / Mobile)
+
+### A. Sinkronisasi Skema Database Lokal saat Git Pull
+- **Isu**: Muncul error `PostgresError: column "target_date" does not exist` saat menarik (*pull*) perubahan terbaru di komputer lokal (Windows/Mac).
+- **Penyebab**: Kode skema Drizzle di branch lokal sudah diperbarui (`src/db/schema.ts`), tetapi tabel di database PostgreSQL lokal belum disinkronkan.
+- **Solusi**:
+  Jalankan perintah sinkronisasi Drizzle di terminal lokal:
+  ```bash
+  npx drizzle-kit push
+  ```
+
+### B. Akses Web UI Preview via Tailscale di HP & PC
+- **Isu**: Browser di HP menampilkan pesan *"site unreachable / connection refused"* saat mengakses `100.78.70.121:4321`.
+- **Penyebab**: Fitur *HTTPS-First Mode* bawaan Chrome/Brave otomatis menambahkan `https://` jika pengguna mengetik tanpa protokol. Karena Astro dev berjalan di HTTP murni, SSL handshake gagal.
+- **Solusi**:
+  - Di HP: Ketik URL lengkap secara eksplisit dengan `http://100.78.70.121:4321/` atau gunakan mode *Incognito*.
+  - Di PC: Pastikan aplikasi Tailscale Windows berstatus *Connected* (device `desktop-9800fst`).
+
+---
+
+## 6. Ide Fitur & Backlog Eksperimental (Future Features)
 
 Seluruh ide pengembangan, rancangan UX, dan backlog teknis yang statusnya ditahan (*held*) terdokumentasi terpusat di:
 - [`FUTURE_FEATURES.md`](./FUTURE_FEATURES.md)
