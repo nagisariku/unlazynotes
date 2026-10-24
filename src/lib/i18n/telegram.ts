@@ -57,7 +57,9 @@ export type TelegramMessageKey =
   | 'media_size_exceeded'
   | 'media_missing_caption'
   | 'read_empty'
-  | 'read_header';
+  | 'read_header'
+  | 'review_header'
+  | 'review_empty';
 
 export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocale, string>> = {
   dashboard_prompt: {
@@ -71,43 +73,41 @@ export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocal
   },
 
   help: {
-    id: `🤖 UnlazyNotes Bot – Tangkap ide kilat langsung dari chat!
+    id: `🤖 Halo! UnlazyNotes siap mencatat ide kilatmu langsung dari chat.
 
 Daftar Perintah:
-• \`/start\` atau \`/help\` - Tampilkan bantuan ini
-• \`/login <api_key>\` - Tautkan akun Telegram secara manual
+• \`/login <api_key>\` - Tautkan akun Telegram Anda
 • \`/logout\` - Putus tautan akun Telegram ini
-• \`/tags\` - Tampilkan seluruh tag aktif & sisa kuota Anda
+• \`/review\` - Tinjau catatan yang belum terkategori (others)
+• \`/read\` - Baca catatan terbaru Anda
+• \`/pin\` - Lihat catatan yang disematkan
+• \`/tags\` - Tampilkan seluruh tag aktif & kategori
 • \`/tags <nama_tag>\` - Cari catatan berdasarkan tag tertentu
-• \`/pin\` - Lihat seluruh catatan yang Anda tandai/pin
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
-• \`/ask <pertanyaan>\` - ⭐️ [Pro Tier] Tanya jawab pintar AI berbasis catatan Anda
-• \`/secure <kunci> <isi>\` - ⭐️ [Pro Tier] Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
-• \`/vault [kunci]\` - ⭐️ [Pro Tier] Buka rahasia; gunakan \`/vault\` (tanpa kunci) jika lupa kuncinya untuk melihat daftar kredensial tersimpan
+• \`/ask <pertanyaan>\` - Tanya jawab pintar AI berbasis catatan Anda
+• \`/secure <kunci> <isi>\` - Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
+• \`/vault\` - Buka rahasia; gunakan \`/vault\` (tanpa kunci) untuk melihat daftar kredensial tersimpan
+• \`/temp <isi>\` - Simpan catatan sementara (kadaluwarsa & auto-arsip 7 hari)
 
-Cara Penggunaan:
-Kirimkan pesan teks atau tautan apa saja secara langsung ke bot ini. AI kami akan otomatis mengkategorikan dan memberi label catatan Anda dalam sekejap!
+🌐 Web Dashboard: {dashboardUrl}`,
 
-🌐 Web Dashboard: https://unlazynotes.com/dashboard`,
-
-    en: `🤖 UnlazyNotes Bot – Capture lightning-fast notes directly from chat!
+    en: `🤖 Hello! UnlazyNotes is ready to capture your lightning-fast thoughts directly from chat.
 
 Command List:
-• \`/start\` or \`/help\` - Show this guide
-• \`/login <api_key>\` - Link your Telegram account manually
+• \`/login <api_key>\` - Link your Telegram account
 • \`/logout\` - Disconnect this Telegram account
-• \`/tags\` - View all active tags & remaining quota
+• \`/review\` - Review uncategorized notes (others)
+• \`/read\` - Read your latest notes
+• \`/pin\` - View pinned notes
+• \`/tags\` - View active tags & categories
 • \`/tags <tag_name>\` - Browse notes by specific tag
-• \`/pin\` - View all your pinned/starred notes
 • \`/search <keyword>\` - Search notes by keyword
-• \`/ask <question>\` - ⭐️ [Pro Tier] Ask AI intelligent questions from your notes
-• \`/secure <key> <content>\` - ⭐️ [Pro Tier] Save AES-256-GCM encrypted secrets to Private Vault
-• \`/vault [key]\` - ⭐️ [Pro Tier] Reveal secret; use \`/vault\` (without key) if you forgot the key to view all stored credential keys
+• \`/ask <questions>\` - Ask AI intelligent questions from your notes
+• \`/secure <key> <notes>\` - Save AES-256-GCM encrypted secrets to Private Vault
+• \`/vault\` - Reveal secrets; use \`/vault\` (without key) to view all stored credential keys
+• \`/temp <content>\` - Save temporary note (auto-archived after 7 days)
 
-How to Use:
-Simply send any text message or link directly to this bot. Our AI will automatically categorize and tag your notes in seconds!
-
-🌐 Web Dashboard: https://unlazynotes.com/dashboard`,
+🌐 Web Dashboard: {dashboardUrl}`,
   },
 
   welcome_connected: {
@@ -162,17 +162,17 @@ Simply send any text message or link directly to this bot. Our AI will automatic
 
   quota_exceeded: {
     id: `Yah, jatah 30 catatan Free kamu bulan ini sudah terpakai semua! 🥺 Kuota catatan barumu akan direset otomatis tanggal 1 bulan depan (catatan lamamu tetap aman tersimpan).\n\nMau bebas catat tanpa batas & buka fitur rahasia (/secure & /ask)?\n✨ Upgrade ke Pro cuma $1 (~Rp 15rb)/bulan!\n👉 {upgradeUrl}`,
-    en: `You've reached your 30 Free notes limit for this month! 🥺 Your new notes quota will automatically reset on the 1st of next month (all your previous notes remain safe).\n\nWant unlimited notes & access to exclusive features (/secure & /ask)?\n✨ Upgrade to Pro for only $1 (~Rp 15k)/month!\n👉 {upgradeUrl}`,
+    en: `You've reached your 30 Free notes limit for this month! 🥺 Your new notes quota will automatically reset on the 1st of next month (all your previous notes remain safe).\n\nWant unlimited notes & access to exclusive features (/secure & /ask)?\n✨ Upgrade to Pro for only $1 (~Rp 18,000)/month!\n👉 {upgradeUrl}`,
   },
 
   upgrade_button_pro: {
-    id: `✨ Upgrade ke Pro ($1 / Rp 15rb)`,
-    en: `✨ Upgrade to Pro ($1 / ~Rp 15k)`,
+    id: `✨ Upgrade ke Pro ($1 / Rp 18.000)`,
+    en: `✨ Upgrade to Pro ($1 / ~Rp 18,000)`,
   },
 
   pro_gated: {
     id: `Fitur ini khusus untuk pengguna UnlazyNotes Pro ✨\nBuka akses Private Encrypted Vault, AI Q&A cerdas, dan unlimited notes cuma $1/bulan.\n\n👉 {upgradeUrl}`,
-    en: `This feature is exclusive to UnlazyNotes Pro users ✨\nUnlock Private Encrypted Vault, smart AI Q&A, and unlimited notes for just $1/month.\n\n👉 {upgradeUrl}`,
+    en: `This feature is exclusive to UnlazyNotes Pro users ✨\nUnlock Private Encrypted Vault, smart AI Q&A, and unlimited notes for just $1 (~Rp 18k)/month.\n\n👉 {upgradeUrl}`,
   },
 
   pro_gated_button: {
@@ -186,8 +186,8 @@ Simply send any text message or link directly to this bot. Our AI will automatic
   },
 
   tags_header: {
-    id: `🏷 <b>Tags Anda</b>\n\n🔥 <b>Teraktif:</b>\n{activeTagsText}\n\n🕒 <b>Terakhir:</b>\n{recentTagsText}\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
-    en: `🏷 <b>Your Tags</b>\n\n🔥 <b>Most Active:</b>\n{activeTagsText}\n\n🕒 <b>Recent:</b>\n{recentTagsText}\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
+    id: `🏷 <b>Tags Anda</b>\n\n🕒 <b>Tags Terakhir:</b>\n{latestTagsText}\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`,
+    en: `🏷 <b>Your Tags</b>\n\n🕒 <b>Latest Tags:</b>\n{latestTagsText}\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`,
   },
 
   tags_cluster_detail: {
@@ -379,6 +379,16 @@ Simply send any text message or link directly to this bot. Our AI will automatic
     id: `📖 *Catatan Terakhir*`,
     en: `📖 *Latest Notes*`,
   },
+
+  review_empty: {
+    id: `🎉 *Tidak ada catatan untuk direview!*\nSemua catatan Anda sudah terkategori dengan rapi.`,
+    en: `🎉 *No notes to review!*\nAll your notes have been neatly categorized.`,
+  },
+
+  review_header: {
+    id: `📋 Review Notes`,
+    en: `📋 Review Notes`,
+  },
 };
 
 /**
@@ -390,6 +400,26 @@ export function getTelegramMsg(
   params?: Record<string, string | number>
 ): string {
   const activeLang: SupportedLocale = lang === 'id' ? 'id' : 'en';
+
+  if (key === 'tags_header') {
+    const rawLatest = params?.latestTagsText;
+    const hasTags =
+      rawLatest &&
+      typeof rawLatest === 'string' &&
+      rawLatest.trim() !== '' &&
+      rawLatest.trim() !== '-';
+
+    if (hasTags) {
+      return activeLang === 'id'
+        ? `🏷 <b>Tags Anda</b>\n\n🕒 <b>Tags Terakhir:</b>\n${rawLatest}\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Ketik nomor tag (misal: 1), ketik /tags &lt;nama_tag&gt;, atau pilih kategori di bawah.</i>`
+        : `🏷 <b>Your Tags</b>\n\n🕒 <b>Latest Tags:</b>\n${rawLatest}\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Type tag number (e.g. 1), type /tags &lt;tag_name&gt;, or select a category below.</i>`;
+    } else {
+      return activeLang === 'id'
+        ? `🏷 <b>Tags Anda</b>\n\n💡 <b>Perintah Cepat:</b>\n• /pin - Catatan yang disematkan\n• /vault - Kredensial & rahasia terenkripsi\n• /search &lt;kata_kunci&gt; - Cari catatan\n• /ask &lt;pertanyaan&gt; - Tanya AI otak kedua\n\n<i>Pilih kategori di bawah atau gunakan perintah di atas.</i>`
+        : `🏷 <b>Your Tags</b>\n\n💡 <b>Quick Commands:</b>\n• /pin - Pinned notes\n• /vault - Encrypted vault credentials\n• /search &lt;keyword&gt; - Search notes\n• /ask &lt;question&gt; - Ask second brain AI\n\n<i>Select a category below or use the commands above.</i>`;
+    }
+  }
+
   const entry = TELEGRAM_MESSAGES[key];
   if (!entry) return key;
 

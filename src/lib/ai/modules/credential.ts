@@ -1,6 +1,24 @@
 import { sanitizeTags } from '../sanitizer';
 import { extractTagsFromContent } from '../taxonomy';
 import type { NoteTagResult } from '../types';
+import type { CredentialType } from '@/db/schema';
+
+function heuristicClassifyCredentialType(tags: string[], text: string): CredentialType {
+  const lower = text.toLowerCase();
+  if (/\b(token|api_key|apikey|secret_key|secret|license|serial|voucher|ssh|ed25519|rsa)\b/i.test(lower)) {
+    return 'license';
+  }
+  if (/\b(wifi|ssid|router|wlan|hotspot|pin\s*pintu)\b/i.test(lower)) {
+    return 'network';
+  }
+  if (/\b(bca|mandiri|bri|bni|cimb|jago|rekening|norek|no\s*rek|atm|ktp|nik|sim|paspor|bpjs|npwp|kk)\b/i.test(lower)) {
+    return 'identity_finance';
+  }
+  if (/\b(login|password|passwd|sandi|username|email|admin|dashboard|user)\b/i.test(lower)) {
+    return 'account';
+  }
+  return 'other';
+}
 
 /**
  * Specialized Credential Module with Bilingual Taxonomy.
@@ -44,9 +62,13 @@ export function processCredentialNote(content: string): NoteTagResult {
     }
   }
 
+  const credentialType = heuristicClassifyCredentialType(tags, text);
+
   return {
     category: 'credential',
     specific_tags: sanitizeTags(tags, 'credential', text, 5),
     source: null,
+    credential_type: credentialType,
+    credentialType,
   };
 }

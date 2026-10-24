@@ -63,11 +63,9 @@ export function extractBookmarkThumbnail(
     }
   }
 
-  const notesText = content.replace(urlRegex, '').trim();
-
   return {
     thumbnail,
-    cleanText: notesText || primaryUrl || content,
+    cleanText: content,
     primaryUrl,
   };
 }

@@ -18,11 +18,13 @@ Dokumen ini berfungsi sebagai memori persisten lintas sesi (*session handover*) 
 - **Payment & Auth**: DOKU Hosted Checkout Simulator & Better Auth (Google OAuth & Dev Session)
 - **Validasi Test Suite**:
   - `scripts/test-batch-organizer.ts`: 100% PASS (Local formatting, privacy shield, smart caching, batch organize & summary)
-  - `scripts/test-intent-classifier.ts`: 38/38 Live AI & 38/38 Heuristic (100% PASS)
+  - `scripts/test-intent-classifier.ts`: 38/38 Live AI & 38/38 Heuristic (100% PASS - 9 Sacred Pillars)
+  - `scripts/test-web-sync-alignment.ts`: 31/31 assertions lolos (100% PASS)
   - `scripts/test-phase4-polishes.ts`: 33/33 tests lolos (100% PASS)
   - `scripts/test-enhancements.ts`: 145/145 assertions lolos (100% PASS)
   - `scripts/test-ask-temporal.ts`: 100% PASS (Dynamic Scope Broad & Targeted, Anchor Time Math, Claude Haiku 5.5 inference)
   - `scripts/test-telegram-i18n.ts`: 33/33 tests lolos (100% PASS)
+  - `scripts/test-telegram-alignment.ts`: 33/33 assertions lolos (100% PASS - Dock, Help, Tags, Review, Format)
   - `scripts/test-tier-quota.ts`: 19/19 skenario lolos (100% PASS)
   - `npm run typecheck` & `npm run check`: 0 error (100% Type-Safe)
 
@@ -479,6 +481,46 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
    - `scripts/test-intent-classifier.ts`: 38/38 live AI dan 38/38 deterministic heuristic lolos 100% PASS.
    - `npm run check` & `npm run typecheck`: 0 errors.
 
+### AA. Penyelarasan Web UI Redesign, TargetDate Schema, & Human Intent Lock (Okt 2026)
+1. **Pembaruan Skema Database (`src/db/schema.ts`)**:
+   - Kolom `targetDate: timestamp('target_date', { withTimezone: true })` nullable untuk mendukung komponen Calendar Web.
+   - Index komposit: `index('notes_user_target_date_idx').on(t.userId, t.targetDate)`.
+   - Drizzle kit push tersinkronisasi aman tanpa mengubah data yang sudah ada.
+2. **Hukum "Human Intent Trumps AI" & Web Intent Lock (`POST & PATCH /api/notes`)**:
+   - Catatan yang dibuat di tab spesifik Web (Todo, Schedule, Bookmarks, Vault) langsung berstatus `isProcessed = true` dengan kategori terpilih (tanpa token LLM).
+   - Catatan yang dibuat di tab umum (`others`) tetap `isProcessed = false` agar diproses batch sync di background.
+   - Setiap kali user menyimpan edit dari Web (`PATCH /api/notes/[id]`), otomatis dikunci `isProcessed = true` agar terlindungi dari modifikasi atau overwrite AI di masa depan.
+   - Mendukung penghapusan lampiran berkas via tombol '✕' pada dialog edit.
+3. **Logika Calendar Multi-Schedule (Earliest Anchor Date) (`src/lib/date-extractor.ts`)**:
+   - Deteksi otomatis tanggal terlengkap dalam teks jadwal: ISO, DMY, bulan bahasa Indonesia/Inggris, nama hari, kata relatif (besok, lusa), dan waktu (jam).
+   - Jika catatan schedule memuat banyak tanggal (misal "Senin 24 Okt meeting, Rabu 26 Okt flight, Jumat 28 Okt demo"), kolom `targetDate` HANYA diisi dengan tanggal terawal yang akan datang (Earliest Upcoming Anchor Date) tanpa memecah baris catatan.
+4. **Penyelarasan Bookmarks & Attachments**:
+   - Platform tags bookmark dibatasi maksimal Top 3 dominan untuk mencegah tag sprawl pada Table of Contents.
+   - Field `attachments` (jsonb) dikembalikan utuh pada `GET /api/notes`, `GET /api/notes/[id]`, `POST`, dan `PATCH`.
+5. **Verifikasi Test Suite**:
+   - `scripts/test-web-sync-alignment.ts`: 31/31 skenario pengujian PASS (100%).
+   - `npm run typecheck` & `npm run build`: 0 error (100% lulus).
+
+### AA. Pure Prompt-Driven 9-Pillar Batch AI Pipeline & Strict Fail-Fast Boundary (Okt 2026)
+1. **Penghapusan Intersepsi Regex (Pure LLM Semantics)**:
+   - Menghapus pembatasan hardcoded regex (`detectLocalCredential` bypass dan URL hardcoding) pada alur Batch Sync (`src/lib/ai/batch-organizer.ts`).
+   - Seluruh catatan unorganized kini dialirkan langsung ke LLM dengan System Prompt 9 Pilar Komprehensif berlandaskan [`unlazynotes_habit_ai_spec.md`](./unlazynotes_habit_ai_spec.md).
+2. **Unified 9-Pillar Prompt Architecture**:
+   - Mengintegrasikan definisi intensi sakral 9 pilar: `bookmark`, `schedule`, `finance`, `credential`, `todo`, `draft`, `reference`, `random-yap`, `others`.
+   - Ekstraksi data terstruktur langsung dari respons model: `expenses`, `income`, `debt`, `schedule`, `schedule_dates`, `source`, dan taksonomi dual-layer `specific_tags` (domain umbrella + subjek konkret).
+   - Normalisasi nominal otomatis (`35k` -> 35000, `50rb` -> 50000, `3.5jt` -> 3500000).
+3. **Strict Fail-Fast Error Boundary (Anti-Data Corruption)**:
+   - Jika AI Gateway (Cosmoshub) mengalami gangguan, timeout, atau kegagalan parsing JSON:
+     - Proses batch langsung dibatalkan total (*aborted*).
+     - **Zero Partial Mutation**: Tidak ada satu pun catatan yang diubah sebagian atau ditandai `isProcessed = true`.
+     - Counter catatan unorganized tetap utuh dan cache tidak direset.
+     - Pengguna diberi tahu secara transparan via Telegram atau Web UI bahwa AI sedang bermasalah dan catatan mereka tetap aman.
+4. **Penyelarasan Web & Telegram Sync**:
+   - Endpoint `/api/notes/sync` diselaraskan untuk memanggil `organizeUserNotes(userId)` secara identik, mengembalikan status 502 jika AI Gateway gagal dan data catatan terupdate penuh saat sukses.
+5. **Perbaikan Isolasi Akun Telegram (`telegramChatId`)**:
+   - Menambahkan indeks unique `api_keys_telegram_chat_id_unique` pada PostgreSQL.
+   - Handler `/login` dan `/start` otomatis melepaskan kunci lama yang terhubung ke `chatId` yang sama sebelum menautkan kunci baru, mencegah tabrakan data antar-akun.
+
 ### Z. Non-Persistent 2x2 Dock Menu & Background Non-Blocking Sync Engine (Okt 2026)
 1. **2x2 Dock Keyboard (`PERSISTENT_DOCK_KEYBOARD`)**:
    - **Grid Simetris 2x2**:
@@ -496,6 +538,30 @@ Sistem penyimpanan cepat dan hening dengan perlindungan privasi lokal serta pera
 3. **Optimasi Latensi & Fast-Path LLM (`src/lib/ai/batch-organizer.ts`)**:
    - **Fast-Path URL Bookmarks**: Catatan unorganized berupa tautan tunggal (URL valid) langsung diproses secara lokal instan ke kategori `bookmark` tanpa memanggil LLM.
    - **Guard Output Token & Timeout**: Menetapkan `maxTokens: 1500` dan `AbortSignal.timeout(20000)` pada inferensi Claude Haiku 5.5 guna mencegah JSON terpotong di tengah chunk 15 catatan.
+
+### AD. Upgrade Kapasitas AI Context (`/ask`) & Top-60 Tag Ingestion (Okt 2026)
+1. **Perluasan Retention Window & Context Limit (`src/lib/ask.ts`)**:
+   - Waktu retensi diperluas dari 90 hari menjadi **180 hari (6 bulan)** (`subDays(now, 180)`).
+   - Batas query catatan non-terenkripsi dinaikkan dari 100 menjadi **300 catatan terbaru** (`.limit(300)`).
+   - Mengoptimalkan kapasitas context window model `deepseek-v4.1-flash` (128K token) untuk second brain yang lebih komprehensif.
+2. **Injeksi Top-60 Tag Teraktif (`src/lib/cache.ts` & `src/lib/ai/modules/general.ts`)**:
+   - Algoritma penghitungan frekuensi tag menghitung kemunculan seluruh tag per pengguna dan mengurutkannya secara desending (*Most Frequent Tags*).
+   - Mengembalikan Top 60 tag teratas (sebelumnya dibatasi 30 tag) ke dalam prompt memori AI guna mencegah ledakan tag sinonim baru (*tag sprawl*).
+
+### AE. Smart Auto-Cleaner, Link Metadata Enricher, & Bulk Cleaning Experience (Okt 2026)
+1. **Smart Auto-Cleaner & Ephemeral Notes (`/temp`)**:
+   - Skema tabel `notes`: `expiresAt: timestamp('expires_at', { withTimezone: true })` dan `isArchived: boolean('is_archived').default(false).notNull()`.
+   - Indeks PostgreSQL: `notes_user_archived_idx` dan `notes_expires_at_idx`.
+   - Telegram command `/temp <isi>` menyimpan catatan dengan masa aktif 7 hari (`expiresAt = Date.now() + 7 days`).
+   - Fungsi scheduled / background cleaner `autoArchiveExpiredNotes()` di `src/lib/cleaner.ts` mengarsipkan catatan yang telah melewati waktu kadaluwarsa secara hening.
+2. **Lightweight Link Metadata Enricher (`src/lib/link-enricher.ts`)**:
+   - Ekstraksi judul & pembuat konten YouTube melalui free official oEmbed API tanpa API key.
+   - Parsing OpenGraph (`og:title`, `og:description`, `<title>`) secara hemat resource melalui head stream (<25KB, 3s timeout) tanpa instalasi browser berat (0% Puppeteer/Playwright).
+   - Terintegrasi dengan pipeline AI (`generateNoteTags` & `organizeUserNotes`) untuk memperkaya konteks URL murni atau minimalis.
+3. **Bulk Cleaning Experience (Web Dashboard)**:
+   - API endpoint `POST /api/notes/bulk` untuk aksi `archive`, `restore`, dan `delete` massal dengan validasi kepemilikan user dan invalidasi cache tag.
+   - `NoteCard.tsx`: Checkbox seleksi dengan `e.stopPropagation()`, badge `⏳ Temp`, highlight visual border & ring saat dipilih.
+   - `NotesTimeline.tsx`: Tombol toggle `[ 🧹 Kelola Catatan ]`, filter chips (`Semua`, `⏳ Kadaluwarsa / Temp`, `📅 Selesai > 1 Bulan`), tombol `[ Pilih Semua ]`, floating bottom toolbar (`Arsipkan Semua`, `Hapus Permanen`, `Batal`).
 
 ---
 

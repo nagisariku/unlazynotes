@@ -57,10 +57,10 @@ const TEST_MATRIX: TestCase[] = [
   },
   {
     input: 'migrain minum paracetamol',
-    expectedCat: 'others',
+    expectedCat: 'random-yap',
     expectedTags: ['health', 'migrain', 'paracetamol'],
     forbiddenTags: ['minum'],
-    description: '7. Health symptom and medication log (umbrella: health, NO verb)',
+    description: '7. Health symptom and medication log (Pilar 8: random-yap, umbrella: health, NO verb)',
   },
   {
     input: 'ide konten tiktok soal app fatigue',
@@ -247,6 +247,20 @@ const TEST_MATRIX: TestCase[] = [
     expectedTags: ['unlazynotes'],
     forbiddenTags: ['finance', 'credential'],
     description: 'Human Style 3: SaaS spec & architecture pricing tier markdown -> draft (NOT finance/credential)',
+  },
+  {
+    input: 'Asam lambung agak perih siang ini gara-gara telat sarapan terus langsung ngopi',
+    expectedCat: 'random-yap',
+    expectedTags: ['health', 'asam-lambung'],
+    forbiddenTags: ['others'],
+    description: 'Human Style 4: Bodily sensation & health discomfort complaint -> random-yap (Pilar 8)',
+  },
+  {
+    input: 'Dosis amoxicillin 3x1 sesudah makan',
+    expectedCat: 'reference',
+    expectedTags: ['health', 'amoxicillin'],
+    forbiddenTags: ['todo', 'others'],
+    description: 'Human Style 5: Formal medical dosage static knowledge -> reference (Pilar 7)',
   },
   {
     input: "ba'da maghrib ada kajian",

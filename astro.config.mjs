@@ -14,6 +14,17 @@ export default defineConfig({
     mode: 'standalone',
   }),
   integrations: [react()],
+  prefetch: {
+    prefetchAll: true,
+    defaultStrategy: 'hover',
+  },
+  i18n: {
+    defaultLocale: 'id',
+    locales: ['id', 'en'],
+    routing: {
+      prefixDefaultLocale: false,
+    },
+  },
   vite: {
     plugins: [tailwindcss()],
   },

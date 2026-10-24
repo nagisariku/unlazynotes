@@ -17,7 +17,7 @@ import {
   parseISO,
 } from 'date-fns';
 import { id } from 'date-fns/locale';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
 import { Button, SearchPill, Calendar } from '../ui';
 import NoteCard from './NoteCard';
 import EditNoteModal from './EditNoteModal';
@@ -31,6 +31,30 @@ export interface ScheduleItem {
   specificTags?: string[] | null;
   source?: string | null;
   isPinned?: boolean;
+  targetDate?: string | Date | null;
+  scheduleDates?: string[] | null;
+  schedule?: {
+    dates: string[];
+    isRecurring: boolean;
+    recurrenceRule?: {
+      frequency: 'daily' | 'weekly' | 'monthly' | 'custom_interval';
+      intervalDays?: number;
+      daysOfWeek?: number[];
+      dayOfMonth?: number;
+      timeString?: string;
+    };
+  } | null;
+  expenses?: Array<{ item: string; amount: number; currency: string }> | null;
+  income?: Array<{ source: string; amount: number; currency: string }> | null;
+  debt?: Array<{ type: 'payable' | 'receivable'; person: string; amount: number; notes?: string }> | null;
+  attachments?: Array<{
+    fileId: string;
+    type: 'image' | 'file';
+    mimeType?: string;
+    fileName?: string;
+    sizeBytes?: number;
+    localPath?: string;
+  }> | null;
   createdAt: string;
 }
 
@@ -75,14 +99,91 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
   // Group schedules by YYYY-MM-DD
   const scheduleMap = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
-    for (const item of items) {
-      const key = format(new Date(item.createdAt), 'yyyy-MM-dd');
+
+    const addEntry = (key: string, item: ScheduleItem) => {
       const existing = map.get(key) || [];
-      existing.push(item);
-      map.set(key, existing);
+      if (!existing.some((i) => i.id === item.id)) {
+        existing.push(item);
+        map.set(key, existing);
+      }
+    };
+
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+    for (const item of items) {
+      // 1. Map to createdAt date ONLY IF no explicit targetDate, scheduleDates, and not recurring
+      const hasExplicitDates = Boolean(
+        item.targetDate ||
+        (Array.isArray(item.schedule?.dates) && item.schedule.dates.length > 0) ||
+        (Array.isArray(item.scheduleDates) && item.scheduleDates.length > 0) ||
+        item.schedule?.isRecurring
+      );
+      if (!hasExplicitDates) {
+        const createdKey = format(new Date(item.createdAt), 'yyyy-MM-dd');
+        addEntry(createdKey, item);
+      }
+
+      // 2. Map to targetDate if present
+      if (item.targetDate) {
+        const targetKey = format(new Date(item.targetDate), 'yyyy-MM-dd');
+        addEntry(targetKey, item);
+      }
+
+      // 3. Map to all dates in schedule.dates or scheduleDates array
+      const concreteDates = item.schedule?.dates || item.scheduleDates || [];
+      if (Array.isArray(concreteDates)) {
+        for (const dateStr of concreteDates) {
+          if (typeof dateStr === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            addEntry(dateStr, item);
+          }
+        }
+      }
+
+      // 4. Project recurring schedule across active calendar month
+      if (item.schedule?.isRecurring) {
+        const rule = item.schedule.recurrenceRule || { frequency: 'weekly' };
+        const anchor = concreteDates.length > 0
+          ? parseISO(concreteDates[0])
+          : (item.targetDate ? new Date(item.targetDate) : new Date(item.createdAt));
+        const anchorDayOfWeek = !isNaN(anchor.getTime()) ? anchor.getDay() : 1;
+
+        if (rule.frequency === 'daily') {
+          const interval = rule.intervalDays && rule.intervalDays > 1 ? rule.intervalDays : 1;
+          for (let d = 1; d <= totalDaysInMonth; d += interval) {
+            const dateStr = format(new Date(year, month, d), 'yyyy-MM-dd');
+            addEntry(dateStr, item);
+          }
+        } else if (rule.frequency === 'weekly' || !rule.frequency) {
+          const targetDays = Array.isArray(rule.daysOfWeek) && rule.daysOfWeek.length > 0
+            ? rule.daysOfWeek
+            : [anchorDayOfWeek];
+          for (let d = 1; d <= totalDaysInMonth; d++) {
+            const dt = new Date(year, month, d);
+            if (targetDays.includes(dt.getDay())) {
+              addEntry(format(dt, 'yyyy-MM-dd'), item);
+            }
+          }
+        } else if (rule.frequency === 'monthly') {
+          const targetDay = rule.dayOfMonth && rule.dayOfMonth >= 1 && rule.dayOfMonth <= totalDaysInMonth
+            ? rule.dayOfMonth
+            : (!isNaN(anchor.getTime()) ? anchor.getDate() : 1);
+          addEntry(format(new Date(year, month, targetDay), 'yyyy-MM-dd'), item);
+        } else if (rule.frequency === 'custom_interval' && rule.intervalDays && rule.intervalDays > 0) {
+          for (let d = 1; d <= totalDaysInMonth; d++) {
+            const candidate = new Date(year, month, d);
+            const diffTime = candidate.getTime() - anchor.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays >= 0 && diffDays % rule.intervalDays === 0) {
+              addEntry(format(candidate, 'yyyy-MM-dd'), item);
+            }
+          }
+        }
+      }
     }
     return map;
-  }, [items]);
+  }, [items, currentMonth]);
 
   // Toggle pin by item id and current status
   const handleTogglePinById = async (id: string, currentPinStatus: boolean) => {
@@ -230,7 +331,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
     // Filter by selected date if active
     if (selectedDate) {
       const key = format(selectedDate, 'yyyy-MM-dd');
-      result = result.filter((item) => format(new Date(item.createdAt), 'yyyy-MM-dd') === key);
+      result = scheduleMap.get(key) || [];
     }
 
     // Filter by search query
@@ -249,13 +350,11 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       if (!a.isPinned && b.isPinned) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [items, selectedDate, searchQuery]);
+  }, [items, selectedDate, searchQuery, scheduleMap]);
 
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
-
-      {/* =========================================================================
+            {/* =========================================================================
           1. HEADER (Title & Subtitle)
           ========================================================================= */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
@@ -291,7 +390,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       <div className="mt-4 sm:mt-5 flex flex-col xl:flex-row gap-6 xl:gap-8 items-start w-full">
         {/* Left Column: Calendar (Full-width on mobile/tablet, sticky on xl desktop) */}
         <div className="w-full xl:w-[480px] shrink-0 xl:sticky xl:top-14">
-          <div className="p-4 sm:p-6 rounded-2xl border border-hairline bg-canvas w-full max-w-full overflow-x-auto">
+          <div className="p-4 sm:p-6 rounded-2xl border border-hairline bg-canvas w-full max-w-full overflow-x-auto no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             <Calendar
               mode="single"
               size="medium"
@@ -405,7 +504,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
         </div>
       </div>
 
-      {/* =========================================================================
+            {/* =========================================================================
           4. MODAL: CREATE NEW SCHEDULE (Using standard QuickComposer-style modal)
           ========================================================================= */}
       {isCreateModalOpen && (

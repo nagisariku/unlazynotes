@@ -152,20 +152,34 @@ export async function incrementUserMonthlyNotes(userId: string): Promise<number>
 }
 
 /**
+ * Memastikan URL untuk inline button Telegram selalu berupa URL publik yang valid.
+ * Telegram Bot API menolak http://localhost atau 127.0.0.1 dalam inline keyboard.
+ */
+function getValidTelegramButtonUrl(rawUrl: string, path: string): string {
+  const cleanPath = path.startsWith('/') ? path : '/' + path;
+  if (!rawUrl || rawUrl.includes('localhost') || rawUrl.includes('127.0.0.1')) {
+    return 'https://unlazynotes.com' + cleanPath;
+  }
+  return rawUrl.replace(/\/$/, '') + cleanPath;
+}
+
+/**
  * Template Pesan Paywall / Upgrade untuk Batas Kuota Bulanan di Telegram (30/30)
  */
 export function getTelegramQuotaExceededMessage(webUrl = 'http://localhost:4321', locale: SupportedLocale = 'id'): {
   text: string;
   replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 } {
-  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const effectiveUrl = webUrl || process.env.BETTER_AUTH_URL || 'http://localhost:4321';
+  const settingsUrl = `${effectiveUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const buttonUrl = getValidTelegramButtonUrl(effectiveUrl, '/dashboard/settings#upgrade');
   const text = getTelegramMsg('quota_exceeded', locale, { upgradeUrl: settingsUrl });
   const buttonText = getTelegramMsg('upgrade_button_pro', locale);
 
   return {
     text,
     replyMarkup: {
-      inline_keyboard: [[{ text: buttonText, url: settingsUrl }]],
+      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]],
     },
   };
 }
@@ -177,14 +191,16 @@ export function getTelegramProGatedMessage(webUrl = 'http://localhost:4321', loc
   text: string;
   replyMarkup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 } {
-  const settingsUrl = `${webUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const effectiveUrl = webUrl || process.env.BETTER_AUTH_URL || 'http://localhost:4321';
+  const settingsUrl = `${effectiveUrl.replace(/\/$/, '')}/dashboard/settings#upgrade`;
+  const buttonUrl = getValidTelegramButtonUrl(effectiveUrl, '/dashboard/settings#upgrade');
   const text = getTelegramMsg('pro_gated', locale, { upgradeUrl: settingsUrl });
   const buttonText = getTelegramMsg('pro_gated_button', locale);
 
   return {
     text,
     replyMarkup: {
-      inline_keyboard: [[{ text: buttonText, url: settingsUrl }]],
+      inline_keyboard: [[{ text: buttonText, url: buttonUrl }]],
     },
   };
 }

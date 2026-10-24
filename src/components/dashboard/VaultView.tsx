@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Lock,
   KeyRound,
@@ -18,16 +19,34 @@ import {
   Send,
   Sparkles,
 } from 'lucide-react';
-import { Toaster, toast } from 'sonner';
+import { format } from 'date-fns';
+import { id as localeId } from 'date-fns/locale';
+import { toast } from 'sonner';
 import { Button, SearchPill } from '../ui';
 import NoteCard from './NoteCard';
 import EditNoteModal from './EditNoteModal';
 import NoteDetailModal from './NoteDetailModal';
+import type { CredentialType } from '../../db/schema';
+
+export const CREDENTIAL_MACRO_CONFIG: Array<{
+  type: CredentialType;
+  title: string;
+  id: string;
+}> = [
+  { type: 'account', title: 'Akun & Layanan', id: 'section-account' },
+  { type: 'network', title: 'Jaringan & Perangkat', id: 'section-network' },
+  { type: 'identity_finance', title: 'Finansial & Identitas', id: 'section-identity-finance' },
+  { type: 'license', title: 'Kunci & Lisensi', id: 'section-license' },
+  { type: 'other', title: 'Kredensial & Akses Lainnya', id: 'section-other' },
+];
+
+const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
 export interface VaultNoteItem {
   id: string;
   content: string;
   category: string;
+  credentialType?: CredentialType | string | null;
   specificTags?: string[] | null;
   source?: string | null;
   isEncrypted: boolean;
@@ -48,25 +67,6 @@ function isVaultItem(item: VaultNoteItem): boolean {
   if (Boolean(item.vaultKey)) return true;
   if (item.specificTags?.some((t) => t.toLowerCase() === 'vault')) return true;
   return false;
-}
-
-// Helper: extract clean display tags excluding system tags
-function getNoteTags(item: VaultNoteItem): string[] {
-  const clean = (item.specificTags || [])
-    .map((t) => t.toLowerCase().trim())
-    .filter((t) => t && t !== 'vault' && t !== 'credential' && t !== 'encrypted');
-
-  if (clean.length > 0) return clean;
-
-  if (isVaultItem(item) && item.vaultKey) {
-    const keyTag = item.vaultKey
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (keyTag) return [keyTag];
-  }
-
-  return ['umum'];
 }
 
 // Dedicated Compact Vault Tile:
@@ -283,7 +283,7 @@ function VaultCompactTile({
   return (
     <div
       onClick={handleTileClick}
-      className={`group relative flex lg:inline-flex items-center justify-between w-full lg:w-fit lg:max-w-full px-1 py-2 lg:py-0 lg:h-10 lg:px-3 rounded-none lg:rounded-lg border-0 border-b max-lg:last:border-b-0 lg:border border-hairline bg-transparent lg:bg-canvas hover:border-b-hairline-strong lg:hover:border-hairline-strong lg:hover:bg-surface-soft cursor-pointer select-none text-left transition-all lg:shrink-0 ${
+      className={`group relative flex lg:inline-flex items-center justify-between w-full lg:w-fit lg:max-w-full px-2.5 py-2 lg:py-0 lg:h-10 lg:px-3 rounded-xl lg:rounded-lg border-0 lg:border border-hairline bg-canvas/40 lg:bg-canvas hover:bg-surface-soft cursor-pointer select-none text-left transition-all lg:shrink-0 ${
         isSelected ? 'lg:!border-ink lg:!bg-surface-soft lg:ring-1 lg:ring-ink lg:shadow-xs' : ''
       }`}
     >
@@ -372,9 +372,42 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
   const keyInputRef = useRef<HTMLInputElement>(null);
   const createTextareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-resize textarea height for create modal
+  const adjustCreateTextareaHeight = () => {
+    const el = createTextareaRef.current;
+    if (!el) return;
+
+    const parent = el.parentElement;
+    const parentScrollTop = parent?.scrollTop;
+
+    el.style.height = 'auto';
+    const isMobileScreen = typeof window !== 'undefined' ? window.innerWidth < 640 : false;
+    const minH = isMobileScreen ? 180 : 220;
+    const targetHeight = Math.max(el.scrollHeight, minH);
+    el.style.height = `${targetHeight}px`;
+
+    if (parent && parentScrollTop !== undefined) {
+      parent.scrollTop = parentScrollTop;
+    }
+  };
+
+  useIsomorphicLayoutEffect(() => {
+    if (isCreateModalOpen) {
+      adjustCreateTextareaHeight();
+    }
+  }, [newSecretContent, isCreateModalOpen]);
+
+  useEffect(() => {
+    if (!isCreateModalOpen) return;
+    const handleResize = () => adjustCreateTextareaHeight();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isCreateModalOpen]);
+
   useEffect(() => {
     if (isCreateModalOpen) {
       setTimeout(() => {
+        adjustCreateTextareaHeight();
         if (activeSection === 'vault') {
           keyInputRef.current?.focus();
         } else {
@@ -589,73 +622,37 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     return filteredList.filter((n) => !n.isPinned);
   }, [filteredList]);
 
-  // 4. Tag frequency across all notes matching current search
-  const tagFrequency = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredList.forEach((note) => {
-      const tags = getNoteTags(note);
-      const uniqueTags = Array.from(new Set(tags));
-      uniqueTags.forEach((t) => {
-        counts[t] = (counts[t] || 0) + 1;
-      });
-    });
-    return counts;
-  }, [filteredList]);
-
-  // 5. Top tags qualifying for distinct showcase sections (count >= 2, top 5)
-  const qualifyingTags = useMemo(() => {
-    return Object.entries(tagFrequency)
-      .filter(([_, count]) => count >= 2)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([tagKey, count]) => ({
-        key: tagKey,
-        label: tagKey.charAt(0).toUpperCase() + tagKey.slice(1),
-        count,
-      }));
-  }, [tagFrequency]);
-
-  // 6. Curated showcase gallery sections (Top tags + Koleksi Lainnya)
+  // 6. Curated showcase gallery sections (Pure AI semantic credentialType or Vault)
   const curatedSections = useMemo(() => {
-    const sections: Array<{
-      key: string;
-      title: string;
-      items: VaultNoteItem[];
-      id: string;
-    }> = [];
-
-    const coveredNoteIds = new Set<string>();
-
-    // Top Tags Showcase Sections
-    qualifyingTags.forEach((t) => {
-      const items = filteredList.filter((note) => {
-        const tags = getNoteTags(note);
-        return tags.includes(t.key);
-      });
-      if (items.length > 0) {
-        items.forEach((n) => coveredNoteIds.add(n.id));
-        sections.push({
-          key: t.key,
-          title: t.label,
-          items,
-          id: `section-${t.key}`,
-        });
+    if (activeSection === 'vault') {
+      const otherNotes = unpinnedNotes;
+      if (otherNotes.length > 0) {
+        return [
+          {
+            key: 'other',
+            title: 'Catatan Lainnya',
+            items: otherNotes,
+            id: 'section-other',
+          },
+        ];
       }
-    });
-
-    // Remaining notes grouped into "Koleksi Lainnya"
-    const otherNotes = filteredList.filter((note) => !coveredNoteIds.has(note.id));
-    if (otherNotes.length > 0) {
-      sections.push({
-        key: 'other',
-        title: activeSection === 'vault' ? 'Catatan Lainnya' : 'Koleksi Lainnya',
-        items: otherNotes,
-        id: 'section-other',
-      });
+      return [];
     }
 
-    return sections;
-  }, [qualifyingTags, filteredList, activeSection]);
+    // Credential: Pure Semantic AI Sub-type Grouping
+    return CREDENTIAL_MACRO_CONFIG.map((conf) => {
+      const items = filteredList.filter((note) => {
+        const itemType = note.credentialType || 'other';
+        return itemType === conf.type;
+      });
+      return {
+        key: conf.type,
+        title: conf.title,
+        items,
+        id: conf.id,
+      };
+    }).filter((sec) => sec.items.length > 0);
+  }, [filteredList, unpinnedNotes, activeSection]);
 
   // 7. Compact TOC Items (Max 6–8 items synchronized with showcase sections)
   const tocItems = useMemo(() => {
@@ -770,7 +767,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
       });
 
       if (!res.ok) throw new Error('Failed to update pin');
-      toast.success(nextPinned ? 'Catatan disematkan 📌' : 'Sematan dilepas');
+      toast.success(nextPinned ? 'Catatan disematkan' : 'Sematan dilepas');
     } catch {
       setVaultNotes((prev) =>
         prev.map((n) => (n.id === id ? { ...n, isPinned: !nextPinned } : n))
@@ -902,8 +899,8 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     if (items.length === 0) return null;
 
     const isExpanded = Boolean(expandedSections[sectionKey]);
-    const displayItems = isExpanded ? items : items.slice(0, 4);
-    const hasMore = items.length > 4;
+    const displayItems = isExpanded ? items : items.slice(0, 5);
+    const hasMore = items.length > 5;
 
     return (
       <div
@@ -933,24 +930,6 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
 
         <div className="w-full max-w-[1760px] columns-1 md:columns-[280px] md:[column-width:280px] lg:columns-[310px] lg:[column-width:310px] gap-3.5 md:gap-4 [column-gap:0.875rem] md:[column-gap:1rem]">
           {displayItems.map((note) => renderCardItem(note))}
-
-          {/* Wireframe View More Button at end of section */}
-          {hasMore && !isExpanded && (
-            <button
-              type="button"
-              onClick={() => toggleSectionExpand(sectionKey)}
-              className="w-full break-inside-avoid [break-inside:avoid-column] mb-3.5 sm:mb-4 rounded-2xl border border-hairline bg-surface-soft hover:bg-surface hover:border-hairline-strong flex flex-col items-center justify-center p-6 text-center cursor-pointer group min-h-[140px]"
-              title="Lihat lebih banyak"
-            >
-              <div className="w-10 h-10 rounded-xl bg-canvas border border-hairline flex items-center justify-center text-mute group-hover:text-ink mb-2">
-                <ChevronRight className="w-5 h-5" />
-              </div>
-              <span className="text-caption-sm font-semibold text-ink">
-                +{items.length - 4} Lainnya
-              </span>
-              <span className="text-[11px] text-mute font-mono">lihat semua</span>
-            </button>
-          )}
         </div>
       </div>
     );
@@ -958,7 +937,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
 
   return (
     <div className="w-full h-full flex flex-col lg:flex-row min-w-0 bg-canvas text-ink relative overflow-hidden">
-      <Toaster position="bottom-right" />
+
 
       {/* =========================================================================
           LEFT / MIDDLE COLUMN: Main Content Space (Header, Controls, Notes List)
@@ -1397,106 +1376,168 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
       {/* =========================================================================
           4. MODAL: CREATE NEW SECRET NOTE (CREDENTIAL OR VAULT)
           ========================================================================= */}
-      {isCreateModalOpen && (
+      {isCreateModalOpen && typeof document !== 'undefined' && createPortal(
         <>
           {/* Full-screen Backdrop covering 100% viewport */}
           <div
-            className="fixed inset-0 w-screen h-screen min-h-[100dvh] z-50 bg-black/40 backdrop-blur-xs select-none"
-            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
-            onClick={() => setIsCreateModalOpen(false)}
+            className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             aria-hidden="true"
           />
 
-          {/* Centered Popup Box matching QuickComposerModal / NewBookmarkModal */}
+          {/* Modal Dialog Container */}
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none select-none"
-            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 pointer-events-none select-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
           >
-            <div className="w-full max-w-2xl sm:max-w-3xl rounded-2xl border border-hairline bg-canvas p-5 sm:p-7 text-ink pointer-events-auto overflow-hidden relative shadow-xl">
-              {/* Top subtle header & close button */}
-              <div className="flex items-center justify-between mb-3">
+            <div className="w-full max-w-2xl sm:max-w-3xl max-h-[92vh] sm:max-h-[88vh] rounded-2xl bg-canvas text-ink pointer-events-auto shadow-2xl flex flex-col overflow-hidden relative">
+              {/* Header bar */}
+              <div className="flex items-center justify-between px-6 pt-5 pb-2 shrink-0 select-none">
                 <span className="text-caption-sm font-semibold text-body uppercase tracking-wider font-mono">
                   {activeSection === 'vault' ? 'Catatan Vault Baru' : 'Kredensial Baru'}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                  title="Tutup (Esc)"
-                  aria-label="Tutup popup"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {/* On Mobile: Simpan button */}
+                  <button
+                    type="button"
+                    onClick={handleCreate}
+                    disabled={isSubmitting || !newSecretContent.trim()}
+                    className={`sm:hidden h-8 px-3.5 rounded-full flex items-center justify-center gap-1 text-caption-xs font-semibold cursor-pointer transition-all ${
+                      newSecretContent.trim() && !isSubmitting
+                        ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95'
+                        : 'bg-surface-soft text-mute cursor-not-allowed opacity-60'
+                    }`}
+                    title={activeSection === 'vault' ? 'Simpan Catatan Vault' : 'Simpan Catatan Kredensial'}
+                    aria-label="Simpan catatan"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Simpan</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Close Button: X */}
+                  <button
+                    type="button"
+                    onClick={() => setIsCreateModalOpen(false)}
+                    disabled={isSubmitting}
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                    title="Tutup (Esc)"
+                    aria-label="Tutup modal"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
-              {/* Extra field Key ONLY for Vault */}
-              {activeSection === 'vault' && (
-                <div className="mb-3 flex items-center gap-2.5 sm:gap-3">
-                  <label className="text-body-sm sm:text-body-md font-mono text-body uppercase tracking-wider shrink-0 font-medium select-none">
-                    Key
-                  </label>
-                  <div className="flex items-center gap-2 px-3 py-1.5 sm:py-2 rounded-lg border border-hairline bg-canvas w-full max-w-xs sm:max-w-sm">
-                    <KeyRound className="w-4 h-4 text-mute shrink-0" />
-                    <input
-                      ref={keyInputRef}
-                      type="text"
-                      value={newVaultKey}
-                      onChange={(e) => setNewVaultKey(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          createTextareaRef.current?.focus();
-                        }
-                      }}
-                      placeholder="Masukkan nama key / label vault..."
-                      className="w-full bg-transparent text-ink text-body-sm font-semibold focus:outline-none placeholder:text-mute font-sans"
-                    />
+              {/* Modal Body / Content */}
+              <div className="flex-1 flex flex-col justify-between overflow-y-auto overflow-x-hidden px-6 pt-3 pb-8 space-y-6 overscroll-contain">
+                <div className="space-y-6">
+                  {/* Extra field Key ONLY for Vault */}
+                  {activeSection === 'vault' && (
+                    <div className="flex items-center gap-2.5 sm:gap-3">
+                      <label className="text-body-sm sm:text-body-md font-mono text-body uppercase tracking-wider shrink-0 font-medium select-none">
+                        Key
+                      </label>
+                      <div className="flex items-center gap-2 px-3 py-1.5 sm:py-2 rounded-lg bg-surface-soft w-full max-w-xs sm:max-w-sm">
+                        <KeyRound className="w-4 h-4 text-mute shrink-0" />
+                        <input
+                          ref={keyInputRef}
+                          type="text"
+                          value={newVaultKey}
+                          onChange={(e) => setNewVaultKey(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              createTextareaRef.current?.focus();
+                            }
+                          }}
+                          placeholder="Masukkan nama key / label vault..."
+                          className="w-full bg-transparent text-ink text-body-sm font-semibold focus:outline-none placeholder:text-mute font-sans"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Textarea: natural writing canvas without borders */}
+                  <textarea
+                    ref={createTextareaRef}
+                    value={newSecretContent}
+                    onChange={(e) => {
+                      setNewSecretContent(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      const isMobile = window.innerWidth < 640;
+                      const minH = isMobile ? 180 : 220;
+                      el.style.height = `${Math.max(el.scrollHeight, minH)}px`;
+                    }}
+                    onKeyDown={handleCreateKeyDown}
+                    placeholder={
+                      activeSection === 'vault'
+                        ? 'Tulis isi catatan rahasia yang ingin dienkripsi...'
+                        : 'Tulis isi catatan kredensial...'
+                    }
+                    className="w-full bg-transparent text-ink placeholder:text-mute text-body-md leading-relaxed resize-none focus:outline-none font-sans select-text min-h-[180px] sm:min-h-[220px] p-0 border-0 overflow-hidden block"
+                  />
+                </div>
+
+                {/* Bottom Section */}
+                <div>
+                  <div className="pt-6 pb-2 flex flex-wrap items-center justify-between gap-3 select-none">
+                    {/* Left grouping */}
+                    <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                      {/* Category Pill */}
+                      <span className="px-3.5 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-sans font-normal">
+                        {activeSection === 'vault' ? 'vault' : 'credential'}
+                      </span>
+                    </div>
+
+                    {/* Right grouping (Desktop only) */}
+                    <div className="hidden sm:flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleCreate}
+                        disabled={isSubmitting || !newSecretContent.trim()}
+                        className={`h-9 sm:h-10 px-4 sm:px-5 rounded-full flex items-center justify-center gap-1.5 text-caption-sm font-semibold cursor-pointer transition-all ${
+                          newSecretContent.trim() && !isSubmitting
+                            ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95'
+                            : 'bg-surface-soft text-mute cursor-not-allowed opacity-60'
+                        }`}
+                        title={activeSection === 'vault' ? 'Simpan Catatan Vault (Ctrl+Enter)' : 'Simpan Catatan Kredensial (Ctrl+Enter)'}
+                        aria-label="Simpan catatan"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Menyimpan...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Simpan</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Date & Time at the very bottom */}
+                  <div className="pt-3 pb-1 text-caption-xs text-mute font-mono select-none">
+                    <span>
+                      {format(new Date(), 'EEEE, d MMMM yyyy • HH:mm', { locale: localeId }) + ' WIB'}
+                    </span>
                   </div>
                 </div>
-              )}
-
-              {/* Textarea: natural writing canvas without borders */}
-              <textarea
-                ref={createTextareaRef}
-                value={newSecretContent}
-                onChange={(e) => setNewSecretContent(e.target.value)}
-                onKeyDown={handleCreateKeyDown}
-                placeholder={
-                  activeSection === 'vault'
-                    ? 'Tulis isi catatan rahasia yang ingin dienkripsi...'
-                    : 'Tulis isi catatan kredensial...'
-                }
-                rows={6}
-                className="w-full bg-transparent text-ink placeholder:text-mute text-body-md resize-none focus:outline-none leading-relaxed p-1 min-h-[160px] sm:min-h-[200px]"
-              />
-
-              {/* Bottom Bar: Send button on right (No horizontal line / divider) */}
-              <div className="flex items-center justify-end pt-2 mt-3">
-                <button
-                  type="button"
-                  onClick={handleCreate}
-                  disabled={isSubmitting || !newSecretContent.trim()}
-                  className={`h-9 px-5 rounded-full flex items-center justify-center gap-1.5 text-caption-sm font-semibold cursor-pointer transition-all ${
-                    newSecretContent.trim() && !isSubmitting
-                      ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95'
-                      : 'bg-surface-soft text-mute border border-hairline cursor-not-allowed opacity-60'
-                  }`}
-                  title={activeSection === 'vault' ? 'Simpan Catatan Vault' : 'Simpan Catatan Kredensial'}
-                  aria-label="Send button"
-                >
-                  {isSubmitting ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Send</span>
-                    </>
-                  )}
-                </button>
               </div>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* =========================================================================

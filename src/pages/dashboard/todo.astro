@@ -26,6 +26,9 @@ const [apiKeyRecord] = await db
   .where(eq(apiKeys.userId, user.id))
   .limit(1);
 
+// Default safe query limit untuk initial load (arsitektur siap disambungkan ke infinite scroll saat volume catatan bertumbuh pesat)
+const DEFAULT_PAGE_LIMIT = 100;
+
 const todoNotes = await db
   .select()
   .from(notes)
@@ -35,7 +38,8 @@ const todoNotes = await db
       eq(notes.category, 'todo')
     )
   )
-  .orderBy(desc(notes.isPinned), desc(notes.createdAt));
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt))
+  .limit(DEFAULT_PAGE_LIMIT);
 
 const serializedItems = todoNotes.map((n) => ({
   id: n.id,

@@ -27,6 +27,9 @@ const [apiKeyRecord] = await db
   .where(eq(apiKeys.userId, user.id))
   .limit(1);
 
+// Default safe query limit untuk initial load (arsitektur siap disambungkan ke infinite scroll saat volume catatan bertumbuh pesat)
+const DEFAULT_PAGE_LIMIT = 100;
+
 const vaultNotes = await db
   .select()
   .from(notes)
@@ -36,7 +39,8 @@ const vaultNotes = await db
       or(eq(notes.category, 'credential'), eq(notes.isEncrypted, true))
     )
   )
-  .orderBy(desc(notes.createdAt));
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt))
+  .limit(DEFAULT_PAGE_LIMIT);
 
 const serializedVaultNotes = vaultNotes.map((n) => {
   let plainContent = n.content;
@@ -57,6 +61,8 @@ const serializedVaultNotes = vaultNotes.map((n) => {
     isEncrypted: n.isEncrypted,
     vaultKey: n.vaultKey,
     isPinned: n.isPinned,
+    isProcessed: n.isProcessed,
+    attachments: n.attachments,
     createdAt: n.createdAt.toISOString(),
   };
 });

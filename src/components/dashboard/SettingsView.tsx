@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
 import UpgradeModal from './UpgradeModal';
 import { Button } from '../ui';
 
@@ -74,7 +74,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
     try {
       await navigator.clipboard.writeText(currentKey);
       setCopied(true);
-      toast.success('API Key berhasil disalin ke clipboard! 📋');
+      toast.success('API Key berhasil disalin ke clipboard');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       toast.error('Gagal menyalin API Key');
@@ -90,6 +90,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
       return;
     }
 
+    const toastId = toast.loading('Menerbitkan API Key baru...');
     setIsRegenerating(true);
     try {
       const res = await fetch('/api/apikey/regenerate', { method: 'POST' });
@@ -98,21 +99,25 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
         setCurrentKey(data.apiKey);
         setShowKey(true);
         setTelegramChatId(null);
-        toast.success('API Key baru berhasil diterbitkan!');
+        toast.success('API Key baru berhasil diterbitkan!', { id: toastId });
       } else {
-        toast.error(data.error || 'Gagal menerbitkan API Key baru');
+        toast.error(data.error || 'Gagal menerbitkan API Key baru', { id: toastId });
       }
     } catch {
-      toast.error('Terjadi kesalahan saat memproses request');
+      toast.error('Terjadi kesalahan saat memproses request', { id: toastId });
     } finally {
       setIsRegenerating(false);
     }
   };
 
   const handleLogout = async () => {
+    const toastId = toast.loading('Memproses keluar akun...');
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.href = '/';
+      toast.success('Berhasil keluar!', { id: toastId });
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 700);
     } catch {
       window.location.href = '/';
     }
@@ -160,7 +165,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
 
   return (
     <div className="w-full max-w-4xl overflow-x-hidden px-4 sm:px-6 md:px-8 pt-3.5 sm:pt-6 pb-32 sm:pb-12 space-y-6 sm:space-y-8 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
+
 
       {/* Page Title */}
       <div>
@@ -329,7 +334,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
                   kuota /ask
                 </span>
                 <span className="text-body-md sm:text-heading-md font-sans font-semibold text-ink mt-1 block truncate">
-                  {isPro ? 'Unlimited' : '10 / hari'}
+                  {isPro ? 'Unlimited' : '5 / bulan'}
                 </span>
               </div>
             </div>

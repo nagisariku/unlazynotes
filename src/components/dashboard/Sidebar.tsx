@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LayoutDashboard,
   CheckSquare,
   Calendar,
   Bookmark,
+  Wallet,
   ShieldAlert,
   Shield,
   Bot,
@@ -41,10 +43,15 @@ export default function Sidebar({
   botUsername = 'unlazynotes_bot',
   rawApiKey = null,
 }: SidebarProps) {
+  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Lock body scroll when mobile drawer or connect modal is open
   useEffect(() => {
@@ -57,6 +64,16 @@ export default function Sidebar({
     }
   }, [mobileMenuOpen, isConnectModalOpen]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isConnectModalOpen) {
+        setIsConnectModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isConnectModalOpen]);
+
   // Wireframe Menu Items:
   // 1. Workspace
   // 2. To Do & Schedule
@@ -68,6 +85,7 @@ export default function Sidebar({
     { label: 'To Do', href: '/dashboard/todo', icon: CheckSquare },
     { label: 'Schedule', href: '/dashboard/schedule', icon: Calendar },
     { label: 'Bookmarks', href: '/dashboard/bookmarks', icon: Bookmark },
+    { label: 'Finance', href: '/dashboard/finance', icon: Wallet },
     { label: 'Vault & Credentials', href: '/dashboard/vault', icon: ShieldAlert },
   ];
 
@@ -130,20 +148,20 @@ export default function Sidebar({
       {/* =========================================================================
           2. MOBILE SLIDE-OVER DRAWER (< md)
           ========================================================================= */}
-      {mobileMenuOpen && (
+      {mobileMenuOpen && mounted && typeof document !== 'undefined' && createPortal(
         <div
-          className="fixed inset-0 z-50 md:hidden w-screen h-screen min-h-[100dvh]"
-          style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+          className="fixed inset-0 z-[9998] md:hidden"
+          style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         >
           <div
-            className="fixed inset-0 w-screen h-screen min-h-[100dvh] bg-black/40 backdrop-blur-xs"
-            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm select-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             onClick={() => setMobileMenuOpen(false)}
             aria-hidden="true"
           />
 
           <div
-            className="fixed inset-y-0 right-0 w-[85%] max-w-xs h-full min-h-[100dvh] bg-canvas border-l border-hairline p-5 flex flex-col justify-between text-ink z-10"
+            className="fixed inset-y-0 right-0 w-[85%] max-w-xs h-full min-h-[100dvh] bg-canvas border-l border-hairline p-5 flex flex-col justify-between text-ink z-[9999]"
             style={{ minHeight: '100dvh' }}
           >
             {/* Top Part: App Logo, Enlarge Close Button & Nav Links */}
@@ -261,7 +279,8 @@ export default function Sidebar({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* =========================================================================
@@ -390,100 +409,105 @@ export default function Sidebar({
       />
 
       {/* Connect Bot Instructions Modal */}
-      {isConnectModalOpen && (
+      {isConnectModalOpen && mounted && typeof document !== 'undefined' && createPortal(
         <>
           {/* Full-screen Backdrop covering 100% viewport */}
           <div
-            className="fixed inset-0 w-screen h-screen min-h-[100dvh] z-50 bg-black/40 backdrop-blur-xs"
-            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
-            onClick={() => setIsConnectModalOpen(false)}
+            className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             aria-hidden="true"
           />
 
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
-            style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 pointer-events-none select-none"
+            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
           >
-            <div className="relative w-full max-w-md rounded-lg border border-hairline bg-canvas p-6 text-ink space-y-5 pointer-events-auto">
-            <button
-              onClick={() => setIsConnectModalOpen(false)}
-              className="absolute top-5 right-5 p-1.5 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl bg-canvas p-6 text-ink space-y-5 pointer-events-auto shadow-2xl">
+              <button
+                type="button"
+                onClick={() => setIsConnectModalOpen(false)}
+                className="absolute top-5 right-5 w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+                title="Tutup (Esc)"
+                aria-label="Tutup modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
 
-            <div className="space-y-1.5 pr-8">
-              <div className="inline-flex items-center gap-1.5">
-                <CommandTag>
-                  <Send className="w-3 h-3 inline mr-1" />
-                  Telegram Quick Capture
-                </CommandTag>
+              <div className="space-y-1.5 pr-8 select-none">
+                <div className="inline-flex items-center gap-1.5">
+                  <CommandTag>
+                    <Send className="w-3 h-3 inline mr-1" />
+                    Telegram Quick Capture
+                  </CommandTag>
+                </div>
+                <h2 className="text-heading-lg text-ink font-semibold">
+                  Hubungkan Akun Telegram
+                </h2>
+                <p className="text-body-sm text-body">
+                  Kirim catatan, audio, tautan, atau tugas langsung dari obrolan Telegram ke dashboard Anda.
+                </p>
               </div>
-              <h2 className="text-heading-lg text-ink font-semibold">
-                Hubungkan Akun Telegram
-              </h2>
-              <p className="text-body-sm text-body">
-                Kirim catatan, audio, tautan, atau tugas langsung dari obrolan Telegram ke dashboard Anda.
-              </p>
-            </div>
 
-            <div className="space-y-3 p-4 rounded-lg bg-surface-soft border border-hairline text-body-sm">
-              <p className="font-semibold text-ink text-caption-sm uppercase tracking-wide">
-                Langkah Cepat:
-              </p>
-              <ol className="list-decimal list-inside space-y-2 text-body-sm text-ink leading-relaxed">
-                <li>
-                  Buka bot resmi di Telegram:{' '}
-                  <a
-                    href={`https://t.me/${botUsername}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-semibold text-ink underline"
-                  >
-                    @{botUsername}
-                  </a>
-                </li>
-                <li>
-                  Kirim perintah berikut ke bot:
-                  <div className="mt-1.5 flex items-center gap-2 p-2 rounded-full bg-canvas border border-hairline font-mono text-caption-sm">
-                    <span className="truncate flex-1 text-ink">
-                      {rawApiKey ? `/login ${rawApiKey}` : '/login <API_KEY_ANDA>'}
-                    </span>
-                    <button
-                      onClick={handleCopyLoginCommand}
-                      className="p-1 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer shrink-0"
-                      title="Salin Perintah"
+              <div className="space-y-3 p-4 rounded-xl bg-surface-soft text-body-sm select-none">
+                <p className="font-semibold text-ink text-caption-sm uppercase tracking-wide">
+                  Langkah Cepat:
+                </p>
+                <ol className="list-decimal list-inside space-y-2 text-body-sm text-ink leading-relaxed">
+                  <li>
+                    Buka bot resmi di Telegram:{' '}
+                    <a
+                      href={`https://t.me/${botUsername}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-semibold text-ink underline"
                     >
-                      {copiedKey ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </li>
-                <li>Selesai! Akun Telegram Anda akan langsung tersinkronisasi.</li>
-              </ol>
-            </div>
+                      @{botUsername}
+                    </a>
+                  </li>
+                  <li>
+                    Kirim perintah berikut ke bot:
+                    <div className="mt-1.5 flex items-center gap-2 p-2 rounded-full bg-canvas font-mono text-caption-sm">
+                      <span className="truncate flex-1 text-ink px-1">
+                        {rawApiKey ? `/login ${rawApiKey}` : '/login <API_KEY_ANDA>'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyLoginCommand}
+                        className="p-1 rounded-full text-body hover:text-ink hover:bg-surface-soft cursor-pointer shrink-0 transition-colors !border-0"
+                        title="Salin Perintah"
+                        aria-label="Salin perintah"
+                      >
+                        {copiedKey ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </li>
+                  <li>Selesai! Akun Telegram Anda akan langsung tersinkronisasi.</li>
+                </ol>
+              </div>
 
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <a
-                href="/dashboard/settings"
-                className="text-caption-sm text-body hover:text-ink underline"
-              >
-                Lihat API Key di Pengaturan
-              </a>
+              <div className="flex items-center justify-between gap-3 pt-2 select-none">
+                <a
+                  href="/dashboard/settings"
+                  className="text-caption-sm text-body hover:text-ink underline"
+                >
+                  Lihat API Key di Pengaturan
+                </a>
 
-              <a
-                href={`https://t.me/${botUsername}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary text-button-md cursor-pointer hover:opacity-90"
-              >
-                <Bot className="w-4 h-4" />
-                <span>Buka Bot Telegram</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
+                <a
+                  href={`https://t.me/${botUsername}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary text-button-md cursor-pointer hover:opacity-90 active:scale-95 transition-all !border-0"
+                >
+                  <Bot className="w-4 h-4" />
+                  <span>Buka Bot Telegram</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
             </div>
           </div>
-        </div>
-      </>
+        </>,
+        document.body
       )}
     </>
   );

@@ -78,7 +78,15 @@ export function routeNoteIntent(content: string): DetectedModule {
   const hasCurrencyPrefix = /(\$|rp\.?|idr|usd|sgd|eur|gbp)\s*\d+/i.test(lower);
   const hasThousandsSeparator = /\b\d{1,3}([.,]\d{3})+(\s*(via|pake|qris|cash|transfer|debit|kredit))?\b/i.test(lower);
 
-  if (hasSpecificTime && !hasCurrencySuffix && !hasCurrencyPrefix && !hasThousandsSeparator) {
+  // Relative day scheduling pattern (e.g. "Gym sabtu, meeting client senin", "futsal rabu", "jadwal dokter kamis")
+  const hasDaySchedule =
+    /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/i.test(lower) &&
+    !/\b(lalu|kemarin|minggu lalu|bulan lalu)\b/i.test(lower) &&
+    (/\b(gym|workout|meeting|rapat|client|klien|futsal|badminton|dokter|gigi|les|kursus|kuliah|event|agenda|jadwal|flight|terbang|call|sync|dinner|lunch|seminar|webinar|nonton|konser|workshop)\b/i.test(lower) ||
+      /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b.*,\s*.*\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\b/i.test(lower) ||
+      /\b(senin|selasa|rabu|kamis|jumat|sabtu|minggu)\s+(ada|mau|jadwal|ikut|pergi|ke)\b/i.test(lower));
+
+  if ((hasSpecificTime || hasDaySchedule) && !hasCurrencySuffix && !hasCurrencyPrefix && !hasThousandsSeparator) {
     return 'schedule';
   }
 
@@ -91,10 +99,10 @@ export function routeNoteIntent(content: string): DetectedModule {
     /\b\d+k\s+(langkah|steps?)\b/i.test(lower);
 
   const hasDebtPattern =
-    /\b(minjem|pinjam|ngutang|utang|piutang|talangin|talangan)\b/i.test(lower) &&
+    /\b(minjem|pinjem|pinjam|pinjamin|pinjemin|ngutang|utang|piutang|talangin|talangan|berutang|ditalangin)\b/i.test(lower) &&
     (/\b\d+(\.\d+)?\s*(k|rb|jt|ribu|rebu|juta|perak)?\b/i.test(lower) || /(\$|rp\.?)\s*\d+/i.test(lower));
 
-  const hasFinanceVerb = /\b(traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan|qris|cash|patungan)\b/i.test(lower);
+  const hasFinanceVerb = /\b(cair|traktir|nraktir|bayar|beli|belanja|gaji|salary|pemasukan|transfer masuk|transfer|invoice|tagihan|londry|laundry|spent|spend|bought|paid|paycheck|dividend|harga|cost|fee|subscription|langganan|qris|cash|patungan)\b/i.test(lower);
   const hasItemWithNumber = /\b(cimin|cilok|tahu|martabak|seblak|ciken|chicken|ayam|bensin|kopi|coffee|pulsa|parkir|indihome|nongkrong|satpam|burger|uber|lyft|groceries|hosting|cursor)\s+.*(\$|rp)?\d+/i.test(lower);
 
   const isFinance =

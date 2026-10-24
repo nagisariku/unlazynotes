@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Pin,
@@ -13,9 +14,11 @@ import {
   Loader2,
   Globe,
   KeyRound,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
+import { toast } from 'sonner';
 import type { NoteItem } from './NotesTimeline';
 
 // Crisp Platform SVGs
@@ -118,10 +121,15 @@ export default function NoteDetailModal({
   onDelete,
   onTogglePin,
 }: NoteDetailModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isTogglingPin, setIsTogglingPin] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Lock body scroll and selection when modal is open
   useEffect(() => {
@@ -137,7 +145,26 @@ export default function NoteDetailModal({
     }
   }, [isOpen]);
 
-  if (!isOpen || !note) return null;
+  // Extract explicit or mapped target dates for schedule visualization
+  const targetDatesList = useMemo(() => {
+    if (!note) return [];
+    const datesSet = new Set<string>();
+    if (Array.isArray(note.scheduleDates) && note.scheduleDates.length > 0) {
+      for (const d of note.scheduleDates) if (d && typeof d === 'string') datesSet.add(d);
+    }
+    if (Array.isArray(note.schedule?.dates) && note.schedule.dates.length > 0) {
+      for (const d of note.schedule.dates) if (d && typeof d === 'string') datesSet.add(d);
+    }
+    if (note.targetDate) {
+      try {
+        const d = note.targetDate instanceof Date ? note.targetDate : parseISO(String(note.targetDate));
+        if (!isNaN(d.getTime())) datesSet.add(format(d, 'yyyy-MM-dd'));
+      } catch {}
+    }
+    return Array.from(datesSet).sort();
+  }, [note]);
+
+  if (!isOpen || !note || !mounted) return null;
 
   const isVaultNote =
     Boolean(isVault) ||
@@ -163,23 +190,24 @@ export default function NoteDetailModal({
     } catch {}
   };
 
-  const handleDelete = async () => {
+    const handleDelete = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
       setTimeout(() => setConfirmDelete(false), 3000);
       return;
     }
 
-    setIsDeleting(true);
+    // Optimistic instant delete
+    onDelete(note.id);
+    onClose();
+
     try {
       const res = await fetch(`/api/notes/${note.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        onDelete(note.id);
-        onClose();
+      if (!res.ok) {
+        throw new Error('Gagal');
       }
     } catch {
-      setIsDeleting(false);
-      setConfirmDelete(false);
+      toast.error('Gagal menghapus catatan');
     }
   };
 
@@ -206,26 +234,29 @@ export default function NoteDetailModal({
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
   const urls = Array.from(new Set(note.content.match(urlRegex) || []));
 
-  return (
+
+
+  return createPortal(
     <>
-      {/* Full-screen Backdrop covering 100% viewport */}
+      {/* Full-screen Backdrop covering 100% viewport - overlay click does NOT close modal */}
       <div
-        className="fixed inset-0 w-screen h-screen min-h-[100dvh] z-50 bg-black/40 backdrop-blur-xs select-none"
-        style={{ top: 0, left: 0, right: 0, bottom: 0, minHeight: '100dvh' }}
-        onClick={onClose}
+        className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+        style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         aria-hidden="true"
       />
 
       {/* Modal Dialog Container */}
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center px-4 py-8 sm:py-8 sm:px-6 pointer-events-none select-none"
+        className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-8 sm:py-8 sm:px-6 pointer-events-none select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0, height: '100dvh' }}
       >
-        <div className="w-full max-w-3xl sm:max-w-4xl min-h-[min(380px,80dvh)] sm:min-h-[440px] max-h-[80dvh] sm:max-h-[85dvh] flex flex-col rounded-xl border border-hairline bg-canvas text-ink pointer-events-auto overflow-hidden my-auto shadow-xl">
-          {/* Top Bar: date & time on left, Action icon buttons on right */}
+        <div className="w-full max-w-3xl sm:max-w-4xl min-h-[min(380px,80dvh)] sm:min-h-[440px] max-h-[80dvh] sm:max-h-[85dvh] flex flex-col rounded-2xl bg-canvas text-ink pointer-events-auto overflow-hidden my-auto shadow-2xl relative">
+          {/* Top Bar: Title on left, Action icon buttons on right */}
           <div className="flex items-center justify-between px-6 pt-5 pb-2 bg-canvas shrink-0 select-none">
             <div className="flex items-center gap-2 text-caption-sm text-body font-mono">
-              <span>{formattedDate}</span>
+              <span className="text-caption-sm font-semibold text-body uppercase tracking-wider font-mono">
+                Detail Catatan
+              </span>
             </div>
 
             <div className="flex items-center gap-1 sm:gap-1.5">
@@ -234,7 +265,7 @@ export default function NoteDetailModal({
                 type="button"
                 onClick={handlePinClick}
                 disabled={isTogglingPin}
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors !border-0 ${
                   note.isPinned
                     ? 'text-primary bg-surface-soft hover:bg-surface-soft/80'
                     : 'text-body hover:text-ink hover:bg-surface-soft'
@@ -255,7 +286,7 @@ export default function NoteDetailModal({
               <button
                 type="button"
                 onClick={handleCopy}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
                 title="Salin isi catatan"
                 aria-label="Salin catatan"
               >
@@ -269,7 +300,7 @@ export default function NoteDetailModal({
                   onEdit(note);
                   onClose();
                 }}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
                 title="Edit catatan"
                 aria-label="Edit catatan"
               >
@@ -281,7 +312,7 @@ export default function NoteDetailModal({
                 type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors !border-0 ${
                   confirmDelete
                     ? 'bg-terminal-red text-white hover:bg-terminal-red/90'
                     : 'text-body hover:text-terminal-red hover:bg-surface-soft'
@@ -300,7 +331,7 @@ export default function NoteDetailModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors ml-0.5 sm:ml-1"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors ml-0.5 sm:ml-1 !border-0"
                 title="Tutup detail catatan"
                 aria-label="Tutup modal"
               >
@@ -310,7 +341,7 @@ export default function NoteDetailModal({
           </div>
 
           {/* Modal Body: Scrollable with natural writing canvas, no divider */}
-          <div className="flex-1 flex flex-col justify-between overflow-y-auto px-6 pt-3 pb-8 space-y-6 overscroll-contain">
+          <div className="flex-1 flex flex-col justify-between overflow-y-auto overflow-x-hidden px-6 pt-3 pb-8 space-y-6 overscroll-contain">
             <div className="space-y-6">
               {/* Field Key khusus notes Vault */}
               {isVaultNote && (
@@ -318,7 +349,7 @@ export default function NoteDetailModal({
                   <label className="text-body-sm sm:text-body-md font-mono text-body uppercase tracking-wider shrink-0 font-medium select-none">
                     Key
                   </label>
-                  <div className="flex items-center gap-2 px-3 py-1.5 sm:py-2 rounded-lg border border-hairline bg-surface-soft/60 text-ink text-body-sm font-semibold select-text w-full max-w-xs sm:max-w-sm">
+                  <div className="flex items-center gap-2 px-3 py-1.5 sm:py-2 rounded-lg bg-surface-soft text-ink text-body-sm font-semibold select-text w-full max-w-xs sm:max-w-sm">
                     <KeyRound className="w-4 h-4 text-mute shrink-0" />
                     <span className="truncate">{note.vaultKey || 'Catatan Vault'}</span>
                   </div>
@@ -357,7 +388,7 @@ export default function NoteDetailModal({
                     <div className="flex flex-wrap gap-2.5">
                       {urls.map((linkUrl, index) => {
                         const { domain, label, icon: PlatformIcon } = getUrlPlatformInfo(linkUrl);
-                        const isPrimary = index === 0;
+                        
 
                         return (
                           <a
@@ -365,9 +396,9 @@ export default function NoteDetailModal({
                             href={linkUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-surface-soft hover:bg-surface border border-hairline hover:border-hairline-strong transition-all group text-left max-w-full"
+                            className="inline-flex items-center gap-3 px-3.5 py-2.5 rounded-xl bg-surface-soft hover:bg-surface border-0 transition-all group text-left max-w-full"
                           >
-                            <div className="w-8 h-8 rounded-lg bg-canvas border border-hairline flex items-center justify-center shrink-0 text-body group-hover:text-ink">
+                            <div className="w-8 h-8 rounded-lg bg-canvas border-0 flex items-center justify-center shrink-0 text-body group-hover:text-ink">
                               <PlatformIcon className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 pr-1">
@@ -375,17 +406,13 @@ export default function NoteDetailModal({
                                 <span className="text-caption-sm font-semibold text-ink group-hover:underline truncate block">
                                   {label !== domain ? `${label} (${domain})` : domain}
                                 </span>
-                                {isPrimary && urls.length > 1 && (
-                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-hairline text-mute">
-                                    Utama
-                                  </span>
-                                )}
+                                
                               </div>
                               <span className="text-[11px] text-body truncate block font-mono max-w-[240px] sm:max-w-xs">
                                 {linkUrl}
                               </span>
                             </div>
-                            <ExternalLink className="w-3.5 h-3.5 text-mute group-hover:text-ink shrink-0 ml-auto opacity-70 group-hover:opacity-100" />
+                            
                           </a>
                         );
                       })}
@@ -395,26 +422,55 @@ export default function NoteDetailModal({
               )}
             </div>
 
-            {/* Tags placed at the very bottom of the note content inside scrollable area (Hidden for Vault notes) */}
+            {/* Tags placed at the bottom of the note content inside scrollable area (Hidden for Vault notes) */}
             {!isVaultNote && (
               <div className="pt-6 pb-2 flex flex-wrap items-center gap-2 select-none">
-                <span className="px-3.5 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-sans font-medium uppercase tracking-wider">
+                <span className="px-3.5 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-sans font-normal">
                   {note.category}
                 </span>
                 {note.specificTags &&
                   note.specificTags.map((tag) => (
                     <span
                       key={tag}
-                      className="px-3.5 py-1.5 rounded-full bg-surface-soft text-body hover:text-ink text-xs sm:text-[13px] font-sans font-medium"
+                      className="px-3.5 py-1.5 rounded-full bg-surface-soft text-body hover:text-ink text-xs sm:text-[13px] font-sans font-normal"
                     >
                       #{tag}
                     </span>
                   ))}
+
+                {/* Target Dates for Schedule / Time-anchored notes */}
+                {targetDatesList.length > 0 &&
+                  targetDatesList.map((dateStr) => {
+                    let displayStr = dateStr;
+                    try {
+                      displayStr = format(parseISO(dateStr), 'd MMMM yyyy', { locale: localeId });
+                    } catch {}
+                    return (
+                      <span
+                        key={dateStr}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-mono font-normal"
+                      >
+                        <CalendarIcon className="w-3.5 h-3.5 text-mute shrink-0" />
+                        <span>{displayStr}</span>
+                        {note.schedule?.isRecurring && (
+                          <span className="text-[10px] text-primary uppercase font-bold tracking-wider ml-0.5">
+                            (Rutin)
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
               </div>
             )}
+
+            {/* Date & Time at the very bottom of notes content */}
+            <div className="pt-3 pb-1 text-caption-xs text-mute font-mono select-none">
+              <span>{formattedDate}</span>
+            </div>
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

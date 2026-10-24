@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "sonner/dist/styles.css";
 @import url('https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap');
 
 @theme {
@@ -257,7 +258,12 @@
 
   ::-webkit-scrollbar {
     width: 6px;
-    height: 6px;
+    height: 0px;
+  }
+
+  ::-webkit-scrollbar:horizontal {
+    height: 0px;
+    display: none;
   }
 
   ::-webkit-scrollbar-track {
@@ -268,6 +274,10 @@
     background-color: var(--color-hairline-strong);
     border-radius: 9999px;
   }
+}
+
+html, body {
+  overflow-x: hidden;
 }
 
 .safe-area-bottom {
@@ -312,3 +322,37 @@
   border-radius: 9999px !important;
 }
 
+
+/* Instant navigation without view-transition fade animations */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+}
+
+/* Sonner Toast 100% Shadowless Monochrome Paper Style (Hitam Putih Simple) */
+[data-sonner-toaster] [data-sonner-toast] {
+  box-shadow: none !important;
+  border-radius: var(--radius-lg, 12px) !important;
+  border: 1px solid var(--color-hairline, #e5e5e5) !important;
+  background: var(--color-canvas, #ffffff) !important;
+  color: var(--color-ink, #000000) !important;
+  font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, sans-serif) !important;
+  font-weight: 400 !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-icon] {
+  color: var(--color-ink, #000000) !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-icon] svg {
+  color: var(--color-ink, #000000) !important;
+  stroke: currentColor !important;
+}
+
+[data-sonner-toaster] [data-sonner-toast] [data-title],
+[data-sonner-toaster] [data-sonner-toast] [data-description] {
+  color: var(--color-ink, #000000) !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  letter-spacing: normal !important;
+}

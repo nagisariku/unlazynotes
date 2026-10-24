@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   SlidersHorizontal,
+  ListChecks,
   FileText,
   Send,
   Bot,
@@ -16,7 +17,7 @@ import NoteDetailModal from './NoteDetailModal';
 import EditNoteModal from './EditNoteModal';
 import QuickComposerModal from './QuickComposerModal';
 import NotesFilterPopover, { type FilterState } from './NotesFilterPopover';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
 import { Button, SearchPill } from '../ui';
 
 export interface FeatureCardItem {
@@ -35,7 +36,18 @@ export interface NoteItem {
   isEncrypted?: boolean;
   vaultKey?: string | null;
   isPinned?: boolean;
+  isProcessed?: boolean;
+  targetDate?: string | Date | null;
+  scheduleDates?: string[] | null;
+  schedule?: any;
+  expenses?: any;
+  income?: any;
+  debt?: any;
+  bookmarkType?: string | null;
+  credentialType?: string | null;
   attachments?: any;
+  expiresAt?: string | Date | null;
+  isArchived?: boolean;
   createdAt: string;
 }
 
@@ -76,10 +88,54 @@ export default function NotesTimeline({
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
+  // Manage Mode / Bulk Cleaning States
+  const [isManageMode, setIsManageMode] = useState(false);
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+  const [manageFilter, setManageFilter] = useState<'all' | 'temp' | 'old'>('all');
+  const [isBulkLoading, setIsBulkLoading] = useState(false);
+
   // Quick Web Note Composer Modal State (textbox now a popup)
   const [isComposerOpen, setIsComposerOpen] = useState(false);
 
   // Note Detail & Edit Modal States
+    const [telegramConnected, setTelegramConnected] = useState(isTelegramConnected);
+
+  useEffect(() => {
+    setTelegramConnected(isTelegramConnected);
+  }, [isTelegramConnected]);
+
+  // Auto-detect Telegram connection without manual page refresh
+  useEffect(() => {
+    if (telegramConnected) return;
+
+    let isSubscribed = true;
+    const checkTelegramStatus = async () => {
+      try {
+        const res = await fetch('/api/telegram/status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.connected && isSubscribed) {
+            setTelegramConnected(true);
+            toast.success('Akun Telegram berhasil terhubung!');
+          }
+        }
+      } catch {}
+    };
+
+    const onWindowFocus = () => {
+      checkTelegramStatus();
+    };
+    window.addEventListener('focus', onWindowFocus);
+
+    const interval = setInterval(checkTelegramStatus, 4000);
+
+    return () => {
+      isSubscribed = false;
+      window.removeEventListener('focus', onWindowFocus);
+      clearInterval(interval);
+    };
+  }, [telegramConnected]);
+
   const [selectedNoteForDetail, setSelectedNoteForDetail] = useState<NoteItem | null>(null);
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
   const openedFromDetailRef = useRef(false);
@@ -283,8 +339,8 @@ export default function NotesTimeline({
     if (filters.startDate) params.set('startDate', filters.startDate);
     if (filters.endDate) params.set('endDate', filters.endDate);
 
-    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
-    window.history.replaceState({}, '', newUrl);
+    const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+    window.history.replaceState(window.history.state, '', newUrl);
   }, [searchQuery, filters]);
 
   const handleDeleteNote = (id: string) => {
@@ -316,12 +372,92 @@ export default function NotesTimeline({
     if (selectedNoteForDetail?.id === id) {
       setSelectedNoteForDetail((prev) => (prev ? { ...prev, isPinned } : null));
     }
-    toast.success(isPinned ? 'Catatan dipin ke atas 📌' : 'Pin catatan dilepas');
+    toast.success(isPinned ? 'Catatan dipin ke atas' : 'Pin catatan dilepas');
+  };
+
+  const handleToggleSelectNote = (id: string) => {
+    setSelectedNoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleBulkAction = async (action: 'archive' | 'restore' | 'delete') => {
+    if (selectedNoteIds.size === 0 || isBulkLoading) return;
+    const noteIds = Array.from(selectedNoteIds);
+
+    if (action === 'delete') {
+      const ok = window.confirm(`Apakah Anda yakin ingin menghapus permanen ${noteIds.length} catatan ini?`);
+      if (!ok) return;
+    }
+
+    setIsBulkLoading(true);
+    const toastId = toast.loading(
+      action === 'archive'
+        ? 'Mengarsipkan catatan...'
+        : action === 'restore'
+        ? 'Memulihkan catatan...'
+        : 'Menghapus catatan...'
+    );
+
+    // Optimistic UI update
+    const backupNotes = [...notes];
+    setNotes((prev) => prev.filter((n) => !selectedNoteIds.has(n.id)));
+    setSelectedNoteIds(new Set());
+
+    try {
+      const res = await fetch('/api/notes/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, noteIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memproses aksi massal');
+      }
+
+      toast.success(
+        action === 'archive'
+          ? `${data.count} catatan berhasil diarsipkan`
+          : action === 'restore'
+          ? `${data.count} catatan berhasil dipulihkan`
+          : `${data.count} catatan berhasil dihapus permanen`,
+        { id: toastId }
+      );
+    } catch (err: any) {
+      console.error('Bulk action error:', err);
+      setNotes(backupNotes); // Revert on error
+      toast.error(err.message || 'Gagal mengeksekusi aksi massal', { id: toastId });
+    } finally {
+      setIsBulkLoading(false);
+    }
   };
 
   // Called when a new note is optimistically created from QuickComposerModal
   const handleNoteCreatedFromModal = (newNote: NoteItem) => {
     setNotes((prev) => [newNote, ...prev]);
+  };
+
+  const handleRestoreNote = (restoredNote: any) => {
+    setNotes((prev) => [
+      {
+        ...restoredNote,
+        createdAt:
+          typeof restoredNote.createdAt === 'string'
+            ? restoredNote.createdAt
+            : new Date(restoredNote.createdAt).toISOString(),
+      } as NoteItem,
+      ...prev,
+    ]);
+  };
+
+  const handleNoteSyncedWithReal = (tempId: string, realNote: NoteItem) => {
+    setNotes((prev) => prev.map((n) => (n.id === tempId ? realNote : n)));
   };
 
   // Sync and auto-categorize uncategorized notes via AI pipeline
@@ -351,7 +487,7 @@ export default function NotesTimeline({
         );
 
         toast.success(
-          `${data.updatedCount} catatan berhasil disinkronisasi & dikategorikan oleh AI ✨`,
+          `${data.updatedCount} catatan berhasil disinkronisasi & dikategorikan oleh AI`,
           { id: toastId }
         );
       } else {
@@ -371,6 +507,20 @@ export default function NotesTimeline({
   // Filter notes client-side
   const filteredNotes = useMemo(() => {
     return notes.filter((n) => {
+      // 0. Manage Filter (when in Manage Mode)
+      if (isManageMode) {
+        if (manageFilter === 'temp' && !n.expiresAt) {
+          return false;
+        }
+        if (manageFilter === 'old') {
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          if (new Date(n.createdAt) >= thirtyDaysAgo) {
+            return false;
+          }
+        }
+      }
+
       // 1. Search Query Multi-token Matching
       if (searchQuery.trim()) {
         const queryTokens = searchQuery
@@ -397,13 +547,20 @@ export default function NotesTimeline({
         if (!isMatch) return false;
       }
 
-      // 2. Uncategorized Filter
-      if (filters.showOnlyUncategorized) {
-        if (n.category !== 'others') return false;
-      } else if (filters.selectedCategories.length > 0) {
-        // 3. Multi-category filter
-        if (!filters.selectedCategories.includes(n.category)) {
+      // 2. Category & Archive Filter
+      const isArchivedSelected = filters.selectedCategories.includes('archived');
+      if (isArchivedSelected) {
+        if (!n.isArchived) return false;
+        const otherCats = filters.selectedCategories.filter((c) => c !== 'archived');
+        if (otherCats.length > 0 && !otherCats.includes(n.category)) {
           return false;
+        }
+      } else {
+        if (n.isArchived) return false;
+        if (filters.selectedCategories.length > 0) {
+          if (!filters.selectedCategories.includes(n.category)) {
+            return false;
+          }
         }
       }
 
@@ -434,11 +591,14 @@ export default function NotesTimeline({
 
       return true;
     });
-  }, [notes, searchQuery, filters]);
+  }, [notes, searchQuery, filters, isManageMode, manageFilter]);
 
   // Helper to determine if note is uncategorized
-  const isUncategorizedNote = (category?: string | null) => {
-    const cat = (category || '').toLowerCase().trim();
+  const isUncategorizedNote = (note: NoteItem) => {
+    if (note.isProcessed) {
+      return note.category === 'uncategorized';
+    }
+    const cat = (note.category || '').toLowerCase().trim();
     return cat === 'others' || cat === 'uncategorized' || cat === '';
   };
 
@@ -455,7 +615,7 @@ export default function NotesTimeline({
         unpinned.push(note);
       }
 
-      if (isUncategorizedNote(note.category)) {
+      if (isUncategorizedNote(note)) {
         uncategorized.push(note);
       }
     }
@@ -492,7 +652,6 @@ export default function NotesTimeline({
 
   const activeFilterCount =
     filters.selectedCategories.length +
-    (filters.showOnlyUncategorized ? 1 : 0) +
     (filters.dateRange !== 'all' ? 1 : 0);
 
   const clearAllFilters = () => {
@@ -516,9 +675,7 @@ export default function NotesTimeline({
 
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
-
-      {/* Top Header Row: Workspace Title & Connect Telegram */}
+            {/* Top Header Row: Workspace Title & Connect Telegram */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
           <span>{userLastName}</span>
@@ -527,20 +684,22 @@ export default function NotesTimeline({
           </span>
         </h1>
 
-        {/* Right: Hubungkan Telegram button */}
+        {/* Right: Hubungkan Telegram / Buka Bot button */}
         <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
-          <span className="text-body-sm text-ink font-medium">
-            Hubungkan Telegram
-          </span>
+          {!telegramConnected && (
+            <span className="text-body-sm text-ink font-medium">
+              Hubungkan Telegram
+            </span>
+          )}
           <a
             href={telegramConnectUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block"
           >
-            <Button variant="secondary" className="gap-2 h-9 px-4 font-semibold rounded-full cursor-pointer text-caption-sm">
-              <Send className="w-3.5 h-3.5" />
-              <span>{isTelegramConnected ? 'Buka Bot' : 'Hubungkan'}</span>
+            <Button variant="secondary" className="gap-2 h-10 px-5 font-semibold rounded-full cursor-pointer text-body-sm">
+              <Send className="w-4 h-4" />
+              <span>{telegramConnected ? 'Buka Bot' : 'Hubungkan'}</span>
             </Button>
           </a>
         </div>
@@ -608,9 +767,85 @@ export default function NotesTimeline({
 
       {/* Section: Action & Controls Row (Sticky on Mobile & Desktop, solid white background flush at top) */}
       <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5">
-        <div className="flex items-center justify-end">
-          {/* Searchbox + Filter button */}
-          <div className="flex items-center gap-2 relative w-full sm:w-auto">
+        <div className="flex items-center justify-between gap-2 w-full">
+          {/* Left / Middle: Manage Filter Options (Single row alongside search & filter) */}
+          {isManageMode ? (
+            <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] shrink min-w-0 py-0.5">
+              <button
+                type="button"
+                onClick={() => setManageFilter('all')}
+                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                  manageFilter === 'all'
+                    ? 'bg-ink text-canvas'
+                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
+                }`}
+              >
+                Semua
+              </button>
+              <button
+                type="button"
+                onClick={() => setManageFilter('temp')}
+                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                  manageFilter === 'temp'
+                    ? 'bg-ink text-canvas'
+                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
+                }`}
+              >
+                Kadaluwarsa / Temp
+              </button>
+              <button
+                type="button"
+                onClick={() => setManageFilter('old')}
+                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
+                  manageFilter === 'old'
+                    ? 'bg-ink text-canvas'
+                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
+                }`}
+              >
+                Selesai &gt; 1 Bulan
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0) {
+                    setSelectedNoteIds(new Set());
+                  } else {
+                    setSelectedNoteIds(new Set(filteredNotes.map((n) => n.id)));
+                  }
+                }}
+                className="h-10 px-4 rounded-full text-body-sm font-medium bg-surface-soft hover:bg-hairline/60 text-ink cursor-pointer transition-colors whitespace-nowrap shrink-0"
+              >
+                {selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0
+                  ? 'Batal Pilih Semua'
+                  : 'Pilih Semua'}
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
+
+          {/* Right side: Kelola Catatan Toggle Icon Button + Searchbox + Filter button */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {/* Kelola Catatan Toggle Button (Icon only, proper icon, no label, no emoji) */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsManageMode(!isManageMode);
+                setSelectedNoteIds(new Set());
+                setManageFilter('all');
+              }}
+              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                isManageMode
+                  ? 'bg-primary text-on-primary'
+                  : 'bg-surface-soft text-ink hover:bg-canvas'
+              }`}
+              title={isManageMode ? 'Selesai kelola' : 'Kelola catatan'}
+              aria-label="Toggle kelola catatan"
+            >
+              <ListChecks className="w-4.5 h-4.5" />
+            </button>
+
+            {/* Searchbox */}
             <SearchPill
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -709,7 +944,11 @@ export default function NotesTimeline({
                     note={note}
                     showDateTime={true}
                     maxHeight="max-h-56"
+                    isSelectable={isManageMode}
+                    isSelected={selectedNoteIds.has(note.id)}
+                    onToggleSelect={handleToggleSelectNote}
                     onDelete={handleDeleteNote}
+                    onRestore={handleRestoreNote}
                     onTagClick={handleTagClick}
                     onTogglePin={handleTogglePin}
                     onEdit={(n) => {
@@ -805,7 +1044,11 @@ export default function NotesTimeline({
                     showDateTime={true}
                     showCategory={false}
                     maxHeight="max-h-56"
+                    isSelectable={isManageMode}
+                    isSelected={selectedNoteIds.has(note.id)}
+                    onToggleSelect={handleToggleSelectNote}
                     onDelete={handleDeleteNote}
+                    onRestore={handleRestoreNote}
                     onTagClick={handleTagClick}
                     onTogglePin={handleTogglePin}
                     onEdit={(n) => {
@@ -904,7 +1147,11 @@ export default function NotesTimeline({
                           note={note}
                           variant="timeline"
                           maxHeight="max-h-64"
+                          isSelectable={isManageMode}
+                          isSelected={selectedNoteIds.has(note.id)}
+                          onToggleSelect={handleToggleSelectNote}
                           onDelete={handleDeleteNote}
+                          onRestore={handleRestoreNote}
                           onTagClick={handleTagClick}
                           onTogglePin={handleTogglePin}
                           onEdit={(n) => {
@@ -928,11 +1175,12 @@ export default function NotesTimeline({
         )}
       </div>
 
-      {/* Quick Composer Modal Popup matching wireframe 2 */}
+            {/* Quick Composer Modal Popup matching wireframe 2 */}
       <QuickComposerModal
         isOpen={isComposerOpen}
         onClose={() => setIsComposerOpen(false)}
         onNoteCreated={handleNoteCreatedFromModal}
+        onNoteSynced={handleNoteSyncedWithReal}
       />
 
       {/* Notes Detail Modal */}
@@ -983,6 +1231,52 @@ export default function NotesTimeline({
         <span className="hidden sm:inline text-body-sm font-medium">New Note</span>
         <Plus className="w-7 h-7 sm:w-4.5 sm:h-4.5 text-ink" />
       </button>
+
+      {/* Floating Bottom Toolbar for Bulk Manage (Design System: Paper-white, hairline border, standard typography) */}
+      {isManageMode && selectedNoteIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-canvas text-ink border border-hairline shadow-lg rounded-full px-4 sm:px-5 py-2 flex items-center gap-2.5 sm:gap-3 select-none">
+          <span className="text-body-sm text-body font-normal whitespace-nowrap pl-1">
+            <strong className="text-ink font-semibold">{selectedNoteIds.size}</strong> dipilih
+          </span>
+          <div className="flex items-center gap-2 ml-1">
+            {filters.selectedCategories.includes('archived') ? (
+              <button
+                type="button"
+                disabled={isBulkLoading}
+                onClick={() => handleBulkAction('restore')}
+                className="h-9 px-4 rounded-full text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+              >
+                {isBulkLoading ? 'Memproses...' : 'Pulihkan Semua'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={isBulkLoading}
+                onClick={() => handleBulkAction('archive')}
+                className="h-9 px-4 rounded-full text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+              >
+                {isBulkLoading ? 'Memproses...' : 'Arsipkan Semua'}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={isBulkLoading}
+              onClick={() => handleBulkAction('delete')}
+              className="h-9 px-4 rounded-full text-button-md font-medium bg-surface-soft hover:bg-hairline/60 text-ink border border-hairline active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+            >
+              Hapus Permanen
+            </button>
+            <button
+              type="button"
+              disabled={isBulkLoading}
+              onClick={() => setSelectedNoteIds(new Set())}
+              className="h-9 px-3.5 rounded-full text-button-md font-medium text-body hover:text-ink hover:bg-surface-soft active:scale-95 cursor-pointer transition-all whitespace-nowrap"
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
