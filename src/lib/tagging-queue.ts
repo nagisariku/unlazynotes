@@ -87,6 +87,14 @@ class TaggingQueueManager {
             category: validCategory,
             specificTags: tagResult.specific_tags || [],
             source: tagResult.source || 'telegram',
+            schedule: tagResult.schedule || (tagResult.schedule_dates ? { dates: tagResult.schedule_dates, isRecurring: false } : undefined),
+            scheduleDates: tagResult.schedule_dates || undefined,
+            expenses: tagResult.expenses || undefined,
+            income: tagResult.income || undefined,
+            debt: tagResult.debt || undefined,
+            bookmarkType: tagResult.bookmarkType || undefined,
+            credentialType: tagResult.credentialType || undefined,
+            isProcessed: true,
           })
           .where(eq(notes.id, task.noteId));
 

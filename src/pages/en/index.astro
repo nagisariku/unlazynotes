@@ -1,0 +1,13 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import LandingPage from '../../components/landing/LandingPage';
+import { getSessionUser } from '../../lib/session';
+
+export const prerender = false;
+
+const user = await getSessionUser(Astro.request);
+---
+
+<Layout title="UnlazyNotes – The Zero-Friction Personal Life OS">
+  <LandingPage client:load initialLocale="en" isLoggedIn={Boolean(user)} />
+</Layout>

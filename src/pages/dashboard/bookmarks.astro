@@ -26,11 +26,15 @@ const [apiKeyRecord] = await db
   .where(eq(apiKeys.userId, user.id))
   .limit(1);
 
+// Default safe query limit untuk initial load (arsitektur siap disambungkan ke infinite scroll saat volume catatan bertumbuh pesat)
+const DEFAULT_PAGE_LIMIT = 100;
+
 const bookmarkNotes = await db
   .select()
   .from(notes)
   .where(and(eq(notes.userId, user.id), eq(notes.category, 'bookmark')))
-  .orderBy(desc(notes.isPinned), desc(notes.createdAt));
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt))
+  .limit(DEFAULT_PAGE_LIMIT);
 
 const serializedBookmarks = bookmarkNotes.map((b) => ({
   id: b.id,

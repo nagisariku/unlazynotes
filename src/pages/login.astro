@@ -90,10 +90,14 @@ if (user) {
   </div>
 
   <script>
+    import { toast } from 'sonner';
+    import { navigate } from 'astro:transitions/client';
+
     // Google Sign in handler
     const googleBtn = document.getElementById('google-signin-btn');
     if (googleBtn) {
       googleBtn.addEventListener('click', async () => {
+        const toastId = toast.loading('Menghubungkan ke Google...');
         try {
           const res = await fetch('/api/auth/sign-in/social', {
             method: 'POST',
@@ -105,12 +109,13 @@ if (user) {
           });
           const data = await res.json();
           if (data?.url) {
-            window.location.href = data.url;
+            toast.success('Mengalihkan ke Google Sign-In...', { id: toastId });
+            setTimeout(() => { window.location.href = data.url; }, 700);
           } else {
-            alert('Google OAuth Client ID belum dikonfigurasi di VPS. Gunakan opsi Uji Coba Cepat di bawah.');
+            toast.error('Google OAuth Client ID belum dikonfigurasi di VPS. Gunakan opsi Uji Coba Cepat di bawah.', { id: toastId });
           }
         } catch {
-          alert('Google OAuth belum aktif. Silakan gunakan opsi Uji Coba Cepat di bawah.');
+          toast.error('Google OAuth belum aktif. Silakan gunakan opsi Uji Coba Cepat di bawah.', { id: toastId });
         }
       });
     }
@@ -120,17 +125,31 @@ if (user) {
     if (devForm) {
       devForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        const toastId = toast.loading('Memproses masuk ke dashboard...');
         const emailInput = document.getElementById('dev-email') as HTMLInputElement;
         const email = emailInput?.value || 'user@test.local';
 
-        const res = await fetch('/api/auth/dev-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, name: email.split('@')[0] }),
-        });
+        try {
+          const res = await fetch('/api/auth/dev-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name: email.split('@')[0] }),
+          });
 
-        if (res.ok) {
-          window.location.href = '/dashboard';
+          if (res.ok) {
+            toast.success('Berhasil masuk! Mengalihkan...', { id: toastId });
+            setTimeout(async () => {
+              try {
+                await navigate('/dashboard');
+              } catch {
+                window.location.href = '/dashboard';
+              }
+            }, 700);
+          } else {
+            toast.error('Gagal masuk ke sandbox. Silakan coba lagi.', { id: toastId });
+          }
+        } catch {
+          toast.error('Koneksi server gagal. Periksa status jaringan Anda.', { id: toastId });
         }
       });
     }

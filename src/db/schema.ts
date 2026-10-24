@@ -88,7 +88,7 @@ export const apiKeys = pgTable('api_keys', {
   userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull().unique(),
   keyHash: text('key_hash').notNull().unique(),
   rawKey: text('raw_key'),
-  telegramChatId: text('telegram_chat_id'),
+  telegramChatId: text('telegram_chat_id').unique(),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
@@ -113,10 +113,37 @@ export const notes = pgTable('notes', {
     localPath?: string;
   }>>().default([]).notNull(),
   targetDate: timestamp('target_date', { withTimezone: true }),
+  scheduleDates: jsonb('schedule_dates').$type<string[]>().default([]).notNull(),
+  schedule: jsonb('schedule').$type<{
+    dates: string[];
+    isRecurring: boolean;
+    recurrenceRule?: {
+      frequency: 'daily' | 'weekly' | 'monthly' | 'custom_interval';
+      intervalDays?: number;
+      daysOfWeek?: number[];
+      dayOfMonth?: number;
+      timeString?: string;
+    };
+  }>().default({ dates: [], isRecurring: false }).notNull(),
+  expenses: jsonb('expenses').$type<Array<{ item: string; amount: number; currency: string }>>().default([]).notNull(),
+  income: jsonb('income').$type<Array<{ source: string; amount: number; currency: string }>>().default([]).notNull(),
+  debt: jsonb('debt').$type<Array<{
+    type: 'payable' | 'receivable';
+    person: string;
+    amount: number;
+    notes?: string;
+    isSettled?: boolean;
+  }>>().default([]).notNull(),
+  bookmarkType: varchar('bookmark_type', { length: 50 }).$type<BookmarkType>(),
+  credentialType: varchar('credential_type', { length: 50 }).$type<CredentialType>(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  isArchived: boolean('is_archived').default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('notes_user_processed_idx').on(t.userId, t.isProcessed),
   index('notes_user_target_date_idx').on(t.userId, t.targetDate),
+  index('notes_user_archived_idx').on(t.userId, t.isArchived),
+  index('notes_expires_at_idx').on(t.expiresAt),
 ]);
 
 export type Note = typeof notes.$inferSelect;
@@ -130,6 +157,53 @@ export type NoteAttachment = {
   sizeBytes?: number;
   localPath?: string;
 };
+
+export type ScheduleMetadata = {
+  dates: string[];
+  isRecurring: boolean;
+  recurrenceRule?: {
+    frequency: 'daily' | 'weekly' | 'monthly' | 'custom_interval';
+    intervalDays?: number;
+    daysOfWeek?: number[];
+    dayOfMonth?: number;
+    timeString?: string;
+  };
+};
+
+export type ExpenseEntry = {
+  item: string;
+  amount: number;
+  currency: string;
+};
+
+export type IncomeEntry = {
+  source: string;
+  amount: number;
+  currency: string;
+};
+
+export type DebtEntry = {
+  type: 'payable' | 'receivable';
+  person: string;
+  amount: number;
+  notes?: string;
+  isSettled?: boolean;
+};
+
+export type BookmarkType =
+  | 'tech_dev'
+  | 'media_social'
+  | 'work_docs'
+  | 'places'
+  | 'shopping'
+  | 'reading_other';
+
+export type CredentialType =
+  | 'account'
+  | 'network'
+  | 'identity_finance'
+  | 'license'
+  | 'other';
 
 export const paymentLogs = pgTable('payment_logs', {
   id: text('id').primaryKey(),
@@ -155,3 +229,16 @@ export const tagSearches = pgTable('tag_searches', {
   uniqueIndex('tag_searches_user_tag_idx').on(t.userId, t.tag),
 ]);
 
+export const aiUsageLogs = pgTable('ai_usage_logs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  feature: varchar('feature', { length: 50 }).notNull(), // 'ask' | 'enhance' | 'tagging' | 'batch_sync' | 'finance'
+  model: varchar('model', { length: 100 }),
+  promptTokens: integer('prompt_tokens').default(0).notNull(),
+  completionTokens: integer('completion_tokens').default(0).notNull(),
+  totalTokens: integer('total_tokens').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('ai_usage_logs_created_at_idx').on(t.createdAt),
+  index('ai_usage_logs_user_id_idx').on(t.userId),
+]);

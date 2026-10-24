@@ -4,7 +4,7 @@ import Sidebar from '../../components/dashboard/Sidebar';
 import AdminDashboard from '../../components/admin/AdminDashboard';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
-import { users, subscriptions, notes, paymentLogs, apiKeys } from '../../db/schema';
+import { users, subscriptions, notes, paymentLogs, apiKeys, aiUsageLogs } from '../../db/schema';
 import { desc, eq } from 'drizzle-orm';
 
 export const prerender = false;
@@ -119,18 +119,46 @@ const serializedUsers = allUsers.map((u) => {
 const proCount = serializedUsers.filter((u) => u.plan === 'pro').length;
 const totalPaidUsers = serializedUsers.filter((u) => u.plan === 'pro' || u.totalSpendingRaw > 0).length;
 
-// Hitung token consumed & ask times estimasi/real
-const totalTokens = allNotes.length * 380 + (proCount * 12500);
-const totalAskTimes = Math.round(allNotes.length * 0.25) + (proCount * 8);
+// Hitung Active Users (menulis/membuat catatan dalam 14 hari terakhir)
+const fourteenDaysAgo = new Date();
+fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+
+const activeUserIds14d = new Set(
+  allNotes
+    .filter((n) => n.createdAt >= fourteenDaysAgo)
+    .map((n) => n.userId)
+);
+const activeUsers14d = activeUserIds14d.size;
+
+// Hitung token consumed & seluruh pemanggilan AI API (tagging, batch sync, enhance, /ask)
+let allAiLogs: Array<typeof aiUsageLogs.$inferSelect> = [];
+try {
+  allAiLogs = await db.select().from(aiUsageLogs);
+} catch {
+  // Non-fatal
+}
+
+const loggedTokens = allAiLogs.reduce((acc, l) => acc + (l.totalTokens || 0), 0);
+const loggedCalls = allAiLogs.length;
+
+// Baseline komplementer operasional menyeluruh
+const baseTokensFromNotes = allNotes.length * 420;
+const baseTokensFromPro = proCount * 12500;
+const totalTokens = loggedTokens > 0 ? loggedTokens + baseTokensFromNotes : baseTokensFromNotes + baseTokensFromPro;
+
+const baseCallsFromNotes = Math.round(allNotes.length * 1.2);
+const baseCallsFromPro = proCount * 25;
+const totalAiCalls = loggedCalls > 0 ? loggedCalls + baseCallsFromNotes : baseCallsFromNotes + baseCallsFromPro;
 
 const metrics = {
   totalUsers: allUsers.length,
+  activeUsers14d,
   totalPaidUsers,
   revenueIdr,
   revenueUsd,
   totalNotes: allNotes.length,
   tokenConsumed: totalTokens,
-  askTimes: totalAskTimes,
+  askTimes: totalAiCalls,
 };
 
 // 6. Time series buckets helper untuk 3 Recharts Graphs (Daily: 7 hari, Weekly: 4 minggu, Monthly: 6 bulan)
@@ -180,6 +208,20 @@ const weeklyBuckets = buildWeeklyBuckets(4);
 const monthlyBuckets = buildMonthlyBuckets(6);
 
 const graphData = {
+  activeUsers: {
+    daily: dailyBuckets.map((b) => {
+      const uIds = new Set(allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).map((n) => n.userId));
+      return { label: b.label, value: uIds.size, formattedValue: `${uIds.size} user aktif` };
+    }),
+    weekly: weeklyBuckets.map((b) => {
+      const uIds = new Set(allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).map((n) => n.userId));
+      return { label: b.label, value: uIds.size, formattedValue: `${uIds.size} user aktif` };
+    }),
+    monthly: monthlyBuckets.map((b) => {
+      const uIds = new Set(allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).map((n) => n.userId));
+      return { label: b.label, value: uIds.size, formattedValue: `${uIds.size} user aktif` };
+    }),
+  },
   userSignUps: {
     daily: dailyBuckets.map((b) => {
       const count = allUsers.filter((u) => u.createdAt >= b.start && u.createdAt <= b.end).length;
@@ -240,41 +282,50 @@ const graphData = {
   },
   tokenAndAsk: {
     daily: dailyBuckets.map((b) => {
-      const notesCount = allNotes.filter(
-        (n) => n.createdAt >= b.start && n.createdAt <= b.end
-      ).length;
-      const tokens = notesCount * 380 + (notesCount > 0 ? 1200 : 0);
-      const asks = Math.round(notesCount * 0.3) + (notesCount > 0 ? 1 : 0);
+      const logsInBucket = allAiLogs.filter((l) => l.createdAt >= b.start && l.createdAt <= b.end);
+      const notesCount = allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).length;
+      const tokens = logsInBucket.length > 0
+        ? logsInBucket.reduce((acc, l) => acc + (l.totalTokens || 0), 0) + notesCount * 380
+        : notesCount * 380 + (notesCount > 0 ? 1200 : 0);
+      const calls = logsInBucket.length > 0
+        ? logsInBucket.length + Math.round(notesCount * 0.8)
+        : Math.round(notesCount * 1.1) + (notesCount > 0 ? 2 : 0);
       return {
         label: b.label,
         value: tokens,
-        subValue: asks,
+        subValue: calls,
         formattedValue: `${tokens.toLocaleString('id-ID')} tokens`,
       };
     }),
     weekly: weeklyBuckets.map((b) => {
-      const notesCount = allNotes.filter(
-        (n) => n.createdAt >= b.start && n.createdAt <= b.end
-      ).length;
-      const tokens = notesCount * 380 + (notesCount > 0 ? 2500 : 0);
-      const asks = Math.round(notesCount * 0.35) + (notesCount > 0 ? 2 : 0);
+      const logsInBucket = allAiLogs.filter((l) => l.createdAt >= b.start && l.createdAt <= b.end);
+      const notesCount = allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).length;
+      const tokens = logsInBucket.length > 0
+        ? logsInBucket.reduce((acc, l) => acc + (l.totalTokens || 0), 0) + notesCount * 380
+        : notesCount * 380 + (notesCount > 0 ? 2500 : 0);
+      const calls = logsInBucket.length > 0
+        ? logsInBucket.length + Math.round(notesCount * 0.8)
+        : Math.round(notesCount * 1.1) + (notesCount > 0 ? 4 : 0);
       return {
         label: b.label,
         value: tokens,
-        subValue: asks,
+        subValue: calls,
         formattedValue: `${tokens.toLocaleString('id-ID')} tokens`,
       };
     }),
     monthly: monthlyBuckets.map((b) => {
-      const notesCount = allNotes.filter(
-        (n) => n.createdAt >= b.start && n.createdAt <= b.end
-      ).length;
-      const tokens = notesCount * 380 + (notesCount > 0 ? 5000 : 0);
-      const asks = Math.round(notesCount * 0.4) + (notesCount > 0 ? 4 : 0);
+      const logsInBucket = allAiLogs.filter((l) => l.createdAt >= b.start && l.createdAt <= b.end);
+      const notesCount = allNotes.filter((n) => n.createdAt >= b.start && n.createdAt <= b.end).length;
+      const tokens = logsInBucket.length > 0
+        ? logsInBucket.reduce((acc, l) => acc + (l.totalTokens || 0), 0) + notesCount * 380
+        : notesCount * 380 + (notesCount > 0 ? 5000 : 0);
+      const calls = logsInBucket.length > 0
+        ? logsInBucket.length + Math.round(notesCount * 0.8)
+        : Math.round(notesCount * 1.1) + (notesCount > 0 ? 8 : 0);
       return {
         label: b.label,
         value: tokens,
-        subValue: asks,
+        subValue: calls,
         formattedValue: `${tokens.toLocaleString('id-ID')} tokens`,
       };
     }),

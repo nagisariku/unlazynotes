@@ -6,6 +6,7 @@ import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
 import { notes, users, apiKeys } from '../../db/schema';
 import { eq, desc, and, ne, count, or } from 'drizzle-orm';
+import { autoArchiveExpiredNotes } from '../../lib/cleaner';
 
 export const prerender = false;
 
@@ -13,6 +14,9 @@ const user = await getSessionUser(Astro.request);
 if (!user) {
   return Astro.redirect('/login');
 }
+
+// Background cleanup: auto-archive expired notes silently
+await autoArchiveExpiredNotes();
 
 const [userRecord] = await db
   .select({ tier: users.tier })
@@ -26,6 +30,9 @@ const [apiKeyRecord] = await db
   .where(eq(apiKeys.userId, user.id))
   .limit(1);
 
+// Default safe query limit untuk initial load (arsitektur siap disambungkan ke infinite scroll saat volume catatan bertumbuh pesat)
+const DEFAULT_PAGE_LIMIT = 100;
+
 const userNotes = await db
   .select()
   .from(notes)
@@ -36,7 +43,8 @@ const userNotes = await db
       eq(notes.isEncrypted, false)
     )
   )
-  .orderBy(desc(notes.createdAt));
+  .orderBy(desc(notes.isPinned), desc(notes.createdAt))
+  .limit(DEFAULT_PAGE_LIMIT);
 
 const serializedNotes = userNotes.map((n) => ({
   id: n.id,
@@ -50,6 +58,8 @@ const serializedNotes = userNotes.map((n) => ({
   isProcessed: n.isProcessed,
   targetDate: n.targetDate ? n.targetDate.toISOString() : null,
   attachments: n.attachments,
+  expiresAt: n.expiresAt ? n.expiresAt.toISOString() : null,
+  isArchived: n.isArchived,
   createdAt: n.createdAt.toISOString(),
 }));
 

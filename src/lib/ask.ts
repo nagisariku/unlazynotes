@@ -1,3 +1,4 @@
+import { recordAiUsage } from '@/lib/ai-usage';
 import { db } from '@/db';
 import { notes } from '@/db/schema';
 import { eq, and, gte, desc } from 'drizzle-orm';
@@ -48,7 +49,7 @@ function formatCurrentTime(date: Date): string {
 }
 
 /**
- * Answers a user's question strictly based on their notes from the last 90 days.
+ * Answers a user's question strictly based on their notes from the last 180 days.
  * Exclusive for Pro plan subscribers.
  */
 export async function answerNoteQuestion(
@@ -67,7 +68,7 @@ export async function answerNoteQuestion(
 
   const now = new Date();
   const nowFormatted = formatCurrentTime(now);
-  const ninetyDaysAgo = subDays(now, 90);
+  const oneEightyDaysAgo = subDays(now, 180);
 
   // 1. Fetch user notes created within the last 90 days
   const userNotes = await db
@@ -81,15 +82,15 @@ export async function answerNoteQuestion(
     .where(
       and(
         eq(notes.userId, userId),
-        gte(notes.createdAt, ninetyDaysAgo),
+        gte(notes.createdAt, oneEightyDaysAgo),
         eq(notes.isEncrypted, false)
       )
     )
     .orderBy(desc(notes.createdAt))
-    .limit(100);
+    .limit(300);
 
   if (userNotes.length === 0) {
-    return 'Belum ada catatan yang tersimpan dalam 90 hari terakhir untuk dianalisis oleh AI.';
+    return 'Belum ada catatan yang tersimpan dalam 180 hari terakhir untuk dianalisis oleh AI.';
   }
 
   // 2. Format notes context with human-friendly localized timestamp and category
@@ -264,7 +265,7 @@ Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
 
     const userPrompt = `Waktu Saat Ini (Current Time): ${nowFormatted}
 
-Catatan pengguna yang tersimpan (hingga 90 hari terakhir):
+Catatan pengguna yang tersimpan (hingga 180 hari terakhir):
 ---
 ${contextNotes}
 ---

@@ -1,19 +1,13 @@
 import { useState } from 'react';
 import {
   Bot,
-  ArrowRight,
   Sparkles,
-  ExternalLink,
   Globe,
   Lock,
-  Send,
-  Calendar,
 } from 'lucide-react';
 import {
   Button,
-  InstallSnippet,
   CommandTag,
-  TerminalCard,
   PricingCard,
   PricingCardDark,
   CtaStripDark,
@@ -24,10 +18,26 @@ import {
   LinkMute,
 } from '../ui';
 
-export default function LandingPage() {
-  const [locale, setLocale] = useState<'id' | 'en'>('id');
+interface LandingPageProps {
+  initialLocale?: 'id' | 'en';
+  isLoggedIn?: boolean;
+}
+
+export default function LandingPage({
+  initialLocale = 'id',
+  isLoggedIn = false,
+}: LandingPageProps) {
+  const [locale, setLocale] = useState<'id' | 'en'>(initialLocale);
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [vaultRevealed, setVaultRevealed] = useState(false);
+
+  const toggleLanguage = () => {
+    const nextLocale = locale === 'id' ? 'en' : 'id';
+    setLocale(nextLocale);
+    if (typeof window !== 'undefined') {
+      window.location.href = nextLocale === 'en' ? '/en' : '/';
+    }
+  };
 
   const content = {
     id: {
@@ -35,15 +45,10 @@ export default function LandingPage() {
       navShowcase: 'Showcase',
       navPricing: 'Harga',
       navFaq: 'FAQ',
-      navLogin: 'Masuk / Dashboard',
-      badge: 'The Zero-Friction Personal Life OS',
       headline: "Berhenti Biarkan Ide & Catatanmu Jadi 'Kuburan' di Saved Messages.",
       subheadline:
         'Cukup ketik apa saja ke bot Telegram kami sesantai mengirim pesan ke teman. AI otomatis merapikan keuangan, to-do list, password terenkripsi, dan jurnal harian Anda ke dashboard bersih dalam 1 detik.',
-      ctaTelegram: 'Mulai di Telegram',
-      ctaDashboard: 'Buka Dashboard',
-      securityNotice:
-        'Private Vault: Untuk password, PIN, & kredensial sensitif, gunakan perintah /secure <kunci> <isi> agar dienkripsi militer AES-256-GCM dan diisolasi 100% dari AI.',
+      heroCta: 'Buka Workspace',
 
       // Showcase Section
       showcaseTitle: 'Dari Chat Mentah Menjadi Dashboard Rapi',
@@ -64,37 +69,37 @@ export default function LandingPage() {
 
       // Pricing Section
       pricingTitle: 'Pilihan Paket Langganan Sederhana',
-      pricingSub: '100% Berbayar tanpa iklan, tanpa pelacakan data, dan tanpa penguncian vendor.',
-      monthly: 'Bulan',
-      yearly: 'Tahun',
-      perMonth: '/bulan',
-      standardTitle: 'Standard',
-      standardPrice: 'Rp15.000',
-      standardDesc: 'Ideal untuk individu yang ingin ruang chat rapi sehari-hari.',
-      standardFeatures: [
-        'Maksimal 25 catatan baru / hari',
-        'Auto-tagging AI 9 kategori',
-        'Private Vault terenkripsi AES-256 (/secure)',
-        'Pencarian multi-token instan & fleksibel',
-        'Ekspor lengkap JSON & Markdown (.md)',
-        'Akses dashboard web selamanya',
+      pricingSub: '1 USD = Rp 18.000. Tanpa iklan, tanpa pelacakan data, dan tanpa penguncian vendor.',
+      freeTitle: 'Free Forever ($0)',
+      freePrice: 'Rp 0',
+      freePeriod: '/selamanya',
+      freeDesc: 'Semua kebutuhan esensial untuk merapikan catatan harian Anda.',
+      freeFeatures: [
+        'All essentials',
+        'Maks 30 notes per bulan',
+        'Maks 5x ask AI per bulan',
+        'AI enhance writing',
+        'AI smart categorize',
+        'AI smart tagging',
+        'Web Workspace & bot telegram',
+        'Smart search',
+        'Export JSON & Markdown (.md)',
       ],
-      proTitle: 'Max (Pro)',
-      proPrice: 'Rp49.000',
+      proTitle: 'Pro',
+      proPrice: 'Rp 18.000',
+      proPeriod: '/bulan ($1/bulan atau $10/tahun)',
       proDesc: 'Kapasitas tanpa batas & kecerdasan AI untuk second-brain Anda.',
       proFeatures: [
-        'Catatan tanpa batas (Unlimited notes)',
-        'Fitur AI Contextual Q&A (/ask)',
-        'Auto-tagging prioritas tinggi',
-        'Private Vault terenkripsi AES-256 (/secure)',
-        'Ekspor lengkap JSON & Markdown (.md)',
-        'Dukungan prioritas pelanggan',
+        'Unlimited Notes',
+        'Unlimited ask AI per bulan',
+        'Private vault',
       ],
-      selectPlan: 'Pilih Paket Ini',
+      selectFreePlan: 'Mulai Gratis',
+      selectProPlan: 'Pilih Paket Pro',
 
       // CTA Strip
       ctaStripTitle: 'Mulai rapikan hidupmu tanpa repot hari ini.',
-      ctaStripBtn: 'Buka Bot Telegram',
+      ctaStripBtn: 'Buka Workspace',
 
       // FAQ Section
       faqTitle: 'Pertanyaan yang Sering Diajukan (FAQ)',
@@ -125,15 +130,10 @@ export default function LandingPage() {
       navShowcase: 'Showcase',
       navPricing: 'Pricing',
       navFaq: 'FAQ',
-      navLogin: 'Sign In / Dashboard',
-      badge: 'The Zero-Friction Personal Life OS',
       headline: "Stop Letting Your Best Ideas Die in 'Saved Messages'.",
       subheadline:
         'Just text anything to our Telegram bot like chatting with a friend. AI instantly organizes your finances, to-do lists, encrypted credentials, and daily journals into a clean dashboard in 1 second.',
-      ctaTelegram: 'Start on Telegram',
-      ctaDashboard: 'Open Dashboard',
-      securityNotice:
-        'Private Vault: For passwords, PINs, & tokens, use /secure <key> <secret> to encrypt with military-grade AES-256-GCM, 100% isolated from AI.',
+      heroCta: 'open workspace',
 
       // Showcase Section
       showcaseTitle: 'From Messy Chat into a Structured Dashboard',
@@ -154,37 +154,37 @@ export default function LandingPage() {
 
       // Pricing Section
       pricingTitle: 'Simple & Transparent Pricing',
-      pricingSub: '100% Paid. No ads, no data tracking, and zero vendor lock-in.',
-      monthly: 'Month',
-      yearly: 'Year',
-      perMonth: '/mo',
-      standardTitle: 'Standard',
-      standardPrice: '$1',
-      standardDesc: 'Perfect for daily personal idea capturing.',
-      standardFeatures: [
-        'Up to 25 notes per day',
-        'Automated AI 9-category tagging',
-        'AES-256 encrypted Private Vault (/secure)',
-        'Fast & loose multi-token search',
-        'Complete JSON & Markdown (.md) export',
-        'Lifetime web workspace access',
+      pricingSub: '1 USD = Rp 18,000. No ads, no data tracking, and zero vendor lock-in.',
+      freeTitle: 'Free Forever ($0)',
+      freePrice: '$0',
+      freePeriod: '/forever',
+      freeDesc: 'All essentials for everyday personal note taking.',
+      freeFeatures: [
+        'All essentials',
+        'Maks 30 notes per bulan',
+        'Maks 5x ask AI per bulan',
+        'AI enhance writing',
+        'AI smart categorize',
+        'AI smart tagging',
+        'Web Workspace & bot telegram',
+        'Smart search',
+        'Export JSON & Markdown (.md)',
       ],
-      proTitle: 'Max (Pro)',
-      proPrice: '$3',
+      proTitle: 'Pro',
+      proPrice: '$1',
+      proPeriod: '/month ($1/month or $10/year)',
       proDesc: 'Unlimited power & AI contextual recall for your second brain.',
       proFeatures: [
-        'Unlimited notes capture',
-        'AI Contextual Q&A via /ask command',
-        'High-priority auto-tagging',
-        'AES-256 encrypted Private Vault (/secure)',
-        'Complete JSON & Markdown (.md) export',
-        'Priority customer support',
+        'Unlimited Notes',
+        'Unlimited ask AI per bulan',
+        'Private vault',
       ],
-      selectPlan: 'Get Started',
+      selectFreePlan: 'Start Free',
+      selectProPlan: 'Get Pro',
 
       // CTA Strip
       ctaStripTitle: 'Start organizing your thoughts instantly today.',
-      ctaStripBtn: 'Open Telegram Bot',
+      ctaStripBtn: 'Buka Workspace',
 
       // FAQ Section
       faqTitle: 'Frequently Asked Questions (FAQ)',
@@ -216,14 +216,15 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-canvas text-ink">
-      {/* Primary Navigation */}
+      {/* Primary Navigation: Fullwidth end-to-end, light gray background, borderless, centered max-width content */}
       <PrimaryNav>
+        {/* Left: App Logo & Title */}
         <div className="flex items-center gap-6">
-          <a href="/" className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-xs select-none">
+          <a href={locale === 'en' ? '/en' : '/'} className="flex items-center gap-2.5">
+            <span className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm select-none">
               U
             </span>
-            <span className="font-semibold text-body-sm-strong text-ink tracking-tight">
+            <span className="font-semibold text-heading-md text-ink tracking-tight">
               UnlazyNotes
             </span>
           </a>
@@ -236,68 +237,62 @@ export default function LandingPage() {
           </div>
         </div>
 
+        {/* Right: Language Switcher & Auth Action */}
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setLocale(locale === 'id' ? 'en' : 'id')}
-            className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full border border-hairline bg-surface-soft text-ink text-body-sm cursor-pointer"
+            onClick={toggleLanguage}
+            className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full border-0 bg-transparent hover:bg-canvas text-ink text-body-sm font-medium cursor-pointer"
             title="Switch Language"
           >
             <Globe className="w-3.5 h-3.5 text-body" />
             <span>{locale === 'id' ? 'ID' : 'EN'}</span>
           </button>
 
-          <a href="/dashboard">
-            <Button variant="primary">{t.navLogin}</Button>
-          </a>
+          {isLoggedIn ? (
+            <a href="/dashboard">
+              <Button variant="primary">workspace</Button>
+            </a>
+          ) : (
+            <a href="/login">
+              <button
+                type="button"
+                className="inline-flex items-center gap-2 h-9 px-4 rounded-full bg-canvas hover:bg-surface-soft active:bg-hairline text-ink text-button-sm border border-hairline cursor-pointer select-none font-medium"
+              >
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.15z"/>
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+                  <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 10.03 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+                </svg>
+                <span>sign in</span>
+              </button>
+            </a>
+          )}
         </div>
       </PrimaryNav>
 
       <main className="flex-1">
         {/* 1. Hero Section */}
         <section className="pt-20 pb-16 px-6 max-w-4xl mx-auto text-center">
-          <h1 className="text-display-xl text-ink mb-6 max-w-3xl mx-auto tracking-tight">
+          <h1 className="font-display font-medium text-[38px] sm:text-[44px] text-ink mb-6 max-w-3xl mx-auto tracking-tight leading-[1.15]">
             {t.headline}
           </h1>
 
-          <p className="text-body-md text-body max-w-2xl mx-auto mb-8">
+          <p className="font-sans font-normal text-[16px] sm:text-[17px] text-body max-w-2xl mx-auto mb-10 leading-relaxed">
             {t.subheadline}
           </p>
 
-          {/* Hero Install Snippet */}
-          <div className="max-w-lg mx-auto mb-8">
-            <InstallSnippet
-              command="https://t.me/unlazynotes_bot"
-              showCopy={true}
-            />
-          </div>
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-            <a
-              href="https://t.me/unlazynotes_bot"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Button variant="primary" className="gap-2">
-                <Send className="w-4 h-4" />
-                <span>{t.ctaTelegram}</span>
-                <ExternalLink className="w-3.5 h-3.5 opacity-60" />
-              </Button>
-            </a>
-
+          {/* Single enlarged main CTA button without inner icon */}
+          <div className="flex items-center justify-center">
             <a href="/dashboard">
-              <Button variant="secondary" className="gap-2">
-                <span>{t.ctaDashboard}</span>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
+              <button
+                type="button"
+                className="h-12 px-8 rounded-full bg-primary hover:bg-ink-deep active:scale-98 text-on-primary text-body-lg font-medium cursor-pointer select-none"
+              >
+                {t.heroCta}
+              </button>
             </a>
-          </div>
-
-          {/* Security Notice Pill */}
-          <div className="mt-12 max-w-xl mx-auto p-4 rounded-lg border border-hairline bg-surface-soft text-charcoal text-body-sm text-left flex items-start gap-3">
-            <Lock className="w-4 h-4 text-ink shrink-0 mt-0.5" />
-            <p className="leading-relaxed">{t.securityNotice}</p>
           </div>
         </section>
 
@@ -311,88 +306,97 @@ export default function LandingPage() {
               <p className="text-body-sm text-body">{t.showcaseSub}</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-              {/* Left Column: Raw Telegram Chat in Terminal Card */}
-              <TerminalCard title={t.showcaseTelegramTitle}>
-                <div className="space-y-4 py-2 font-mono text-code-sm">
-                  <div>
-                    <span className="text-body text-caption-sm block mb-1"># 1. Catatan Pengeluaran Spontan</span>
-                    <div className="flex items-center gap-2 pl-2 border-l-2 border-hairline-strong">
-                      <span className="text-charcoal select-none">&gt;</span>
-                      <span className="text-ink">tfr 150rb patungan seblak ubed</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-body text-caption-sm block mb-1"># 2. Daftar To-do Cepat</span>
-                    <div className="flex items-center gap-2 pl-2 border-l-2 border-hairline-strong">
-                      <span className="text-charcoal select-none">&gt;</span>
-                      <span className="text-ink">hiling dieng, pilates, belanja tokma</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-body text-caption-sm block mb-1"># 3. Kredensial Terenkripsi</span>
-                    <div className="flex items-center gap-2 pl-2 border-l-2 border-hairline-strong">
-                      <span className="text-charcoal select-none">&gt;</span>
-                      <span className="text-ink">/secure bca pin 123456</span>
-                    </div>
-                  </div>
-                </div>
-              </TerminalCard>
-
-              {/* Right Column: Structured Output in Flat Card */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-hairline">
-                  <div className="text-body-sm-strong text-ink">{t.showcaseDashboardTitle}</div>
-                  <CommandTag>{t.showcaseAiTag}</CommandTag>
-                </div>
-
-                {/* Structured Note 1 */}
-                <div className="bg-canvas border border-hairline rounded-lg p-4 space-y-2">
-                  <div className="flex items-center justify-between text-caption-sm text-body">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> 16 Okt 2026, 13:42
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+              {/* Telegram Input Mockup */}
+              <div className="p-6 rounded-lg border border-hairline bg-surface-soft flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-hairline">
+                    <span className="text-caption-sm text-body">
+                      {t.showcaseTelegramTitle}
                     </span>
-                    <CommandTag>FINANCE</CommandTag>
+                    <CommandTag>RAW CHAT</CommandTag>
                   </div>
-                  <p className="text-body-sm text-ink font-medium">tfr 150rb patungan seblak ubed</p>
-                  <div className="flex items-center justify-between pt-1 text-body-sm">
-                    <div className="flex gap-1.5">
-                      <span className="text-caption-sm text-body">#ubed</span>
-                      <span className="text-caption-sm text-body">#food</span>
+                  <div className="space-y-4">
+                    <div className="bg-canvas border border-hairline rounded-lg p-3 max-w-[85%]">
+                      <p className="text-body-sm text-ink">
+                        Beli kopi kenangan 25k sama bayar wifi indihome 320rb
+                      </p>
+                      <span className="text-[10px] text-body block text-right mt-1">
+                        10:42 AM
+                      </span>
                     </div>
-                    <span className="font-mono text-ink font-semibold">Rp 150.000</span>
+
+                    <div className="bg-canvas border border-hairline rounded-lg p-3 max-w-[85%]">
+                      <p className="text-body-sm text-ink">
+                        Meeting evaluasi sprint selasa jam 14.00 di Google Meet
+                      </p>
+                      <span className="text-[10px] text-body block text-right mt-1">
+                        11:15 AM
+                      </span>
+                    </div>
+
+                    <div className="bg-canvas border border-hairline rounded-lg p-3 max-w-[85%] font-mono text-code-sm">
+                      <p className="text-charcoal">
+                        /secure pin_atm_bca 987654
+                      </p>
+                      <span className="text-[10px] text-body block text-right mt-1 font-sans">
+                        11:30 AM
+                      </span>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Structured Note 2 */}
-                <div className="bg-canvas border border-hairline rounded-lg p-4 space-y-2">
-                  <div className="flex items-center justify-between text-caption-sm text-body">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> 16 Okt 2026, 13:43
+              {/* Dashboard Output Cards */}
+              <div className="p-6 rounded-lg border border-hairline bg-canvas flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between pb-4 mb-4 border-b border-hairline">
+                    <span className="text-caption-sm text-ink font-semibold">
+                      {t.showcaseDashboardTitle}
                     </span>
-                    <CommandTag>TODO</CommandTag>
+                    <span className="text-[11px] font-sans font-medium px-2 py-0.5 rounded-full bg-surface-soft text-body">
+                      {t.showcaseAiTag}
+                    </span>
                   </div>
-                  <p className="text-body-sm text-ink font-medium">hiling dieng, pilates, belanja tokma</p>
-                  <div className="flex gap-1.5 pt-1 text-caption-sm text-body">
-                    <span>#dieng</span>
-                    <span>#tokma</span>
-                    <span>#pilates</span>
+
+                  <div className="space-y-3">
+                    <div className="p-3.5 rounded-lg border border-hairline bg-surface-soft flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <CommandTag>FINANCE</CommandTag>
+                          <span className="text-[11px] text-body">#coffee #bills</span>
+                        </div>
+                        <p className="text-body-sm text-ink">
+                          Kopi kenangan (Rp25.000) & Indihome (Rp320.000)
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-lg border border-hairline bg-surface-soft flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <CommandTag>SCHEDULE</CommandTag>
+                          <span className="text-[11px] text-body">#meeting #sprint</span>
+                        </div>
+                        <p className="text-body-sm text-ink">
+                          Meeting evaluasi sprint • Selasa, 14:00
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Structured Note 3 */}
-                <div className="bg-canvas border border-hairline rounded-lg p-4 space-y-2">
-                  <div className="flex items-center justify-between text-caption-sm text-body">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" /> 16 Okt 2026, 13:45
+                <div className="mt-4 p-3.5 rounded-lg border border-hairline bg-canvas">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-body-sm font-semibold text-ink flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-body" />
+                      pin_atm_bca
                     </span>
                     <CommandTag>VAULT</CommandTag>
                   </div>
                   <div className="flex items-center justify-between bg-surface-soft border border-hairline rounded-full px-3 py-1.5 font-mono text-code-sm">
                     <span className="text-charcoal truncate">
-                      {vaultRevealed ? 'pin 123456' : '••••••••••••••••'}
+                      {vaultRevealed ? 'pin 987654' : '••••••••••••••••'}
                     </span>
                     <button
                       type="button"
@@ -452,7 +456,7 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* 4. Pricing Comparison: Light Standard + Single Inverted Dark Card */}
+        {/* 4. Pricing Comparison: Free Forever ($0) + Pro ($1/bulan atau $10/tahun) */}
         <section id="pricing" className="py-20 px-6 border-t border-hairline bg-canvas">
           <div className="max-w-4xl mx-auto">
             <div className="text-center max-w-2xl mx-auto mb-14">
@@ -463,19 +467,19 @@ export default function LandingPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-stretch">
-              {/* Standard Tier (Light Flat Card) */}
+              {/* Free Forever Tier */}
               <PricingCard>
                 <div>
-                  <h3 className="text-heading-lg text-ink mb-1">{t.standardTitle}</h3>
-                  <p className="text-body-sm text-body mb-6">{t.standardDesc}</p>
+                  <h3 className="text-heading-lg text-ink mb-1">{t.freeTitle}</h3>
+                  <p className="text-body-sm text-body mb-6">{t.freeDesc}</p>
 
                   <div className="flex items-baseline gap-1 mb-6">
-                    <span className="text-display-lg text-ink tabular-nums">{t.standardPrice}</span>
-                    <span className="text-body-sm text-body">{t.perMonth}</span>
+                    <span className="text-display-lg text-ink tabular-nums">{t.freePrice}</span>
+                    <span className="text-body-sm text-body">{t.freePeriod}</span>
                   </div>
 
                   <div className="space-y-3 mb-8">
-                    {t.standardFeatures.map((f, i) => (
+                    {t.freeFeatures.map((f, i) => (
                       <FeatureBullet key={i}>{f}</FeatureBullet>
                     ))}
                   </div>
@@ -483,12 +487,12 @@ export default function LandingPage() {
 
                 <a href="/login" className="block">
                   <Button variant="secondary" fullWidth>
-                    {t.selectPlan}
+                    {t.selectFreePlan}
                   </Button>
                 </a>
               </PricingCard>
 
-              {/* Max Tier (The Single Inverted Dark Card in the Entire System) */}
+              {/* Pro Tier (Inverted Dark Card) */}
               <PricingCardDark>
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -499,7 +503,7 @@ export default function LandingPage() {
 
                   <div className="flex items-baseline gap-1 mb-6">
                     <span className="text-display-lg text-on-dark tabular-nums">{t.proPrice}</span>
-                    <span className="text-body-sm text-on-dark-mute">{t.perMonth}</span>
+                    <span className="text-body-sm text-on-dark-mute">{t.proPeriod}</span>
                   </div>
 
                   <div className="space-y-3 mb-8">
@@ -513,7 +517,7 @@ export default function LandingPage() {
 
                 <a href="/login" className="block">
                   <Button variant="pill-on-dark" fullWidth>
-                    {t.selectPlan}
+                    {t.selectProPlan}
                   </Button>
                 </a>
               </PricingCardDark>
@@ -527,15 +531,10 @@ export default function LandingPage() {
             <div>
               <h2 className="text-heading-lg text-on-dark mb-1">{t.ctaStripTitle}</h2>
               <p className="text-body-sm text-on-dark-mute">
-                Bergabung dalam 2 detik tanpa perlu instalasi aplikasi berat.
+                Kelola catatan dan produktivitas Anda tanpa ribet.
               </p>
             </div>
-            <a
-              href="https://t.me/unlazynotes_bot"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0"
-            >
+            <a href="/dashboard" className="shrink-0">
               <Button variant="pill-on-dark">{t.ctaStripBtn}</Button>
             </a>
           </CtaStripDark>

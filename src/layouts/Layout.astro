@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+import GlobalToaster from '../components/ui/GlobalToaster';
+import { ClientRouter } from 'astro:transitions';
 
 interface Props {
   title?: string;
@@ -23,8 +25,10 @@ const {
     <link href="https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap" rel="stylesheet">
     <title>{title}</title>
     <meta name="description" content={description} />
+    <ClientRouter />
   </head>
-  <body class="min-h-screen antialiased bg-canvas text-ink selection:bg-primary selection:text-on-primary font-sans">
+  <body transition:animate="none" class="min-h-screen antialiased bg-canvas text-ink selection:bg-primary selection:text-on-primary font-sans">
+    <GlobalToaster client:load />
     <slot />
   </body>
 </html>

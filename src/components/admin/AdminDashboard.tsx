@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Toaster } from 'sonner';
+
 import {
   useLegacyTable,
   getCoreRowModel,
@@ -10,6 +10,7 @@ import { flexRender } from '@tanstack/react-table';
 import type { LegacyColumnDef } from '@tanstack/react-table/legacy';
 import {
   Users,
+  UserCheck,
   FileText,
   DollarSign,
   ShieldCheck,
@@ -60,6 +61,7 @@ export interface TimeSeriesGroup {
 
 export interface AdminMetrics {
   totalUsers: number;
+  activeUsers14d?: number;
   totalPaidUsers: number;
   revenueIdr: number;
   revenueUsd: number;
@@ -70,6 +72,7 @@ export interface AdminMetrics {
 
 export interface AdminGraphData {
   userSignUps: TimeSeriesGroup;
+  activeUsers?: TimeSeriesGroup;
   revenue: TimeSeriesGroup;
   tokenAndAsk: TimeSeriesGroup;
 }
@@ -132,7 +135,7 @@ function AdminChartCard({
       const formatted = isDualMode
         ? dualMode === 'tokens'
           ? (pt.formattedValue || `${val.toLocaleString('id-ID')} tokens`)
-          : `${val.toLocaleString('id-ID')} /ask calls`
+          : `${val.toLocaleString('id-ID')} AI API calls`
         : (pt.formattedValue || (unitLabel ? `${val.toLocaleString('id-ID')} ${unitLabel}` : val.toLocaleString('id-ID')));
 
       return {
@@ -210,7 +213,7 @@ function AdminChartCard({
                     : 'text-body hover:text-ink'
                 }`}
               >
-                /ask calls
+                AI Calls
               </button>
             </div>
           </div>
@@ -458,7 +461,7 @@ export default function AdminDashboard({
 
   return (
     <div className="w-full max-w-[1680px] 2xl:max-w-[1760px] px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
+
 
       {/* 1. Header: Matching User Workspace / Settings / Bookmarks style */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
@@ -481,7 +484,7 @@ export default function AdminDashboard({
           Ringkasan Platform
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
           {/* Card 1: Total Users */}
           <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
             <div className="flex items-center justify-between text-body">
@@ -493,6 +496,21 @@ export default function AdminDashboard({
             <div className="mt-3.5">
               <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
                 {metrics.totalUsers}
+              </span>
+            </div>
+          </div>
+
+          {/* Card 2: Active Users (14d) */}
+          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+            <div className="flex items-center justify-between text-body">
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
+                Active Users (14d)
+              </span>
+              <UserCheck className="w-4 h-4 text-terminal-green" />
+            </div>
+            <div className="mt-3.5">
+              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
+                {metrics.activeUsers14d ?? 0}
               </span>
             </div>
           </div>
@@ -569,7 +587,13 @@ export default function AdminDashboard({
           Grafik Aktivitas
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <AdminChartCard
+            title="Active Users (14d)"
+            icon={UserCheck}
+            dataGroup={graphData?.activeUsers}
+            unitLabel="active"
+          />
           <AdminChartCard
             title="User Sign Up"
             icon={TrendingUp}

@@ -44,6 +44,17 @@ export const bot = new Bot(token, {
   },
 });
 
+// Secara global nonaktifkan preview link / og-images / thumbnail link pada seluruh pesan bot
+bot.api.config.use(async (prev, method, payload, signal) => {
+  if (method === 'sendMessage' || method === 'editMessageText') {
+    (payload as any).link_preview_options = {
+      is_disabled: true,
+      ...((payload as any)?.link_preview_options || {}),
+    };
+  }
+  return await prev(method, payload, signal);
+});
+
 /**
  * Hash raw API key using SHA-256 to compare with keyHash in api_keys table.
  */
@@ -64,6 +75,7 @@ export function generateApiKey(): { rawKey: string; keyHash: string } {
 export interface TelegramSendOptions {
   parse_mode?: 'Markdown' | 'HTML';
   reply_markup?: any;
+  link_preview_options?: { is_disabled?: boolean };
 }
 
 /**
@@ -93,21 +105,21 @@ async function sendSingleTelegramMessage(
   text: string,
   options?: TelegramSendOptions
 ): Promise<boolean> {
+  const mergedOptions: any = {
+    link_preview_options: { is_disabled: true },
+    ...options,
+  };
   try {
-    await bot.api.sendMessage(chatId, text, options);
+    await bot.api.sendMessage(chatId, text, mergedOptions);
     return true;
   } catch (error: any) {
-    if (options?.parse_mode) {
-      try {
-        await bot.api.sendMessage(chatId, text, {
-          reply_markup: options.reply_markup,
-        });
-        return true;
-      } catch (retryErr) {
-        console.error(`[Telegram] Retry plain text send failed:`, retryErr);
-      }
+    console.error(`[Telegram] Initial send failed to ${chatId}:`, error?.message || error);
+    try {
+      await bot.api.sendMessage(chatId, text);
+      return true;
+    } catch (retryErr: any) {
+      console.error(`[Telegram] Retry plain text send failed:`, retryErr?.message || retryErr);
     }
-    console.error(`[Telegram] Failed to send message to ${chatId}:`, error);
     return false;
   }
 }
@@ -159,22 +171,22 @@ export async function sendTelegramMessageWithId(
     return { ok: true, messageId: 999999 };
   }
 
+  const mergedOptions: any = {
+    link_preview_options: { is_disabled: true },
+    ...options,
+  };
   try {
-    const sent = await bot.api.sendMessage(chatId, text, options);
+    const sent = await bot.api.sendMessage(chatId, text, mergedOptions);
     return { ok: true, messageId: sent.message_id };
   } catch (error: any) {
-    if (options?.parse_mode) {
-      try {
-        const sent = await bot.api.sendMessage(chatId, text, {
-          reply_markup: options.reply_markup,
-        });
-        return { ok: true, messageId: sent.message_id };
-      } catch (retryErr) {
-        console.error(`[Telegram] Retry plain text send failed:`, retryErr);
-      }
+    console.error(`[Telegram] Initial sendWithId failed to ${chatId}:`, error?.message || error);
+    try {
+      const sent = await bot.api.sendMessage(chatId, text);
+      return { ok: true, messageId: sent.message_id };
+    } catch (retryErr: any) {
+      console.error(`[Telegram] Retry plain text sendWithId failed:`, retryErr?.message || retryErr);
+      return { ok: false };
     }
-    console.error(`[Telegram] Failed to send message with ID to ${chatId}:`, error);
-    return { ok: false };
   }
 }
 
@@ -216,8 +228,12 @@ export async function editTelegramMessage(
     return true;
   }
 
+  const mergedOptions: any = {
+    link_preview_options: { is_disabled: true },
+    ...options,
+  };
   try {
-    await bot.api.editMessageText(chatId, messageId, text, options);
+    await bot.api.editMessageText(chatId, messageId, text, mergedOptions);
     return true;
   } catch (error: any) {
     if (options?.parse_mode) {

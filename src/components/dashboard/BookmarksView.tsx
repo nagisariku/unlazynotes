@@ -17,16 +17,31 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
 import { Button, SearchPill } from '../ui';
 import NewBookmarkModal from './NewBookmarkModal';
 import EditNoteModal from './EditNoteModal';
 import NoteDetailModal from './NoteDetailModal';
+import type { BookmarkType } from '../../db/schema';
+
+export const BOOKMARK_MACRO_CONFIG: Array<{
+  type: BookmarkType;
+  title: string;
+  id: string;
+}> = [
+  { type: 'tech_dev', title: 'Tech & Dev', id: 'section-tech-dev' },
+  { type: 'media_social', title: 'Media & Sosial', id: 'section-media-social' },
+  { type: 'work_docs', title: 'Dokumen & Kerja', id: 'section-work-docs' },
+  { type: 'places', title: 'Tempat & Lokasi', id: 'section-places' },
+  { type: 'shopping', title: 'Belanja & Produk', id: 'section-shopping' },
+  { type: 'reading_other', title: 'Bacaan & Lainnya', id: 'section-reading-other' },
+];
 
 export interface BookmarkItem {
   id: string;
   content: string;
   category?: string;
+  bookmarkType?: BookmarkType | string | null;
   specificTags?: string[] | null;
   source?: string | null;
   isPinned?: boolean;
@@ -175,7 +190,7 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
     }
   }
 
-  const notesText = item.content.replace(urlRegex, '').trim();
+  const notesText = item.content;
 
   return {
     raw: item,
@@ -183,7 +198,7 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
     domain,
     platform,
     thumbnail,
-    notes: notesText || primaryUrl || item.content || 'Catatan bookmark',
+    notes: item.content || 'Catatan bookmark',
   };
 }
 
@@ -304,7 +319,7 @@ function BookmarkCard({
       className={`group relative text-left break-inside-avoid [break-inside:avoid-column] transition-all overflow-hidden ${
         isExpanded && isMobile
           ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-          : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-2xl border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline md:last:border-b bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none mb-0 md:mb-4'
+          : 'px-2.5 py-3 md:p-3.5 rounded-xl md:rounded-2xl border-0 md:border md:border-hairline bg-canvas/40 md:bg-canvas cursor-pointer select-none mb-1 md:mb-4'
       }`.trim()}
     >
       {/* DESKTOP VIEW (md: and up) */}
@@ -651,17 +666,6 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
     return bookmarks.map(parseBookmark);
   }, [bookmarks]);
 
-  // Helper to extract canonical tags for a parsed bookmark (capped at 5 to prevent tag sprawl)
-  const getBookmarkTags = (b: ParsedBookmark): string[] => {
-    if (b.raw.specificTags && b.raw.specificTags.length > 0) {
-      return b.raw.specificTags
-        .map((t) => t.toLowerCase().trim())
-        .filter(Boolean)
-        .slice(0, 5);
-    }
-    return [b.platform !== 'other' ? b.platform : 'article'];
-  };
-
   // Filtered bookmarks based on search query
   const filteredList = useMemo(() => {
     return parsedList.filter((b) => {
@@ -683,100 +687,22 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
     return filteredList.filter((b) => Boolean(b.raw.isPinned));
   }, [filteredList]);
 
-  // Tag frequency across all bookmarks matching current search
-  const tagFrequency = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredList.forEach((b) => {
-      const tags = getBookmarkTags(b);
-      const uniqueTags = Array.from(new Set(tags));
-      uniqueTags.forEach((t) => {
-        counts[t] = (counts[t] || 0) + 1;
-      });
-    });
-    return counts;
-  }, [filteredList]);
-
-  // Top tags qualifying for distinct showcase sections (count >= 2, top 5)
-  const qualifyingTags = useMemo(() => {
-    const PLATFORM_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
-      youtube: YoutubeIcon,
-      github: GithubIcon,
-      twitter: TwitterIcon,
-      x: TwitterIcon,
-      linkedin: LinkedinIcon,
-      instagram: InstagramIcon,
-    };
-
-    const PLATFORM_LABELS: Record<string, string> = {
-      youtube: 'YouTube',
-      github: 'GitHub',
-      twitter: 'Twitter',
-      x: 'Twitter (X)',
-      linkedin: 'LinkedIn',
-      instagram: 'Instagram',
-      article: 'Artikel & Web',
-    };
-
-    return Object.entries(tagFrequency)
-      .filter(([tagKey, count]) => count >= 2)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([tagKey, count]) => {
-        const Icon = PLATFORM_ICONS[tagKey] || null;
-        const displayLabel = PLATFORM_LABELS[tagKey] || (tagKey.startsWith('#') ? tagKey : `#${tagKey}`);
-        return {
-          key: tagKey,
-          label: displayLabel,
-          count,
-          Icon,
-        };
-      });
-  }, [tagFrequency]);
-
-  // Curated showcase gallery sections (Top tags + Koleksi Lainnya)
+  // Curated showcase gallery sections purely based on AI note.bookmarkType
   const curatedSections = useMemo(() => {
-    const sections: Array<{
-      key: string;
-      title: string;
-      items: ParsedBookmark[];
-      Icon: React.ComponentType<{ className?: string }> | null;
-      id: string;
-    }> = [];
-
-    const coveredBookmarkIds = new Set<string>();
-
-    // 1. Top Tags / Platform Showcase Sections
-    qualifyingTags.forEach((t) => {
+    return BOOKMARK_MACRO_CONFIG.map((conf) => {
       const items = filteredList.filter((b) => {
-        const tags = getBookmarkTags(b);
-        return tags.includes(t.key);
+        const itemType = b.raw.bookmarkType || 'reading_other';
+        return itemType === conf.type;
       });
-      if (items.length > 0) {
-        items.forEach((b) => coveredBookmarkIds.add(b.raw.id));
-        sections.push({
-          key: t.key,
-          title: t.label,
-          items,
-          Icon: t.Icon,
-          id: `section-${t.key}`,
-        });
-      }
-    });
-
-    // 2. Remaining / Low-frequency Bookmarks grouped into "Koleksi Lainnya"
-    const otherBookmarks = filteredList.filter((b) => !coveredBookmarkIds.has(b.raw.id));
-    if (otherBookmarks.length > 0) {
-      sections.push({
-        key: 'other',
-        title: 'Koleksi Lainnya',
-        items: otherBookmarks,
+      return {
+        key: conf.type,
+        title: conf.title,
+        items,
         Icon: Bookmark,
-        id: 'section-other',
-      });
-    }
-
-    return sections;
-  }, [qualifyingTags, filteredList]);
+        id: conf.id,
+      };
+    }).filter((sec) => sec.items.length > 0);
+  }, [filteredList]);
 
   // Compact TOC Items (Max 6–8 items synchronized with showcase sections)
   const tocItems = useMemo(() => {
@@ -894,7 +820,7 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
         body: JSON.stringify({ isPinned: nextPinned }),
       });
       if (!res.ok) throw new Error();
-      toast.success(nextPinned ? 'Bookmark disematkan 📌' : 'Semat dilepas');
+      toast.success(nextPinned ? 'Bookmark disematkan' : 'Semat dilepas');
     } catch {
       setBookmarks((prev) =>
         prev.map((b) => (b.id === item.id ? { ...b, isPinned: item.isPinned } : b))
@@ -991,8 +917,6 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
 
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
-
       {/* 1. Header: Title, Export Button, and Subtitle */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
         <div className="flex items-center gap-3">

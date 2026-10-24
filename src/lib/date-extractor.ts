@@ -72,6 +72,23 @@ export function extractAllDates(content: string, refDate: Date = new Date()): Ex
     }
   }
 
+  // 2b. Date range with named month (e.g., "10-14 November 2026", "10 - 14 Nov", "10 s/d 14 November")
+  const dateRangeNamedMonthRegex = /\b(\d{1,2})\s*(?:-|–|—|\s+s\/?d\s+|\s+sd\s+|\s+sampai\s+|\s+to\s+)\s*(\d{1,2})\s+(jan(?:uari|uary)?|feb(?:ruari|ruary)?|mar(?:et|ch)?|apr(?:il)?|mei|may|jun(?:i|e)?|jul(?:i|y)?|agu(?:stus)?|aug(?:ust)?|sep(?:t(?:ember)?)?|okt(?:ober)?|oct(?:ober)?|nov(?:ember)?|des(?:ember)?|dec(?:ember)?)(?:[\s/-]+(\d{4}))?\b/gi;
+  while ((match = dateRangeNamedMonthRegex.exec(text)) !== null) {
+    const startDay = parseInt(match[1], 10);
+    const endDay = parseInt(match[2], 10);
+    const monthKey = match[3].toLowerCase();
+    const m = MONTH_MAP[monthKey];
+    const y = match[4] ? parseInt(match[4], 10) : refYear;
+
+    if (m !== undefined && startDay >= 1 && endDay <= 31 && startDay <= endDay) {
+      for (let d = startDay; d <= endDay; d++) {
+        const date = new Date(y, m, d, 9, 0, 0);
+        entries.push({ date, rawMatch: match[0], index: match.index });
+      }
+    }
+  }
+
   // 3. Format: Day + Named Month (e.g., "24 Okt", "24 Oktober 2026", "24th October")
   const namedMonthRegex = /\b(?:tgl|tanggal\s+)?(\d{1,2})(?:st|nd|rd|th)?[\s/-]+(jan(?:uari|uary)?|feb(?:ruari|ruary)?|mar(?:et|ch)?|apr(?:il)?|mei|may|jun(?:i|e)?|jul(?:i|y)?|agu(?:stus)?|aug(?:ust)?|sep(?:t(?:ember)?)?|okt(?:ober)?|oct(?:ober)?|nov(?:ember)?|des(?:ember)?|dec(?:ember)?)(?:[\s/-]+(\d{4}))?\b/g;
   while ((match = namedMonthRegex.exec(text)) !== null) {

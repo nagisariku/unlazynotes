@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import {
   CheckSquare,
   Plus,
   SlidersHorizontal,
 } from 'lucide-react';
 import { format, isToday, isThisWeek } from 'date-fns';
-import { Toaster, toast } from 'sonner';
+import { toast } from 'sonner';
 import { SearchPill } from '../ui';
 import NoteCard from './NoteCard';
 import NoteDetailModal from './NoteDetailModal';
@@ -83,7 +83,7 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
       });
 
       if (!res.ok) throw new Error('Gagal toggle pin');
-      toast.success(nextPinned ? 'Tugas disematkan ke atas 📌' : 'Semat dilepas');
+      toast.success(nextPinned ? 'Tugas disematkan ke atas' : 'Semat dilepas');
     } catch {
       setItems((prev) =>
         sortTodos(prev.map((i) => (i.id === id ? { ...i, isPinned: !nextPinned } : i)))
@@ -159,9 +159,7 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
 
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-36 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
-      <Toaster position="bottom-right" />
-
-      {/* 1. Top Header (Title and Subtitle) */}
+            {/* 1. Top Header (Title and Subtitle) */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
         <div className="flex items-center gap-3">
           <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">

@@ -2,22 +2,29 @@ import { NoteTagResultSchema, type NoteTagResult } from './ai/types';
 import { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST } from './ai/sanitizer';
 import { routeNoteIntent, type DetectedModule } from './ai/router';
 import { processBookmarkNote } from './ai/modules/bookmark';
-import { processFinanceNote } from './ai/modules/finance';
+import { processFinanceNote, extractFinanceEntries, heuristicExtractFinance } from './ai/modules/finance';
 import { processCredentialNote } from './ai/modules/credential';
 import { processTodoNote } from './ai/modules/todo';
+import { processScheduleNote, parseScheduleDates, parseScheduleMetadata } from './ai/modules/schedule';
 import { processGeneralNote, enrichDualLayerTags } from './ai/modules/general';
+import { fetchLinkMetadata } from './link-enricher';
 
 // Export core types and schemas for backward compatibility
 export { NoteTagResultSchema, type NoteTagResult };
 export { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST };
 export { routeNoteIntent, type DetectedModule };
+export { parseScheduleDates, parseScheduleMetadata, extractFinanceEntries, heuristicExtractFinance };
 export * from './ai/taxonomy';
 
 /**
  * Heuristic fallback parser when AI provider is unreachable or for deterministic offline routing.
  * Follows the modular category handlers and reusable clustering formula.
  */
-export function heuristicTagNote(content: string, existingUserTags?: string[]): NoteTagResult {
+export function heuristicTagNote(
+  content: string,
+  existingUserTags?: string[],
+  baseDate: Date = new Date()
+): NoteTagResult {
   const text = content.trim();
   const lower = text.toLowerCase();
   const module = routeNoteIntent(content);
@@ -31,39 +38,8 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
       return processCredentialNote(content);
     case 'todo':
       return processTodoNote(content, existingUserTags);
-    case 'schedule': {
-      const enriched = enrichDualLayerTags([], 'schedule', text);
-      const tags: string[] = [...enriched];
-
-      if (tags.length === 0) {
-        if (lower.includes('desain')) tags.push('desain');
-        if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
-        else if (lower.includes('deadline') || lower.includes('tenggat')) tags.push('deadline');
-        else if (lower.includes('dokter')) tags.push('dokter');
-        else if (lower.includes('flight')) tags.push('flight');
-      }
-
-      if (tags.length === 0) {
-        // Extract concrete topic entity from schedule text if any (e.g. "tuweeb 2, tanggal 16" -> "tuweeb")
-        const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-        const nonTimeWords = words.filter(w =>
-          w.length >= 3 &&
-          !/^\d+$/.test(w) &&
-          !/^(jam|pukul|pagi|siang|sore|malam|besok|lusa|kemarin|tanggal|tgl|jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|senin|selasa|rabu|kamis|jumat|sabtu|minggu|hari|minggu|bulan|tahun)$/i.test(w)
-        );
-        if (nonTimeWords.length > 0) {
-          tags.push(...nonTimeWords.slice(0, 2));
-        } else {
-          tags.push('event');
-        }
-      }
-
-      return {
-        category: 'schedule',
-        specific_tags: sanitizeTags(tags, 'schedule', text, 5, existingUserTags),
-        source: null,
-      };
-    }
+    case 'schedule':
+      return processScheduleNote(content, baseDate, existingUserTags);
     case 'general':
     default: {
       // 1. Detect Scripture / Quotes / Prayers / Reflections -> reference or draft (NEVER todo)
@@ -132,28 +108,46 @@ export function heuristicTagNote(content: string, existingUserTags?: string[]): 
  */
 export async function generateNoteTags(
   content: string,
-  existingUserTags?: string[]
+  existingUserTags?: string[],
+  noteCreatedAt?: Date | string
 ): Promise<NoteTagResult> {
   const text = content.trim();
+  const baseDate = noteCreatedAt ? new Date(noteCreatedAt) : new Date();
   const urlRegex = /(https?:\/\/[^\s]+)/i;
   const isPureUrl = urlRegex.test(text) && text.replace(/(https?:\/\/[^\s]+)/gi, '').trim().length === 0;
 
-  if (isPureUrl) {
+  // Lightweight link metadata enrichment for bare/short URLs
+  let enrichedContent = content;
+  const urlMatch = text.match(urlRegex);
+  if (urlMatch && urlMatch[1] && text.length < 150) {
+    try {
+      const meta = await fetchLinkMetadata(urlMatch[1]);
+      if (meta?.title) {
+        enrichedContent = `${content}\nLink Content: Title: "${meta.title}", Summary: "${meta.description || ''}"`;
+      }
+    } catch {
+      // Non-fatal fallback
+    }
+  }
+
+  if (isPureUrl && enrichedContent === content) {
     return processBookmarkNote(content);
   }
 
   const result = await processGeneralNote(
-    content,
-    (fallbackText) => heuristicTagNote(fallbackText, existingUserTags),
-    existingUserTags
+    enrichedContent,
+    (fallbackText) => heuristicTagNote(fallbackText, existingUserTags, baseDate),
+    existingUserTags,
+    baseDate
   );
 
   // If the note was classified as bookmark and contains URLs, merge with bookmark module for rich platform & URL tags
   if (result.category === 'bookmark' && urlRegex.test(text)) {
     const bm = processBookmarkNote(content);
+    const bType = result.bookmarkType || bm.bookmarkType || 'reading_other';
     return {
       category: 'bookmark',
-      source: bm.source,
+      source: bm.source || result.source,
       specific_tags: sanitizeTags(
         [...bm.specific_tags, ...result.specific_tags],
         'bookmark',
@@ -161,7 +155,42 @@ export async function generateNoteTags(
         5,
         existingUserTags
       ),
+      bookmark_type: bType,
+      bookmarkType: bType,
     };
+  }
+
+  if (result.category === 'bookmark' && !result.bookmarkType) {
+    result.bookmarkType = 'reading_other';
+    result.bookmark_type = 'reading_other';
+  }
+
+  if (result.category === 'credential' && !result.credentialType) {
+    result.credentialType = 'other';
+    result.credential_type = 'other';
+  }
+
+  // If classified as schedule, ensure schedule and schedule_dates are populated
+  if (result.category === 'schedule') {
+    const meta = parseScheduleMetadata(content, baseDate);
+    if (!result.schedule) {
+      result.schedule = meta;
+    }
+    const combinedDates = Array.from(
+      new Set([...(result.schedule?.dates || []), ...(result.schedule_dates || []), ...meta.dates])
+    ).sort();
+    result.schedule.dates = combinedDates;
+    result.schedule_dates = combinedDates;
+  }
+
+  // If classified as finance, ensure expenses, income, and debt are extracted
+  if (result.category === 'finance') {
+    if (!result.expenses || !result.income || !result.debt) {
+      const fin = await extractFinanceEntries(content);
+      result.expenses = result.expenses && result.expenses.length > 0 ? result.expenses : fin.expenses;
+      result.income = result.income && result.income.length > 0 ? result.income : fin.income;
+      result.debt = result.debt && result.debt.length > 0 ? result.debt : fin.debt;
+    }
   }
 
   return result;

@@ -8,9 +8,11 @@ export interface PrimaryNavProps {
 export const PrimaryNav: React.FC<PrimaryNavProps> = ({ children, className = '' }) => {
   return (
     <nav
-      className={`bg-canvas text-ink text-body-sm-strong rounded-none h-14 border-b border-hairline px-6 flex items-center justify-between sticky top-0 z-40  ${className}`.trim()}
+      className={`w-full bg-surface-soft text-ink text-body-sm-strong rounded-none border-0 sticky top-0 z-40 ${className}`.trim()}
     >
-      {children}
+      <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 h-16 flex items-center justify-between">
+        {children}
+      </div>
     </nav>
   );
 };
@@ -23,7 +25,7 @@ export interface FooterSectionProps {
 export const FooterSection: React.FC<FooterSectionProps> = ({ children, className = '' }) => {
   return (
     <footer
-      className={`bg-canvas text-body text-caption-sm rounded-none px-6 py-8 border-t border-hairline  ${className}`.trim()}
+      className={`bg-canvas text-body text-caption-sm rounded-none px-6 py-8 border-t border-hairline ${className}`.trim()}
     >
       {children}
     </footer>

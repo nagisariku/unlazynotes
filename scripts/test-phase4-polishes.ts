@@ -35,13 +35,11 @@ async function runPolishesTestSuite() {
 
   // --- 1. Dock Menu (Tags, Pin, dan Sync, Tanpa Tutup Menu) ---
   console.log('--- 1. Testing Persistent Dock Menu ---');
-  assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'keyboard is array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 2, 'Dock menu has 2 rows');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row 1 has 2 buttons (Tags & Pin)');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '🏷 Tags', 'Button 1 is 🏷 Tags');
+    assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'keyboard is array');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 1, 'Dock menu has 1 row');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row 1 has 2 buttons (Read & Pin)');
+  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '📖 Read', 'Button 1 is 📖 Read');
   assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1].length === 1, 'Row 2 has 1 button (Sync)');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[1][0].text === '🔄 Sync', 'Button 3 is 🔄 Sync');
   const hasTutupMenu = PERSISTENT_DOCK_KEYBOARD.keyboard.some((r) =>
     r.some((b) => b.text.includes('Tutup Menu'))
   );

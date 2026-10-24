@@ -11,8 +11,10 @@ import {
   ExternalLink,
   FileIcon,
   ImageIcon,
+  Calendar,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
+import { toast } from 'sonner';
 import { id as localeId } from 'date-fns/locale';
 import { extractBookmarkThumbnail } from '../../lib/utils';
 
@@ -27,13 +29,21 @@ export interface NoteCardItem {
   isPinned?: boolean;
   isProcessed?: boolean;
   targetDate?: string | Date | null;
+  scheduleDates?: string[] | null;
+  schedule?: any;
+  expenses?: any;
+  income?: any;
+  debt?: any;
   attachments?: any;
+  expiresAt?: string | Date | null;
+  isArchived?: boolean;
   createdAt: string | Date;
 }
 
 interface NoteCardProps {
   note: NoteCardItem;
   onDelete: (id: string) => void;
+  onRestore?: (note: NoteCardItem) => void;
   onTagClick?: (tag: string) => void;
   onTogglePin?: (id: string, isPinned: boolean) => void;
   onEdit?: (note: NoteCardItem) => void;
@@ -44,11 +54,15 @@ interface NoteCardProps {
   variant?: 'default' | 'timeline';
   maxHeight?: string;
   showTags?: boolean;
+  isSelectable?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 export default function NoteCard({
   note,
   onDelete,
+  onRestore,
   onTagClick,
   onTogglePin,
   onEdit,
@@ -59,8 +73,11 @@ export default function NoteCard({
   variant = 'default',
   maxHeight,
   showTags = true,
+  isSelectable = false,
+  isSelected = false,
+  onToggleSelect,
 }: NoteCardProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [isPinning, setIsPinning] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -88,6 +105,34 @@ export default function NoteCard({
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
   const urls = Array.from(new Set(note.content.match(urlRegex) || []));
 
+  const targetDateBadge = useMemo(() => {
+    let dateStr = '';
+    if (note.targetDate) {
+      if (typeof note.targetDate === 'string') {
+        dateStr = note.targetDate.split('T')[0];
+      } else if (note.targetDate instanceof Date) {
+        dateStr = note.targetDate.toISOString().split('T')[0];
+      }
+    } else if (note.scheduleDates && note.scheduleDates.length > 0) {
+      dateStr = note.scheduleDates[0];
+    } else if (note.schedule?.dates && note.schedule.dates.length > 0) {
+      dateStr = note.schedule.dates[0];
+    }
+    if (!dateStr) return null;
+
+    try {
+      const d = parseISO(dateStr);
+      const formatted = format(d, 'd MMM yyyy', { locale: localeId });
+      const isRecurring = Boolean(note.schedule?.isRecurring);
+      return {
+        text: formatted,
+        isRecurring,
+      };
+    } catch {
+      return null;
+    }
+  }, [note.targetDate, note.scheduleDates, note.schedule]);
+
   const isBookmark =
     note.category?.toLowerCase() === 'bookmark' || note.category?.toLowerCase() === 'bookmarks';
 
@@ -104,22 +149,23 @@ export default function NoteCard({
     setImgError(false);
   }, [thumbnail]);
 
-  const handleDelete = async (e: React.MouseEvent) => {
+    const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirmDelete) {
       setConfirmDelete(true);
       setTimeout(() => setConfirmDelete(false), 3000);
       return;
     }
-    setIsDeleting(true);
+    // Optimistic delete: remove instantly from UI
+    onDelete(note.id);
     try {
       const res = await fetch(`/api/notes/${note.id}`, { method: 'DELETE' });
-      if (res.ok) {
-        onDelete(note.id);
+      if (!res.ok) {
+        throw new Error('Gagal menghapus');
       }
     } catch {
-      setIsDeleting(false);
-      setConfirmDelete(false);
+      onRestore?.(note);
+      toast.error('Gagal menghapus catatan');
     }
   };
 
@@ -163,6 +209,12 @@ export default function NoteCard({
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
+    if (isSelectable) {
+      e.stopPropagation();
+      onToggleSelect?.(note.id);
+      return;
+    }
+
     const currentIsMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
 
     // If user is selecting/blocking text, do NOT collapse or trigger click
@@ -183,6 +235,11 @@ export default function NoteCard({
 
   const isTimeline = variant === 'timeline';
   const effectiveMaxHeight = isMobile && isExpanded ? undefined : maxHeight;
+  const hasHeaderLeft =
+    (showCategory && note.category) ||
+    targetDateBadge ||
+    isSelectable ||
+    Boolean(note.expiresAt);
 
   return (
     <div
@@ -190,11 +247,15 @@ export default function NoteCard({
       className={
         isTimeline
           ? `group relative flex flex-col justify-between ${
+              isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
+            } ${
               isExpanded && isMobile
                 ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-                : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-lg border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline md:last:border-b bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none'
+                : 'px-2.5 py-3 md:p-3.5 rounded-xl md:rounded-lg border-0 md:border md:border-hairline bg-canvas/40 md:bg-canvas cursor-pointer select-none mb-1 md:mb-3.5'
             } text-left break-inside-avoid mb-0 md:mb-3.5 w-full overflow-hidden transition-all ${className}`.trim()
           : `group relative flex flex-col justify-between p-3.5 rounded-lg border ${
+              isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
+            } ${
               isExpanded && isMobile
                 ? '!bg-zinc-100 border-hairline-strong shadow-xs cursor-default select-text'
                 : 'border-hairline bg-canvas hover:border-hairline-strong cursor-pointer select-none'
@@ -203,107 +264,159 @@ export default function NoteCard({
     >
       <div className="w-full max-w-full min-w-0">
         {/* Card Header: Category badge on left, Action buttons on right */}
-        <div className={`flex items-center ${showCategory && note.category ? 'justify-between' : 'justify-end'} gap-1.5 mb-2.5 select-none`}>
-          {showCategory && note.category && (
-            <div className="flex items-center min-w-0">
-              <span
-                className={`px-2 py-0.5 rounded-full ${
-                  isExpanded && isMobile
-                    ? 'bg-zinc-100 border border-hairline-strong text-ink'
-                    : 'bg-surface-soft text-ink'
-                } text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]`}
-              >
-                {note.category}
-              </span>
+        <div
+          className={`flex items-center ${
+            hasHeaderLeft ? 'justify-between' : 'justify-end'
+          } gap-1.5 mb-2.5 select-none`}
+        >
+          {hasHeaderLeft && (
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              {isSelectable && (
+                <div
+                  className="cursor-pointer p-0.5 mr-0.5 flex items-center justify-center"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelect?.(note.id);
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(isSelected)}
+                    onChange={() => {}}
+                    className="w-4 h-4 rounded border-hairline-strong text-primary accent-primary cursor-pointer align-middle"
+                  />
+                </div>
+              )}
+              {showCategory && note.category && (
+                <span
+                  className={`px-2 py-0.5 rounded-full ${
+                    isExpanded && isMobile
+                      ? 'bg-zinc-100 border border-hairline-strong text-ink'
+                      : 'bg-surface-soft text-ink'
+                  } text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]`}
+                >
+                  {note.category}
+                </span>
+              )}
+              {note.expiresAt && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                    isExpanded && isMobile
+                      ? 'bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300'
+                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                  } text-[10px] font-mono font-medium`}
+                >
+                  ⏳ Temp
+                </span>
+              )}
+              {targetDateBadge && (
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                    isExpanded && isMobile
+                      ? 'bg-zinc-100 border border-hairline-strong text-ink'
+                      : 'bg-surface-soft text-ink'
+                  } text-[10px] font-mono font-medium`}
+                >
+                  <Calendar className="w-3 h-3 text-mute shrink-0" />
+                  <span>{targetDateBadge.text}</span>
+                  {targetDateBadge.isRecurring && (
+                    <span className="text-[9px] text-primary uppercase font-bold tracking-wider ml-0.5">
+                      (Rutin)
+                    </span>
+                  )}
+                </span>
+              )}
             </div>
           )}
 
           {/* Action Buttons Toolbar */}
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {/* Pin Button */}
-            <button
-              type="button"
-              onClick={handleTogglePinInternal}
-              disabled={isPinning}
-              className={`p-1.5 rounded-full cursor-pointer transition-colors ${
-                note.isPinned
-                  ? 'text-primary bg-surface-soft'
-                  : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70 group-hover:opacity-100'
-              }`}
-              title={note.isPinned ? 'Lepas Pin' : 'Pin Catatan'}
-              aria-label="Pin Button"
-            >
-              {isPinning ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : note.isPinned ? (
-                <PinOff className="w-4 h-4 fill-current" />
-              ) : (
-                <Pin className="w-4 h-4" />
+          {!isSelectable && (
+            <div className="flex items-center gap-1 shrink-0 ml-auto">
+              {/* Pin Button */}
+              <button
+                type="button"
+                onClick={handleTogglePinInternal}
+                disabled={isPinning}
+                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
+                  note.isPinned
+                    ? 'text-primary bg-surface-soft'
+                    : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70 group-hover:opacity-100'
+                }`}
+                title={note.isPinned ? 'Lepas Pin' : 'Pin Catatan'}
+                aria-label="Pin Button"
+              >
+                {isPinning ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : note.isPinned ? (
+                  <PinOff className="w-4 h-4 fill-current" />
+                ) : (
+                  <Pin className="w-4 h-4" />
+                )}
+              </button>
+
+              {/* Salin (Copy) Button - visible when expanded on mobile */}
+              {isExpanded && isMobile && (
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  title="Salin isi catatan"
+                  aria-label="Salin catatan"
+                >
+                  {copied ? <Check className="w-4 h-4 text-terminal-green" /> : <Copy className="w-4 h-4" />}
+                </button>
               )}
-            </button>
 
-            {/* Salin (Copy) Button - visible when expanded on mobile */}
-            {isExpanded && isMobile && (
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                title="Salin isi catatan"
-                aria-label="Salin catatan"
-              >
-                {copied ? <Check className="w-4 h-4 text-terminal-green" /> : <Copy className="w-4 h-4" />}
-              </button>
-            )}
-
-            {/* Edit Button - visible when expanded on mobile */}
-            {isExpanded && isMobile && onEdit && (
-              <button
-                type="button"
-                onClick={handleEdit}
-                className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                title="Edit catatan"
-                aria-label="Edit catatan"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-            )}
-
-            {/* Delete Button */}
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className={`p-1.5 rounded-full cursor-pointer transition-colors ${
-                confirmDelete
-                  ? 'text-terminal-red bg-terminal-red/10'
-                  : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70 group-hover:opacity-100'
-              }`}
-              title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus catatan'}
-              aria-label="Delete Button"
-            >
-              {isDeleting ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Trash2 className="w-4 h-4" />
+              {/* Edit Button - visible when expanded on mobile */}
+              {isExpanded && isMobile && onEdit && (
+                <button
+                  type="button"
+                  onClick={handleEdit}
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  title="Edit catatan"
+                  aria-label="Edit catatan"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
               )}
-            </button>
 
-            {/* Collapse Button - visible when expanded on mobile */}
-            {isExpanded && isMobile && (
+              {/* Delete Button */}
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsExpanded(false);
-                }}
-                className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                title="Ciutkan catatan"
-                aria-label="Ciutkan catatan"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
+                  confirmDelete
+                    ? 'bg-terminal-red text-white hover:bg-terminal-red/90'
+                    : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70 group-hover:opacity-100'
+                }`}
+                title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus catatan'}
+                aria-label="Delete Button"
               >
-                <ChevronUp className="w-4 h-4" />
+                {isDeleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
               </button>
-            )}
-          </div>
+
+              {/* Collapse Button - visible when expanded on mobile */}
+              {isExpanded && isMobile && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(false);
+                  }}
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  title="Ciutkan catatan"
+                  aria-label="Ciutkan catatan"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Date and Time displayed at top when expanded on mobile */}
@@ -332,7 +445,7 @@ export default function NoteCard({
               : 'line-clamp-none'
           }`}
         >
-          {isBookmark ? cleanText : note.content}
+          {note.content}
         </div>
 
         {/* Bookmark OG Image Thumbnail (16:9, below notes, no extra border, no hover scale) */}

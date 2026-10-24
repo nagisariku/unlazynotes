@@ -47,9 +47,29 @@ export async function getOrFetchUserTags(userId: string): Promise<string[]> {
     columns: { specificTags: true },
   });
 
-  const uniqueTags = Array.from(new Set(userNotes.flatMap((n) => n.specificTags || [])));
-  setUserTagsCache(userId, uniqueTags);
-  return uniqueTags;
+  // Hitung frekuensi kemunculan setiap tag untuk menentukan tag paling aktif
+  const tagFrequencyMap = new Map<string, number>();
+  for (const n of userNotes) {
+    if (Array.isArray(n.specificTags)) {
+      for (const rawTag of n.specificTags) {
+        if (typeof rawTag === 'string' && rawTag.trim()) {
+          const tag = rawTag.trim();
+          tagFrequencyMap.set(tag, (tagFrequencyMap.get(tag) || 0) + 1);
+        }
+      }
+    }
+  }
+
+  // Urutkan tag berdasarkan frekuensi kemunculan tertinggi (Most Frequent Tags)
+  const sortedTags = Array.from(tagFrequencyMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([tag]) => tag);
+
+  // Ambil maksimal Top 60 tag paling aktif untuk memori AI
+  const topTags = sortedTags.slice(0, 60);
+
+  setUserTagsCache(userId, topTags);
+  return topTags;
 }
 
 /**

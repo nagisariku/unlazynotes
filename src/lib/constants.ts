@@ -19,9 +19,16 @@ export const VALID_SOURCES = [
   'tiktok',
   'github',
   'article',
+  'maps',
+  'drive',
+  'figma',
+  'spotify',
+  'marketplace',
+  'docs',
+  'web',
 ] as const;
 
-export type Source = (typeof VALID_SOURCES)[number];
+export type Source = (typeof VALID_SOURCES)[number] | (string & {});
 
 export const SECURITY_DISCLAIMER =
   '🔒 *Keamanan & Private Vault:*\nUntuk data rahasia/kredensial, selalu gunakan perintah `/secure <kunci> <isi>` agar dienkripsi AES-256-GCM secara terisolasi dari AI.';

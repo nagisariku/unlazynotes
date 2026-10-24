@@ -1,11 +1,13 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { notes, type NoteCategory } from '@/db/schema';
+import { notes, type NoteCategory, type ScheduleMetadata, type ExpenseEntry, type IncomeEntry, type DebtEntry, type BookmarkType, type CredentialType } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { CATEGORIES } from '@/lib/constants';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import { extractEarliestScheduleDate } from '@/lib/date-extractor';
+import { heuristicExtractFinance, extractFinanceEntries } from '@/lib/ai';
+import { normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
 
 export const prerender = false;
 
@@ -52,6 +54,11 @@ export const GET: APIRoute = async ({ params, request }) => {
         isPinned: note.isPinned,
         isProcessed: note.isProcessed,
         targetDate: note.targetDate ? note.targetDate.toISOString() : null,
+        scheduleDates: note.scheduleDates,
+        schedule: note.schedule,
+        expenses: note.expenses,
+        income: note.income,
+        debt: note.debt,
         attachments: note.attachments,
         createdAt: note.createdAt.toISOString(),
       },
@@ -144,6 +151,13 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       targetDate: Date | null;
       attachments: any;
       vaultKey: string | null;
+      scheduleDates: string[];
+      schedule: ScheduleMetadata;
+      expenses: ExpenseEntry[];
+      income: IncomeEntry[];
+      debt: DebtEntry[];
+      bookmarkType: BookmarkType | null;
+      credentialType: CredentialType | null;
     }> = {};
 
     if (vaultKey !== undefined) {
@@ -204,10 +218,117 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       updates.targetDate = extractEarliestScheduleDate(textToInspect);
     }
 
+    if (!updates.targetDate && !existing.targetDate && updates.scheduleDates && updates.scheduleDates.length > 0) {
+      const parsed = new Date(`${updates.scheduleDates[0]}T00:00:00Z`);
+      if (!isNaN(parsed.getTime())) updates.targetDate = parsed;
+    }
+
     if (attachments !== undefined) {
       if (Array.isArray(attachments)) {
         updates.attachments = attachments;
       }
+    }
+
+    if (body.schedule !== undefined && typeof body.schedule === 'object') {
+      const dates = Array.isArray(body.schedule.dates)
+        ? body.schedule.dates.map(String).filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        : [];
+      updates.schedule = {
+        dates,
+        isRecurring: Boolean(body.schedule.isRecurring),
+        recurrenceRule: body.schedule.recurrenceRule,
+      };
+      updates.scheduleDates = dates;
+    } else if (body.scheduleDates !== undefined && Array.isArray(body.scheduleDates)) {
+      const dates = body.scheduleDates.map(String).filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+      updates.scheduleDates = dates;
+      updates.schedule = {
+        dates,
+        isRecurring: false,
+      };
+    }
+
+    if (body.expenses !== undefined && Array.isArray(body.expenses)) {
+      updates.expenses = body.expenses.map((e: any) => ({
+        item: String(e.item || 'Pengeluaran').trim(),
+        amount: Number(e.amount) || 0,
+        currency: e.currency || 'IDR',
+      }));
+    }
+
+    if (body.income !== undefined && Array.isArray(body.income)) {
+      updates.income = body.income.map((i: any) => ({
+        source: String(i.source || 'Pemasukan').trim(),
+        amount: Number(i.amount) || 0,
+        currency: i.currency || 'IDR',
+      }));
+    }
+
+    if (body.debt !== undefined && Array.isArray(body.debt)) {
+      updates.debt = body.debt.map((d: any) => ({
+        type: d.type === 'payable' ? 'payable' : 'receivable',
+        person: String(d.person || 'Seseorang').trim(),
+        amount: Number(d.amount) || 0,
+        notes: d.notes ? String(d.notes) : undefined,
+        isSettled: Boolean(d.isSettled || false),
+      }));
+    }
+
+    if (body.bookmarkType !== undefined) {
+      updates.bookmarkType = body.bookmarkType ? normalizeBookmarkType(body.bookmarkType) : null;
+    }
+
+    if (body.credentialType !== undefined) {
+      updates.credentialType = body.credentialType ? normalizeCredentialType(body.credentialType) : null;
+    }
+
+    // 0-Token Lightweight Settlement Toggle
+    if (body.debtIndex !== undefined && typeof body.isSettled === 'boolean') {
+      const currentDebt = Array.isArray(existing.debt) ? [...existing.debt] : [];
+      if (currentDebt[body.debtIndex]) {
+        currentDebt[body.debtIndex] = {
+          ...currentDebt[body.debtIndex],
+          isSettled: body.isSettled,
+        };
+        updates.debt = currentDebt;
+      }
+    }
+
+    // Otomatisasi Background: Jika kategori finance dan teks konten berubah (atau beralih ke finance),
+    // otomatis lakukan pemetaan cepat dan picu background re-ekstraksi secara hening
+    const effectiveCategory = updates.category || existing.category;
+    const existingCleanContent = existing.isEncrypted
+      ? decryptSecret(existing.content, user.id)
+      : existing.content;
+    const isContentChanged = content !== undefined && content.trim() !== existingCleanContent;
+
+    if (
+      effectiveCategory === 'finance' &&
+      (isContentChanged || (updates.category === 'finance' && existing.category !== 'finance'))
+    ) {
+      const targetText = content !== undefined ? content.trim() : existingCleanContent;
+      const quickFin = heuristicExtractFinance(targetText);
+      updates.expenses = quickFin.expenses;
+      updates.income = quickFin.income;
+      updates.debt = quickFin.debt;
+
+      // Picu re-ekstraksi finance di background secara hening (deepseek-v4.1-flash)
+      extractFinanceEntries(targetText)
+        .then(async (fin) => {
+          if (fin.expenses.length > 0 || fin.income.length > 0 || fin.debt.length > 0) {
+            await db
+              .update(notes)
+              .set({
+                expenses: fin.expenses,
+                income: fin.income,
+                debt: fin.debt,
+              })
+              .where(eq(notes.id, id));
+          }
+        })
+        .catch((err) => {
+          console.warn('[Background Finance Re-extract Error]:', err);
+        });
     }
 
     // Human Intent Trumps AI: Any explicit edit from web locks the note from future AI batch sync overwrites
@@ -239,6 +360,13 @@ export const PATCH: APIRoute = async ({ params, request }) => {
           source: updated.source,
           isProcessed: updated.isProcessed,
           targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
+          scheduleDates: updated.scheduleDates,
+          schedule: updated.schedule,
+          expenses: updated.expenses,
+          income: updated.income,
+          debt: updated.debt,
+          bookmarkType: updated.bookmarkType,
+          credentialType: updated.credentialType,
           attachments: updated.attachments,
           createdAt: updated.createdAt.toISOString(),
         },
@@ -256,4 +384,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
     });
   }
 };
+
+export const PUT: APIRoute = PATCH;
 

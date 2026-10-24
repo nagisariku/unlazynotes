@@ -14,6 +14,25 @@ Per Rule 10 of the Antigravity Constitution, each entry must contain the followi
 
 <!-- Entries are prepended below this line -->
 
+### 2026-10-25: Snippet Pagination Group Chunk Desync & Missing Empty Review State Navigation
+- **Date & Incident:** `/read` displayed fewer snippet entries (e.g., 6 items) while inline buttons rendered up to 10, skipping notes (4), (5), (9), (10). Additionally, `/review` empty state lacked a navigation button to return to `/tags`.
+- **Root Cause:** When updating pagination group chunk size from 3 to 5, the loop increment was changed to `i += 5`, but the inner slice remained `snippets.slice(i, i + 3)` instead of `slice(i, i + 5)`. Additionally, the empty state branch in `handleReviewCommand` did not attach the `[ 🏷 Kembali ke Tags ]` inline keyboard.
+- **Impact:** Users experienced text omissions on list commands while pagination buttons were present, and lacked an in-place button to return to the tags menu when review was empty.
+- **Preventive Invariant:**
+  1. Chunked array partitioning must tie slice length strictly to the step stride or chunk constant (`slice(i, i + CHUNK_SIZE)`).
+  2. Test assertions for paginated snippets must iterate and verify the presence of every single indexed item (1 through N) rather than only boundary samples.
+  3. Empty state views on conversational Telegram interfaces must always offer direct return or fallback navigation action buttons.
+
+
+### 2026-10-24: Finance Page UI Layout Regressed to Unconstrained Fullwidth Divs Instead of Design System
+- **Date & Incident:** User critiqued the newly generated Finance page for using unconstrained full-width wrappers and div-based list containers instead of following the established design system tokens and Admin dashboard layout.
+- **Root Cause:** Scaffolding `FinanceView.tsx` initially applied `max-w-full`, unconstrained full-width search input, and custom div-based cards rather than strictly matching [`AdminDashboard.tsx`](file:///d:/Code/unlazynotes/src/components/admin/AdminDashboard.tsx) container max-width (`max-w-[1680px] 2xl:max-w-[1760px]`), exact typography tokens, Recharts card structure, and semantic `<table>` elements.
+- **Impact:** The Finance page stretched awkwardly across ultra-wide desktop viewports and lacked consistency with the rest of the application.
+- **Preventive Invariant:**
+  1. New dashboard pages must strictly inherit container max-width (`max-w-[1680px] 2xl:max-w-[1760px]`) and layout conventions from [`AdminDashboard.tsx`](file:///d:/Code/unlazynotes/src/components/admin/AdminDashboard.tsx).
+  2. Tabular datasets must use semantic HTML `<table>` with sticky `<thead>`, explicit typography tokens, and fixed-height scroll boundaries.
+  3. Interactive filters must integrate with [`NotesFilterPopover.tsx`](file:///d:/Code/unlazynotes/src/components/dashboard/NotesFilterPopover.tsx) rather than ad-hoc inline dropdowns.
+
 ### 2026-10-20: Unsolicited Modification of Vault SAAS Directory
 - **Date & Incident:** Agent modified files and created a new note inside `G:\My Drive\Obsidian\NagisaVault\Project\SAAS\` when asked to save notes to Obsidian.
 - **Root Cause:** Flawed assumption that "save to notes obsidian kita" applied to both skill definitions and project phase documentation under `Project/SAAS/`.

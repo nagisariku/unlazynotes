@@ -84,7 +84,7 @@ export const GENERAL_TAXONOMY: CanonicalTagDef[] = [
   },
   {
     canonical: 'health',
-    category: 'others',
+    category: 'random-yap',
     description: 'Health symptoms, medications, and wellness notes',
     aliases: {
       id: ['kesehatan', 'medis', 'gejala', 'obat', 'paracetamol', 'panadol', 'bodrex', 'migrain', 'pusing', 'demam', 'flu', 'batuk', 'vitamin', 'apotek', 'dokter', 'klinik'],
