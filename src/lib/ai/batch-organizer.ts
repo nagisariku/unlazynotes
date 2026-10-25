@@ -1,13 +1,12 @@
 import { recordAiUsage } from '../ai-usage';
 import { db } from '../../db';
 import { notes, type NoteCategory, type BookmarkType, type CredentialType } from '../../db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, or } from 'drizzle-orm';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
 import { sanitizeTags } from './sanitizer';
 import { getOrFetchUserTags, invalidateUserTagsCache, resetUnorganizedCount } from '../cache';
 import { extractEarliestScheduleDate } from '../date-extractor';
-import { heuristicExtractFinance } from './modules/finance';
 import { parseScheduleMetadata } from './modules/schedule';
 import { normalizeBookmarkType, normalizeCredentialType } from './modules/general';
 import { fetchLinkMetadata } from '../link-enricher';
@@ -90,54 +89,108 @@ export function normalizeNominal(val: any): number {
 }
 
 /**
- * Petakan sinonim AI ke 9 kategori kanonik UnlazyNotes
+ * Petakan sinonim AI ke 9 kategori kanonik UnlazyNotes (Pure-LLM Authority).
+ * Menggunakan Universal Modal Mapping lintas seluruh profesi/latar belakang pengguna.
  */
-/**
- * Petakan sinonim AI ke 9 kategori kanonik UnlazyNotes (Pure-LLM Authority)
- */
-export function normalizeCategory(raw: string, _content?: string): NoteCategory {
-  const c = String(raw || '').toLowerCase().trim();
+export function normalizeCategory(raw: string | undefined, _content?: string): NoteCategory {
+  if (!raw) return 'others';
+  const c = String(raw).toLowerCase().trim();
 
-  // Pemetaan sinonim LLM
-  if (['todo', 'task', 'tasks', 'action', 'actions', 'checklist', 'backlog', 'chores', 'job', 'shopping_list', 'shopping'].includes(c)) {
-    return 'todo';
-  }
-  if (['finance', 'expense', 'expenses', 'spending', 'income', 'money', 'bill', 'bills', 'payment', 'transaksi', 'loan', 'debt'].includes(c)) {
-    return 'finance';
-  }
-  if (['schedule', 'event', 'events', 'appointment', 'calendar', 'meeting', 'jadwal'].includes(c)) {
-    return 'schedule';
-  }
-  if (['random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought', 'uneg-uneg', 'opini', 'symptom', 'symptoms', 'feeling', 'mood', 'reflection', 'health-log'].includes(c)) {
-    return 'random-yap';
-  }
-  if (['bookmark', 'link', 'url', 'web', 'site', 'reading'].includes(c)) {
-    return 'bookmark';
-  }
-  if (['credential', 'credentials', 'password', 'passwords', 'secret', 'secrets', 'auth', 'token', 'token-key', 'wifi'].includes(c)) {
-    return 'credential';
-  }
-  if (['draft', 'writing', 'article', 'doc', 'docs', 'spec', 'specification', 'document'].includes(c)) {
-    return 'draft';
-  }
-  if (['reference', 'recipe', 'quote', 'quotes', 'snippet', 'documentation', 'scripture'].includes(c)) {
-    return 'reference';
-  }
-  if (['others', 'other', 'idea', 'ideas', 'konsep', 'log', 'fitness', 'workout'].includes(c)) {
-    return 'others';
-  }
-
+  // 0. Kecocokan langsung dengan 9 pilar kanonik
   if (VALID_CATEGORIES.includes(c as NoteCategory)) {
     return c as NoteCategory;
   }
 
-  return 'others';
+  // 1. TODO: Kehendak aksi, tugas, perbaikan, rencana, persiapan, dan backlog lintas bidang apa pun
+  if ([
+    'todo', 'task', 'tasks', 'action', 'actions', 'checklist', 'backlog', 'chores', 'job',
+    'shopping_list', 'shopping', 'feature', 'features', 'software-development', 'development',
+    'dev', 'engineering', 'improvement', 'enhancement', 'idea', 'ideas', 'konsep', 'plan',
+    'planning', 'prep', 'preparation', 'assignment', 'tugas', 'pekerjaan', 'rencana',
+    'proyek', 'project', 'work', 'fix', 'bug', 'revisi', 'agenda_kerja'
+  ].includes(c)) {
+    return 'todo';
+  }
+
+  // 2. REFERENCE: Fakta objektif, data lookup, takaran, resep, pasal, dosis, spek teknis, rumus
+  if ([
+    'reference', 'recipe', 'resep', 'quote', 'quotes', 'snippet', 'documentation', 'scripture',
+    'knowledge', 'data', 'fact', 'facts', 'formula', 'rumus', 'dosage', 'dosis', 'specification',
+    'spec', 'spek', 'info', 'informasi', 'guideline', 'aturan', 'pasal', 'law', 'code',
+    'cheatsheet', 'rekam-medis', 'medical-record', 'manual', 'panduan'
+  ].includes(c)) {
+    return 'reference';
+  }
+
+  // 3. DRAFT: Materi komunikasi luar, draf surat, artikel, proposal, pesan formal
+  if ([
+    'draft', 'writing', 'article', 'doc', 'docs', 'document', 'letter', 'surat', 'email',
+    'proposal', 'somasi', 'rujukan', 'caption', 'konten', 'content', 'script', 'naskah',
+    'notulensi', 'minutes', 'memo'
+  ].includes(c)) {
+    return 'draft';
+  }
+
+  // 4. SCHEDULE: Dimensi waktu, janji temu, acara kalender, rutinitas, tenggat
+  if ([
+    'schedule', 'event', 'events', 'appointment', 'calendar', 'meeting', 'jadwal', 'sidang',
+    'shift', 'jaga', 'deadline', 'tenggat', 'rutinitas', 'routine'
+  ].includes(c)) {
+    return 'schedule';
+  }
+
+  // 5. FINANCE: Nilai ekonomi riil, pengeluaran, pemasukan, utang/piutang, anggaran
+  if ([
+    'finance', 'expense', 'expenses', 'spending', 'income', 'money', 'bill', 'bills',
+    'payment', 'transaksi', 'loan', 'debt', 'keuangan', 'gaji', 'honor', 'upah', 'fee',
+    'budget', 'kas', 'anggaran'
+  ].includes(c)) {
+    return 'finance';
+  }
+
+  // 6. RANDOM-YAP: Refleksi subjektif internal, sensasi fisik/gejala tubuh, mood, review bebas
+  if ([
+    'random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought',
+    'uneg-uneg', 'opini', 'symptom', 'symptoms', 'feeling', 'mood', 'reflection', 'health-log',
+    'gejala', 'keluhan', 'review', 'diary', 'catatan-hati'
+  ].includes(c)) {
+    return 'random-yap';
+  }
+
+  // 7. BOOKMARK: Pointer tautan eksternal / URL web
+  if ([
+    'bookmark', 'link', 'url', 'web', 'site', 'reading', 'tautan', 'website'
+  ].includes(c)) {
+    return 'bookmark';
+  }
+
+  // 8. CREDENTIAL: Sandi, PIN, Wi-Fi, kunci akses, nomor identitas resmi
+  if ([
+    'credential', 'credentials', 'password', 'passwords', 'secret', 'secrets', 'auth',
+    'token', 'token-key', 'wifi', 'sandi', 'rekening', 'pin', 'kredensial'
+  ].includes(c)) {
+    return 'credential';
+  }
+
+  // 9. OTHERS: Noise acak, SMS OTP, teks rusak tanpa substansi
+  if ([
+    'others', 'other', 'noise', 'otp', 'corrupted', 'sampah', 'acak', 'unstructured'
+  ].includes(c)) {
+    return 'others';
+  }
+
+  // Fallback pengaman: Catatan riil dari profesi spesifik tidak boleh dibuang ke 'others'
+  return 'todo';
 }
 
 export async function organizeUserNotes(userId: string): Promise<OrganizedBatchResult> {
-  // 1. Ambil seluruh catatan unorganized user terurut kronologis
+  // 1. Ambil seluruh catatan unorganized user terurut kronologis (isProcessed false atau category others)
   const unorganizedNotes = await db.query.notes.findMany({
-    where: and(eq(notes.userId, userId), eq(notes.isProcessed, false)),
+    where: and(
+      eq(notes.userId, userId),
+      eq(notes.isArchived, false),
+      or(eq(notes.isProcessed, false), eq(notes.category, 'others'))
+    ),
     orderBy: [asc(notes.createdAt)],
   });
 
@@ -152,7 +205,7 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
 
   const existingUserTags = await getOrFetchUserTags(userId);
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
+  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   // Strict Fail-Fast: API key wajib ada dan valid
@@ -170,44 +223,49 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
 
   const userTagContext =
     existingUserTags && existingUserTags.length > 0
-      ? `\nUSER EXISTING TAG MEMORY (Prioritize reusing these tags over inventing new synonyms):\n${JSON.stringify(
-          existingUserTags.slice(0, 60)
-        )}\n`
+      ? `\nEXISTING USER TAGS (Reuse when relevant):\n${JSON.stringify(existingUserTags.slice(0, 40))}\n`
       : '';
 
-  const systemPrompt = `You are an automated backend JSON database structuring API for UnlazyNotes.
-Respond ONLY with a valid JSON Array. Do not include markdown code block syntax (no \`\`\`json), no introduction, and no commentary.
-Your entire response must be parseable with JSON.parse().
+  const systemPrompt = `You are the core semantic intelligence engine for UnlazyNotes.
+Analyze the array of raw notes and return a strict JSON array:
+[
+  {
+    "id": string,
+    "category": "bookmark" | "schedule" | "finance" | "credential" | "todo" | "draft" | "reference" | "random-yap" | "others",
+    "specific_tags": string[], // 2 to 4 high-value lowercase-with-hyphens tags
+    "source": string | null, // platform domain (maps, github, youtube, drive, etc.) or null
+    "bookmarkType": "tech_dev" | "media_social" | "work_docs" | "places" | "shopping" | "reading_other" | null,
+    "credentialType": "account" | "network" | "identity_finance" | "license" | "other" | null,
+    "schedule": { "dates": string[], "isRecurring": boolean, "recurrenceRule"?: object } | null,
+    "expenses": Array<{ "item": string, "amount": number, "currency": string }> | null,
+    "income": Array<{ "source": string, "amount": number, "currency": string }> | null,
+    "debt": Array<{ "type": "payable" | "receivable", "person": string, "amount": number, "notes"?: string }> | null
+  }
+]
 
-The "category" field MUST be EXACTLY ONE of these 9 canonical values (do NOT invent new categories):
-1. "bookmark": Any note with web link / URL (Shopee, YouTube, Medium, Maps, GitHub). Source is the platform name.
-2. "schedule": Calendar events, dates, specific clock times ("jam 3 sore"), recurring routines ("badminton tiap selasa"). Return "schedule": {"dates": ["YYYY-MM-DD"], "isRecurring": boolean, "recurrenceRule"?: {...}}.
-3. "finance": Money, purchases, spending, food/drinks with prices, income, debt/loans.
-   - Convert all nominals to integers (e.g. 20k -> 20000, 100k -> 100000, 5rb -> 5000, 3.5jt -> 3500000).
-   - "expenses": array of {"item": string, "amount": number, "currency": "IDR"} for everyday spending/purchases.
-   - "income": array of {"source": string, "amount": number, "currency": "IDR"} for salary, fees, payments received.
-   - "debt": array of {"type": "payable"|"receivable", "person": string, "amount": number, "notes"?: string}.
-     * type "receivable": when we lend money / pay for someone ("Talangin makan siang Rendy 45rb", "ubed minjem 100k").
-     * type "payable": when we borrow money / owe someone ("Pinjem uang Doni 200rb buat servis motor").
-     * CRITICAL: Debts MUST go into "debt", NEVER into "expenses"!
-4. "credential": Passwords, Wi-Fi credentials (SSID & password), bank account numbers ("nomor rekening bca..."), NIK/KK, API keys. NOTE: Tasks to renew credentials without secret values (e.g. "perpanjang sim bawa ktp") are "todo"!
-5. "todo": Actionable tasks, errands, food orders ("pesen martabak manis gojek"), follow-up messages ("chat rizky tanya proposal"), groceries shopping list.
-6. "draft": Outgoing message drafts ("Draf chat izin sakit..."), email drafts, captions.
-7. "reference": Static lookups, recipes, code snippets, holy scriptures/verses (Quran, hadith, quotes). Scriptures & quotes are ALWAYS "reference" (NEVER "todo")!
-8. "random-yap": Internal reflections, personal thoughts, shower thoughts, moods, body & health sensations/symptoms ("asam lambung agak perih...", "migrain minum obat", "pinggang pegal kebanyakan duduk...", "burnout banget hari ini..."), honest subjective reviews ("resto X rating 6/10") WITHOUT monetary transactions and WITHOUT actionable tasks.
-9. "others": Workout repetition logs ("10k langkah keliling komplek", "leg day 4 set squat"), raw creative ideas ("ide konten...", "ide fitur..."), OTP codes, mixed forwards without single focus, ambiguous text fragments.
+9 PRIMARY INTENT CATEGORIES (Classify strictly by user's core intent):
+- bookmark: Pointer/URL to external internet/apps (maps, docs, articles, media, wishlist).
+- schedule: Time-anchored events (dates, relative days, deadlines, routines, travel tickets).
+- finance: Economic value & money flow (actual expenses, income, debt/loans, split bills).
+- credential: Authentication keys, logins, wifi, serial keys, and official identity/bank numbers (pure text).
+- todo: Actionable tasks, follow-ups, shopping lists (groceries), and packing errands.
+- draft: Content drafted for external audiences (messages, emails, captions, meeting minutes).
+- reference: Static factual data, sizes, recipes, tech configs, and tracking/policy numbers.
+- random-yap: Internal world (emotions, physical/health logs, subjective reviews, reflections).
+- others: Mixed, ambiguous, or multi-idea noise without a single clear focus.
 
-Macro Types for Bookmarks & Credentials:
-- If category is "bookmark", output "bookmark_type" (must be one of: "tech_dev" | "media_social" | "work_docs" | "places" | "shopping" | "reading_other").
-- If category is "credential", output "credential_type" (must be one of: "account" | "network" | "identity_finance" | "license" | "other").
+DISAMBIGUATION HEURISTICS:
+- URL is primary subject -> bookmark
+- Monetary transaction/debt -> finance
+- Action/task to execute -> todo
+- Time/date execution -> schedule
+- Shopping lists with estimated prices (not yet spent) -> todo
+- Casual food/snack purchases (cimin, cilok, nasgor, martabak, kopi, etc.) -> finance expenses with [food] tag, NOT debt
+- Money borrowed/lent with person names (minjem, pinjam, utang, talangin) -> finance debt with person name
 
-Tags ("specific_tags"): Array of 2 to 4 domain-aware tags (lowercase-with-hyphens).
-- specific_tags[0]: High-level domain umbrella (e.g. food, drink, tech, work, finance, debt, meeting, shopping, health, travel, quran, quote, idea).
-- specific_tags[1..]: Specific entities, brand, person name.
-- For debts: ALWAYS include "debt" and person name!
-- NO action verbs as tags (NO chat, beli, bayar, kirim, tanya, minum, pesen).
-- NO currency codes as tags (NO idr, rp, usd, dollar, tax, pajak).
-${userTagContext}`;
+TAGGING RULES:
+- Exactly 2 to 4 tags: [1 specific entity/topic] + [1 high-level domain umbrella (tech, food, health, etc.)].
+- Use lowercase-with-hyphens, max 20 chars per tag. Never repeat the category name.${userTagContext}`;
 
   // FASE 1: Proses seluruh chunk di memori (Strict Fail-Fast)
   // Jika salah satu chunk gagal (AI error / parse error), proses langsung berhenti dan lempar exception
@@ -256,52 +314,7 @@ ${userTagContext}`;
       })
     );
 
-    const prompt = `Return a JSON array classifying each of these notes:
-${JSON.stringify(payload)}
-
-Format examples:
-[
-  {
-    "id": "1",
-    "category": "finance",
-    "specific_tags": ["food", "nasi-padang", "bensin", "kopi"],
-    "source": null,
-    "expenses": [
-      {"item": "nasi padang", "amount": 35000, "currency": "IDR"},
-      {"item": "bensin shell", "amount": 50000, "currency": "IDR"},
-      {"item": "kopi", "amount": 20000, "currency": "IDR"}
-    ],
-    "income": [],
-    "debt": []
-  },
-  {
-    "id": "2",
-    "category": "finance",
-    "specific_tags": ["freelance", "landing-page", "pak-budi"],
-    "source": null,
-    "expenses": [],
-    "income": [{"source": "fee pembuatan landing page dari pak budi", "amount": 3500000, "currency": "IDR"}],
-    "debt": []
-  },
-  {
-    "id": "3",
-    "category": "finance",
-    "specific_tags": ["debt", "rendy", "food"],
-    "source": null,
-    "expenses": [],
-    "income": [],
-    "debt": [{"type": "receivable", "person": "Rendy", "amount": 45000, "notes": "Talangin makan siang Rendy"}]
-  },
-  {
-    "id": "4",
-    "category": "finance",
-    "specific_tags": ["debt", "doni", "motorcycle"],
-    "source": null,
-    "expenses": [],
-    "income": [],
-    "debt": [{"type": "payable", "person": "Doni", "amount": 200000, "notes": "Pinjem uang Doni buat servis motor darurat"}]
-  }
-]`;
+        const prompt = `Classify this array of notes into a JSON array:\n${JSON.stringify(payload)}`;
 
     let responseText = '';
     try {
@@ -400,16 +413,6 @@ Format examples:
               };
             })
             .filter((d: any) => d.amount > 0);
-        }
-
-        // Safety net: jika finance terdeteksi tapi AI tidak mengekstrak nominal, gunakan modul heuristik
-        if ((!cleanExpenses || cleanExpenses.length === 0) &&
-            (!cleanIncome || cleanIncome.length === 0) &&
-            (!cleanDebt || cleanDebt.length === 0)) {
-          const fin = heuristicExtractFinance(note.content);
-          cleanExpenses = fin.expenses && fin.expenses.length > 0 ? fin.expenses : undefined;
-          cleanIncome = fin.income && fin.income.length > 0 ? fin.income : undefined;
-          cleanDebt = fin.debt && fin.debt.length > 0 ? fin.debt : undefined;
         }
 
         // Deduplicate debt from expenses to prevent double-counting

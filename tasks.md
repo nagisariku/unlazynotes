@@ -1,27 +1,44 @@
-# Persistent Task Checklist: Smart Auto-Cleaner, Link Metadata Enricher, & Bulk Cleaning Experience
+# Persistent Task Checklist: Anti-Others AI Sync & Telegram Bot Navigation Overhaul
 
-- [x] 1. Database Schema & Migration (`src/db/schema.ts`)
-  - [x] Add `expiresAt` (timestamp with tz, nullable) and `isArchived` (boolean, default false, not null) to `notes` table
-  - [x] Execute migration to ensure columns `expires_at` and `is_archived` exist in PostgreSQL database
-- [x] 2. Background / Scheduled Cleanup Logic (`src/lib/cleaner.ts`)
-  - [x] Implement `autoArchiveExpiredNotes(): Promise<number>` in `src/lib/cleaner.ts`
-  - [x] Hook `autoArchiveExpiredNotes()` into dashboard index SSR and relevant sync points
-  - [x] Update dashboard queries to filter `eq(notes.isArchived, false)`
-- [x] 3. Telegram Command `/temp <isi_catatan>` (`src/lib/telegram-handler.ts`)
-  - [x] Add `/temp <content>` handler setting `expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)`
-  - [x] Add brief confirmation response `Saved (Temp 7d) • <kategori>` or i18n equivalent
-  - [x] Add `/temp <isi>` command hint in `/help` and `/start`
-- [x] 4. Lightweight Link Metadata Enricher (`src/lib/link-enricher.ts`)
-  - [x] Implement `fetchLinkMetadata(url)` with YouTube oEmbed and lightweight OG/head HTML parser (<25KB, 3s timeout)
-  - [x] Connect `fetchLinkMetadata` to AI bookmark classification/tagging in `src/lib/ai/` to enrich prompt for bare/minimal URLs
-- [x] 5. Bulk API Endpoint (`src/pages/api/notes/bulk.ts`)
-  - [x] Implement `POST /api/notes/bulk` for `action: 'archive' | 'restore' | 'delete'` with `noteIds: string[]`
-  - [x] Invalidate user tags cache and unorganized count on bulk actions
-- [x] 6. Bulk Cleaning Experience Web UI (`NotesTimeline.tsx` & `NoteCard.tsx`)
-  - [x] Add `[ 🧹 Kelola Catatan ]` toggle button in `NotesTimeline.tsx` header
-  - [x] Render checkboxes on note cards in manage mode
-  - [x] Add quick filter chips (`Semua`, `⏳ Kadaluwarsa / Temp`, `📅 Selesai > 1 Bulan`)
-  - [x] Add floating action toolbar at bottom (`X catatan dipilih`, `[ Arsipkan Semua ]`, `[ Hapus Permanen ]`, `[ Batal ]`)
-- [x] 7. Verification & Typecheck
+- [x] 1. Anti-"Others" AI Classification & Sync Mechanism
+  - [x] Update `src/lib/ai/router.ts`: Generalize action intent detection across broad domains (action verbs & structured backlog syntax) without rigid UI component hardcoding
+  - [x] Update `src/lib/ai/modules/general.ts`: Replace prompt-specific unlazynotes UI examples with broad domain examples (repair/home, office/audit, web project, study assignment)
+  - [x] Update `src/lib/ai/batch-organizer.ts`: Universal actionable intent rules and anti-others fail-safe definition across all real-world domains
+  - [x] Update `src/lib/ai/modules/todo.ts`: Remove hardcoded repo name and expand action verbs in fallback word extraction
+  - [x] Update `/review` in `src/lib/telegram-handler.ts`: Allow reviewing and re-syncing notes categorized as `others`
+- [x] 2. Telegram Bot: Dock Removal & Command List Registration
+  - [x] In `scripts/bot-polling.ts`, register comprehensive commands via `bot.api.setMyCommands` (`start`, `read`, `pin`, `tags`, `review`, `vault`, `search`, `ask`, `help`)
+  - [x] In `src/lib/telegram-handler.ts`, replace `PERSISTENT_DOCK_KEYBOARD` with `{ remove_keyboard: true }` / dismiss dock
+  - [x] Remove `"⚡️ UnlazyNotes active. Dock menu ready below."` / `"⚡️ UnlazyNotes aktif..."` greeting message on `/start`
+- [x] 3. Telegram Bot: Global Back Button Navigation & Menu Buttons
+  - [x] Update `START_HELP_MENU_KEYBOARD`: 4 buttons (Row 1: `📖 Read`, `📋 Review`; Row 2: `🏷 Tags`, `⭐️ Pin`)
+  - [x] Add callback handlers: `menu:start` (returns to start/help) and `menu:pin` (opens pin list)
+  - [x] Update `buildPaginationKeyboard`:
+    - `tags`: `[ 🏷 Kembali ke Tags ]` (`menu:tags`)
+    - `review`: `[ 🔄 Sync All ] [ ◀️ Kembali ke Start ]` (`menu:start`)
+    - `read`, `pin`, `vault`, `search`: `[ ◀️ Kembali ke Start ]` (`menu:start`)
+  - [x] Update `buildCategoriesGridKeyboard`: add bottom button `[ ◀️ Kembali ke Start ]` (`menu:start`)
+  - [x] Update all empty states (`read_empty`, `pin_empty`, `review_empty`, `vault_empty`, `tags_none_found`, `tags_empty`, `search_empty`): include back button to start / tags
+- [x] 4. Telegram Bot: Fix `/tags <tag>` Detail Back Button Bug
+  - [x] Fix `queryVal` extraction in `note:view:`, `note:pin:`, `note:delete_confirm:`, `note:delete:`: fallback to `nav?.queryVal` if empty string extracted
+  - [x] Add empty `targetTag` safety guard in `page:tags:` to redirect to `menu:tags` instead of querying empty tag `[]`
+- [x] 5. Verification & Testing
   - [x] Run `npm run typecheck` (`tsc --noEmit`) to verify 0 errors
-  - [x] Run automated test script verifying migration, cleaner, enricher, bulk API, and `/temp`
+  - [x] Run automated test scripts and verify 100% pass
+- [x] 6. LLM Model Migration to `claude-haiku-5.5`
+  - [x] Benchmark 4 candidates (`claude-haiku-5.5`, `deepseek-v4.1-flash`, `glm-5.3-flashx`, `gpt-6-luna`)
+  - [x] Stress-test 3 models (`claude-haiku-5.5`, `glm-5.3-flash`, `glm-5.3-flashx`)
+  - [x] Update `.env` with `AI_MODEL_NAME=claude-haiku-5.5`
+  - [x] Update fallback defaults in `src/lib/` modules
+  - [x] Restart Telegram bot polling daemon with `claude-haiku-5.5`
+  - [x] Verify live note classification via `processGeneralNote`
+- [x] 7. System Prompt Token Optimization (>90% Reduction)
+  - [x] Backup `general.ts` and `batch-organizer.ts` to `.bak`
+  - [x] Implement First-Principles `COMPACT_SYSTEM_PROMPT` in `general.ts` and `batch-organizer.ts`
+  - [x] Validate input token consumption: reduced from 10.781 to 1.005 tokens (-90.68%)
+  - [x] Validate 8 hard edge cases: 100% PASS (8/8) on `claude-haiku-5.5`
+  - [x] Run `npm run typecheck`: 0 errors
+  - [x] Restart bot polling worker daemon
+
+## Authorized Test Modifications:
+- `scripts/test-phase4-polishes.ts` & `scripts/test-telegram-alignment.ts`: Updated to reflect dock menu removal (switch from reply keyboard to inline menu navigation) and `START_HELP_MENU_KEYBOARD` 4 buttons (`Read`, `Review`, `Tags`, `Pin`) per user request.

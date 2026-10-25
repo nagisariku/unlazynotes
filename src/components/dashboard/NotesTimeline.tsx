@@ -10,6 +10,10 @@ import {
   Plus,
   Sparkles,
   Loader2,
+  Archive,
+  ArchiveRestore,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import NoteCard from './NoteCard';
@@ -18,7 +22,7 @@ import EditNoteModal from './EditNoteModal';
 import QuickComposerModal from './QuickComposerModal';
 import NotesFilterPopover, { type FilterState } from './NotesFilterPopover';
 import { toast } from 'sonner';
-import { Button, SearchPill } from '../ui';
+import { Button, SearchPill, ConfirmDialog } from '../ui';
 
 export interface FeatureCardItem {
   title: string;
@@ -91,7 +95,6 @@ export default function NotesTimeline({
   // Manage Mode / Bulk Cleaning States
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
-  const [manageFilter, setManageFilter] = useState<'all' | 'temp' | 'old'>('all');
   const [isBulkLoading, setIsBulkLoading] = useState(false);
 
   // Quick Web Note Composer Modal State (textbox now a popup)
@@ -140,6 +143,7 @@ export default function NotesTimeline({
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
   const openedFromDetailRef = useRef(false);
   const [isSyncingAi, setIsSyncingAi] = useState(false);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
 
   // Horizontal Carousel Ref & Handlers for Pinned Shelf
   const pinnedCarouselRef = useRef<HTMLDivElement>(null);
@@ -387,14 +391,20 @@ export default function NotesTimeline({
     });
   };
 
-  const handleBulkAction = async (action: 'archive' | 'restore' | 'delete') => {
+  const handleBulkAction = (action: 'archive' | 'restore' | 'delete') => {
     if (selectedNoteIds.size === 0 || isBulkLoading) return;
-    const noteIds = Array.from(selectedNoteIds);
 
     if (action === 'delete') {
-      const ok = window.confirm(`Apakah Anda yakin ingin menghapus permanen ${noteIds.length} catatan ini?`);
-      if (!ok) return;
+      setIsBulkDeleteModalOpen(true);
+      return;
     }
+
+    executeBulkAction(action);
+  };
+
+  const executeBulkAction = async (action: 'archive' | 'restore' | 'delete') => {
+    if (selectedNoteIds.size === 0 || isBulkLoading) return;
+    const noteIds = Array.from(selectedNoteIds);
 
     setIsBulkLoading(true);
     const toastId = toast.loading(
@@ -409,6 +419,7 @@ export default function NotesTimeline({
     const backupNotes = [...notes];
     setNotes((prev) => prev.filter((n) => !selectedNoteIds.has(n.id)));
     setSelectedNoteIds(new Set());
+    setIsBulkDeleteModalOpen(false);
 
     try {
       const res = await fetch('/api/notes/bulk', {
@@ -507,20 +518,6 @@ export default function NotesTimeline({
   // Filter notes client-side
   const filteredNotes = useMemo(() => {
     return notes.filter((n) => {
-      // 0. Manage Filter (when in Manage Mode)
-      if (isManageMode) {
-        if (manageFilter === 'temp' && !n.expiresAt) {
-          return false;
-        }
-        if (manageFilter === 'old') {
-          const thirtyDaysAgo = new Date();
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-          if (new Date(n.createdAt) >= thirtyDaysAgo) {
-            return false;
-          }
-        }
-      }
-
       // 1. Search Query Multi-token Matching
       if (searchQuery.trim()) {
         const queryTokens = searchQuery
@@ -591,7 +588,7 @@ export default function NotesTimeline({
 
       return true;
     });
-  }, [notes, searchQuery, filters, isManageMode, manageFilter]);
+  }, [notes, searchQuery, filters, isManageMode]);
 
   // Helper to determine if note is uncategorized
   const isUncategorizedNote = (note: NoteItem) => {
@@ -768,58 +765,23 @@ export default function NotesTimeline({
       {/* Section: Action & Controls Row (Sticky on Mobile & Desktop, solid white background flush at top) */}
       <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5">
         <div className="flex items-center justify-between gap-2 w-full">
-          {/* Left / Middle: Manage Filter Options (Single row alongside search & filter) */}
+          {/* Left: Button 'Pilih Semua' (Only in Manage Mode) */}
           {isManageMode ? (
-            <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] shrink min-w-0 py-0.5">
-              <button
-                type="button"
-                onClick={() => setManageFilter('all')}
-                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                  manageFilter === 'all'
-                    ? 'bg-ink text-canvas'
-                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
-                }`}
-              >
-                Semua
-              </button>
-              <button
-                type="button"
-                onClick={() => setManageFilter('temp')}
-                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                  manageFilter === 'temp'
-                    ? 'bg-ink text-canvas'
-                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
-                }`}
-              >
-                Kadaluwarsa / Temp
-              </button>
-              <button
-                type="button"
-                onClick={() => setManageFilter('old')}
-                className={`h-10 px-4 rounded-full text-body-sm font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                  manageFilter === 'old'
-                    ? 'bg-ink text-canvas'
-                    : 'bg-surface-soft text-ink hover:bg-hairline/60'
-                }`}
-              >
-                Selesai &gt; 1 Bulan
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0) {
-                    setSelectedNoteIds(new Set());
-                  } else {
-                    setSelectedNoteIds(new Set(filteredNotes.map((n) => n.id)));
-                  }
-                }}
-                className="h-10 px-4 rounded-full text-body-sm font-medium bg-surface-soft hover:bg-hairline/60 text-ink cursor-pointer transition-colors whitespace-nowrap shrink-0"
-              >
-                {selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0
-                  ? 'Batal Pilih Semua'
-                  : 'Pilih Semua'}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0) {
+                  setSelectedNoteIds(new Set());
+                } else {
+                  setSelectedNoteIds(new Set(filteredNotes.map((n) => n.id)));
+                }
+              }}
+              className="h-10 px-3.5 sm:px-4 rounded-full text-caption-sm sm:text-body-sm font-medium bg-surface-soft hover:bg-hairline/60 text-ink cursor-pointer transition-colors whitespace-nowrap shrink-0 !border-0"
+            >
+              {selectedNoteIds.size === filteredNotes.length && filteredNotes.length > 0
+                ? 'Batal Pilih'
+                : 'Pilih Semua'}
+            </button>
           ) : (
             <div />
           )}
@@ -832,9 +794,8 @@ export default function NotesTimeline({
               onClick={() => {
                 setIsManageMode(!isManageMode);
                 setSelectedNoteIds(new Set());
-                setManageFilter('all');
               }}
-              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 transition-colors !border-0 ${
                 isManageMode
                   ? 'bg-primary text-on-primary'
                   : 'bg-surface-soft text-ink hover:bg-canvas'
@@ -1234,45 +1195,66 @@ export default function NotesTimeline({
 
       {/* Floating Bottom Toolbar for Bulk Manage (Design System: Paper-white, hairline border, standard typography) */}
       {isManageMode && selectedNoteIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-canvas text-ink border border-hairline shadow-lg rounded-full px-4 sm:px-5 py-2 flex items-center gap-2.5 sm:gap-3 select-none">
-          <span className="text-body-sm text-body font-normal whitespace-nowrap pl-1">
-            <strong className="text-ink font-semibold">{selectedNoteIds.size}</strong> dipilih
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-canvas text-ink border border-hairline shadow-lg rounded-full px-3.5 sm:px-5 py-2 flex items-center gap-2 sm:gap-3 select-none max-w-[calc(100vw-2rem)]">
+          <span className="text-body-sm text-body font-normal whitespace-nowrap pl-1 pr-1 flex items-center gap-1">
+            <strong className="text-ink font-semibold">{selectedNoteIds.size}</strong>
+            <span className="hidden sm:inline">dipilih</span>
           </span>
-          <div className="flex items-center gap-2 ml-1">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {filters.selectedCategories.includes('archived') ? (
               <button
                 type="button"
                 disabled={isBulkLoading}
                 onClick={() => handleBulkAction('restore')}
-                className="h-9 px-4 rounded-full text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+                className="h-9 w-9 sm:w-auto sm:px-4 rounded-full flex items-center justify-center gap-1.5 text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all !border-0"
+                title="Pulihkan Semua"
+                aria-label="Pulihkan Semua"
               >
-                {isBulkLoading ? 'Memproses...' : 'Pulihkan Semua'}
+                {isBulkLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ArchiveRestore className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Pulihkan Semua</span>
               </button>
             ) : (
               <button
                 type="button"
                 disabled={isBulkLoading}
                 onClick={() => handleBulkAction('archive')}
-                className="h-9 px-4 rounded-full text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+                className="h-9 w-9 sm:w-auto sm:px-4 rounded-full flex items-center justify-center gap-1.5 text-button-md font-medium bg-primary text-on-primary hover:bg-ink-deep active:scale-95 cursor-pointer disabled:opacity-50 transition-all !border-0"
+                title="Arsipkan Semua"
+                aria-label="Arsipkan Semua"
               >
-                {isBulkLoading ? 'Memproses...' : 'Arsipkan Semua'}
+                {isBulkLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Archive className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Arsipkan Semua</span>
               </button>
             )}
             <button
               type="button"
               disabled={isBulkLoading}
               onClick={() => handleBulkAction('delete')}
-              className="h-9 px-4 rounded-full text-button-md font-medium bg-surface-soft hover:bg-hairline/60 text-ink border border-hairline active:scale-95 cursor-pointer disabled:opacity-50 transition-all whitespace-nowrap"
+              className="h-9 w-9 sm:w-auto sm:px-4 rounded-full flex items-center justify-center gap-1.5 text-button-md font-medium bg-surface-soft hover:bg-terminal-red/10 hover:text-terminal-red text-ink active:scale-95 cursor-pointer disabled:opacity-50 transition-all !border-0"
+              title="Hapus Permanen"
+              aria-label="Hapus Permanen"
             >
-              Hapus Permanen
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Hapus Permanen</span>
             </button>
             <button
               type="button"
               disabled={isBulkLoading}
               onClick={() => setSelectedNoteIds(new Set())}
-              className="h-9 px-3.5 rounded-full text-button-md font-medium text-body hover:text-ink hover:bg-surface-soft active:scale-95 cursor-pointer transition-all whitespace-nowrap"
+              className="h-9 w-9 sm:w-auto sm:px-3 rounded-full flex items-center justify-center gap-1 text-button-md font-medium text-body hover:text-ink hover:bg-surface-soft active:scale-95 cursor-pointer transition-all !border-0"
+              title="Batal"
+              aria-label="Batal"
             >
-              Batal
+              <X className="w-4 h-4" />
+              <span className="hidden sm:inline text-caption-sm">Batal</span>
             </button>
           </div>
         </div>

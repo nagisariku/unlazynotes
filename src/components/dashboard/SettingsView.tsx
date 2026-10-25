@@ -18,7 +18,7 @@ import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import UpgradeModal from './UpgradeModal';
-import { Button } from '../ui';
+import { Button, ConfirmDialog } from '../ui';
 
 interface SettingsViewProps {
   user: {
@@ -52,6 +52,7 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
     apiKeyInfo?.telegramChatId || null
   );
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [isRegenerateConfirmOpen, setIsRegenerateConfirmOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [paymentBanner, setPaymentBanner] = useState<'success' | 'cancelled' | null>(null);
 
@@ -81,15 +82,12 @@ export default function SettingsView({ user, subscription, apiKeyInfo }: Setting
     }
   };
 
-  const handleRegenerate = async () => {
-    if (
-      !confirm(
-        'PERINGATAN: Membuat ulang API Key akan memutuskan koneksi bot Telegram yang sedang aktif. Anda harus menjalankan /login dengan key baru di Telegram. Lanjutkan?'
-      )
-    ) {
-      return;
-    }
+  const handleRegenerate = () => {
+    setIsRegenerateConfirmOpen(true);
+  };
 
+  const handleRegenerateConfirmed = async () => {
+    setIsRegenerateConfirmOpen(false);
     const toastId = toast.loading('Menerbitkan API Key baru...');
     setIsRegenerating(true);
     try {

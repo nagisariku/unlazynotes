@@ -20,7 +20,7 @@ export interface RecordAiUsageParams {
 export async function recordAiUsage({
   userId,
   feature,
-  model = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash',
+  model = process.env.AI_MODEL_NAME || 'claude-haiku-5.5',
   usage,
 }: RecordAiUsageParams): Promise<void> {
   try {

@@ -562,8 +562,8 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
         </div>
       </div>
 
-      {/* 3. Summary Stat Cards (Ringkasan Keuangan: max-width diperkecil dan padat) */}
-      <div className="space-y-3 mt-6 sm:mt-8 max-w-5xl">
+      {/* 3. Summary Stat Cards & Visual Analytics */}
+      <div className="space-y-4 mt-6 sm:mt-8 max-w-5xl">
         <h2 className="text-heading-md font-semibold text-ink font-sans">
           Ringkasan Keuangan
         </h2>
@@ -638,14 +638,9 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
             </div>
           </div>
         </div>
-      </div>
 
-      {/* 4. Visual Analytics: 2 Interactive Recharts Cards (max-width diperkecil agar proporsional) */}
-      <div className="mt-6 sm:mt-8 space-y-3 max-w-5xl">
-        <h2 className="text-heading-md font-semibold text-ink font-sans">
-          Grafik Arus Kas
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Visual Analytics: 2 Interactive Recharts Cards (directly below the 4 stat cards, without separate section title) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
           <FinanceChartCard
             title="Pengeluaran (Expenses)"
             icon={TrendingDown}
@@ -669,13 +664,15 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* Tabel 1: Pengeluaran (Expenses) */}
-          <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-            <div className="px-3.5 py-2.5 border-b border-hairline bg-surface-soft flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-0.5">
               <TrendingDown className="w-4 h-4 text-mute shrink-0" />
               <h3 className="text-caption-sm font-semibold text-ink font-sans">
                 Pengeluaran
               </h3>
             </div>
+
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
 
             <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
               <table className="w-full text-left text-caption-sm relative font-sans">
@@ -726,15 +723,18 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
               </table>
             </div>
           </div>
+          </div>
 
           {/* Tabel 2: Pemasukan (Income) */}
-          <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-            <div className="px-3.5 py-2.5 border-b border-hairline bg-surface-soft flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-0.5">
               <TrendingUp className="w-4 h-4 text-mute shrink-0" />
               <h3 className="text-caption-sm font-semibold text-ink font-sans">
                 Pemasukan
               </h3>
             </div>
+
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
 
             <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
               <table className="w-full text-left text-caption-sm relative font-sans">
@@ -787,8 +787,9 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           </div>
         </div>
       </div>
+      </div>
 
-      {/* 6. Section: Buku Pinjaman (Dipecah jadi 2 tabel terpisah: Piutang & Utang, dengan status Lunas 1-klik switch/checkbox) */}
+      {/* 5. Section: Buku Pinjaman (Dipecah jadi 2 tabel terpisah: Piutang & Utang, dengan status Lunas 1-klik switch/checkbox) */}
       <div className="mt-6 sm:mt-8 space-y-3 w-full max-w-6xl xl:max-w-7xl 2xl:max-w-[1560px]">
         <h2 className="text-heading-md font-semibold text-ink font-sans">
           Buku Pinjaman
@@ -796,13 +797,15 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
           {/* Tabel 1: Piutang (Receivable - Hak Tagih) */}
-          <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-            <div className="px-3.5 py-2.5 border-b border-hairline bg-surface-soft flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-0.5">
               <HandCoins className="w-4 h-4 text-mute shrink-0" />
               <h3 className="text-caption-sm font-semibold text-ink font-sans">
                 Piutang (Hak Tagih)
               </h3>
             </div>
+
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
 
             <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
               <table className="w-full text-left text-caption-sm relative font-sans">
@@ -890,15 +893,18 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
               </table>
             </div>
           </div>
+          </div>
 
           {/* Tabel 2: Utang (Payable - Kewajiban Bayar) */}
-          <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-            <div className="px-3.5 py-2.5 border-b border-hairline bg-surface-soft flex items-center gap-2">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-0.5">
               <HandCoins className="w-4 h-4 text-mute shrink-0" />
               <h3 className="text-caption-sm font-semibold text-ink font-sans">
                 Utang (Kewajiban Bayar)
               </h3>
             </div>
+
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
 
             <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
               <table className="w-full text-left text-caption-sm relative font-sans">
@@ -988,6 +994,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           </div>
         </div>
       </div>
+      </div>
 
       {/* Filter Modal Dialog (Bulan Ini, Bulan Lalu, Semua Waktu) */}
       <NotesFilterPopover
@@ -1033,7 +1040,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
       <button
         type="button"
         onClick={() => setIsCreateModalOpen(true)}
-        className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-on-primary shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer font-sans"
+        className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-on-primary shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer font-sans !border-0"
         title="Catat Keuangan Baru"
         aria-label="Catat Keuangan Baru"
       >

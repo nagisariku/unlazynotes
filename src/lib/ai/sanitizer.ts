@@ -126,6 +126,13 @@ export const BANNED_TAGS = new Set([
   'order',
   'pesen',
   'pesan',
+  'hapus',
+  'remove',
+  'delete',
+  'tambah',
+  'add',
+  'ubah',
+  'ganti',
   // Days of week and temporal markers (not tags)
   'senin',
   'selasa',

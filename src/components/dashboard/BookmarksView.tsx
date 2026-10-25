@@ -319,60 +319,12 @@ function BookmarkCard({
       className={`group relative text-left break-inside-avoid [break-inside:avoid-column] transition-all overflow-hidden ${
         isExpanded && isMobile
           ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-          : 'px-2.5 py-3 md:p-3.5 rounded-xl md:rounded-2xl border-0 md:border md:border-hairline bg-canvas/40 md:bg-canvas cursor-pointer select-none mb-1 md:mb-4'
+          : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-2xl border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline md:last:border-b bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none mb-0 md:mb-4'
       }`.trim()}
     >
       {/* DESKTOP VIEW (md: and up) */}
       <div className="hidden md:flex flex-col justify-between w-full h-full">
-        {/* Desktop Toolbar */}
-        <div
-          className="flex items-center justify-end gap-1.5 mb-2 select-none shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Pin Button */}
-          <button
-            type="button"
-            onClick={handleTogglePinInternal}
-            disabled={isPinning}
-            className={`p-1.5 rounded-full cursor-pointer transition-all ${
-              bm.raw.isPinned
-                ? 'text-primary bg-surface-soft opacity-100'
-                : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70 group-hover:opacity-100'
-            }`}
-            title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
-            aria-label="Pin Button"
-          >
-            {isPinning ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : bm.raw.isPinned ? (
-              <PinOff className="w-3.5 h-3.5 fill-current" />
-            ) : (
-              <Pin className="w-3.5 h-3.5" />
-            )}
-          </button>
-
-          {/* Delete Button */}
-          <button
-            type="button"
-            onClick={handleDeleteInternal}
-            disabled={isDeleting}
-            className={`p-1.5 rounded-full cursor-pointer transition-all ${
-              confirmDelete
-                ? 'text-terminal-red bg-terminal-red/10'
-                : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70 group-hover:opacity-100'
-            }`}
-            title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
-            aria-label="Delete Button"
-          >
-            {isDeleting ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="w-3.5 h-3.5" />
-            )}
-          </button>
-        </div>
-
-        {/* Desktop Notes Content */}
+        {/* Desktop Notes Content & Thumbnail */}
         <div className="flex flex-col flex-1 justify-start min-w-0">
           <p
             className={`text-body-sm font-normal text-ink leading-relaxed break-words [overflow-wrap:anywhere] select-none ${
@@ -381,20 +333,84 @@ function BookmarkCard({
           >
             {bm.notes}
           </p>
+
+          {/* Desktop Thumbnail Below Notes */}
+          {hasThumbnail && (
+            <div className="relative shrink-0 w-full aspect-video rounded-lg overflow-hidden bg-surface-soft mt-3">
+              <img
+                src={bm.thumbnail!}
+                alt={bm.notes}
+                loading="lazy"
+                className="w-full h-full object-cover"
+                onError={() => setImgError(true)}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Desktop Thumbnail Below Notes */}
-        {hasThumbnail && (
-          <div className="relative shrink-0 w-full aspect-video rounded-lg overflow-hidden bg-surface-soft mt-3">
-            <img
-              src={bm.thumbnail!}
-              alt={bm.notes}
-              loading="lazy"
-              className="w-full h-full object-cover"
-              onError={() => setImgError(true)}
-            />
+        {/* Desktop Bottom Toolbar (visible on hover) */}
+        <div
+          className={`flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none min-h-[26px] ${
+            confirmDelete
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100'
+          } transition-opacity duration-150`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Left: Category / Bookmark Badge */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            {bm.raw.category && (
+              <span className="px-2 py-0.5 rounded-full bg-surface-soft text-ink text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]">
+                {bm.raw.category}
+              </span>
+            )}
           </div>
-        )}
+
+          {/* Right: Actions */}
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
+            {/* Pin Button */}
+            <button
+              type="button"
+              onClick={handleTogglePinInternal}
+              disabled={isPinning}
+              className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+                bm.raw.isPinned
+                  ? 'text-primary bg-surface-soft !border-0'
+                  : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
+              }`}
+              title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
+              aria-label="Pin Button"
+            >
+              {isPinning ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : bm.raw.isPinned ? (
+                <PinOff className="w-3.5 h-3.5 fill-current" />
+              ) : (
+                <Pin className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            {/* Delete Button */}
+            <button
+              type="button"
+              onClick={handleDeleteInternal}
+              disabled={isDeleting}
+              className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+                confirmDelete
+                  ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
+                  : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
+              }`}
+              title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
+              aria-label="Delete Button"
+            >
+              {isDeleting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* MOBILE VIEW (< md) */}
@@ -402,94 +418,9 @@ function BookmarkCard({
         {/* If EXPANDED on Mobile */}
         {isExpanded && isMobile ? (
           <div className="w-full flex flex-col">
-            {/* Expanded Header Toolbar */}
-            <div
-              className="flex items-center justify-between gap-2 mb-2 select-none"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <span className="text-[11px] text-mute font-mono">
-                {formattedDate}
-              </span>
-
-              <div className="flex items-center gap-1 shrink-0 ml-auto">
-                {/* Pin Button */}
-                <button
-                  type="button"
-                  onClick={handleTogglePinInternal}
-                  disabled={isPinning}
-                  className={`p-1.5 rounded-full cursor-pointer transition-all ${
-                    bm.raw.isPinned
-                      ? 'text-primary bg-surface-soft opacity-100'
-                      : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70'
-                  }`}
-                  title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
-                  aria-label="Pin Button"
-                >
-                  {isPinning ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : bm.raw.isPinned ? (
-                    <PinOff className="w-3.5 h-3.5 fill-current" />
-                  ) : (
-                    <Pin className="w-3.5 h-3.5" />
-                  )}
-                </button>
-
-                {/* Copy Button */}
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                  title="Salin isi bookmark"
-                  aria-label="Salin bookmark"
-                >
-                  {copied ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
-                </button>
-
-                {/* Edit Button (Opens Edit Modal) */}
-                <button
-                  type="button"
-                  onClick={handleEditInternal}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                  title="Edit bookmark"
-                  aria-label="Edit bookmark"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-
-                {/* Delete Button */}
-                <button
-                  type="button"
-                  onClick={handleDeleteInternal}
-                  disabled={isDeleting}
-                  className={`p-1.5 rounded-full cursor-pointer transition-all ${
-                    confirmDelete
-                      ? 'text-terminal-red bg-terminal-red/10'
-                      : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70'
-                  }`}
-                  title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
-                  aria-label="Delete Button"
-                >
-                  {isDeleting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-
-                {/* Collapse Button */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsExpanded(false);
-                  }}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                  title="Ciutkan bookmark"
-                  aria-label="Ciutkan bookmark"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </button>
-              </div>
+            {/* Expanded Header: Date only */}
+            <div className="text-[11px] text-mute font-mono mb-2.5 select-none">
+              {formattedDate}
             </div>
 
             {/* Row with text on left, small OG thumbnail on top right */}
@@ -546,20 +477,114 @@ function BookmarkCard({
 
             {/* Specific Tags / Hashtags when expanded (warna teks sama seperti date & time: text-mute) */}
             {bm.raw.specificTags && bm.raw.specificTags.length > 0 && (
-              <div className="pt-2.5 flex flex-wrap items-center gap-2 select-none" onClick={(e) => e.stopPropagation()}>
-                {bm.raw.specificTags.map((tag) => (
-                  <span
-                    key={tag}
-                    onClick={() => onTagClick?.(tag)}
-                    className="text-caption-sm text-mute hover:text-ink font-sans font-medium cursor-pointer transition-colors"
+                <div className="pt-2.5 flex flex-wrap items-center gap-2 select-none" onClick={(e) => e.stopPropagation()}>
+                  {bm.raw.specificTags.map((tag) => (
+                    <span
+                      key={tag}
+                      onClick={() => onTagClick?.(tag)}
+                      className="text-caption-sm text-mute hover:text-ink font-sans font-medium cursor-pointer transition-colors"
+                    >
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Expanded Bottom Toolbar */}
+              <div
+                className="flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                  {bm.raw.category && (
+                    <span className="px-2 py-0.5 rounded-full bg-zinc-100 border border-hairline-strong text-ink text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]">
+                      {bm.raw.category}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0 ml-auto">
+                  {/* Pin Button */}
+                  <button
+                    type="button"
+                    onClick={handleTogglePinInternal}
+                    disabled={isPinning}
+                    className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+                      bm.raw.isPinned
+                        ? 'text-primary bg-surface-soft !border-0'
+                        : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
+                    }`}
+                    title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
+                    aria-label="Pin Button"
                   >
-                    #{tag}
-                  </span>
-                ))}
+                    {isPinning ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : bm.raw.isPinned ? (
+                      <PinOff className="w-3.5 h-3.5 fill-current" />
+                    ) : (
+                      <Pin className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+
+                  {/* Copy Button */}
+                  <button
+                    type="button"
+                    onClick={handleCopy}
+                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+                    title="Salin isi bookmark"
+                    aria-label="Salin bookmark"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+
+                  {/* Edit Button (Opens Edit Modal) */}
+                  <button
+                    type="button"
+                    onClick={handleEditInternal}
+                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+                    title="Edit bookmark"
+                    aria-label="Edit bookmark"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Delete Button */}
+                  <button
+                    type="button"
+                    onClick={handleDeleteInternal}
+                    disabled={isDeleting}
+                    className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+                      confirmDelete
+                        ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
+                        : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
+                    }`}
+                    title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
+                    aria-label="Delete Button"
+                  >
+                    {isDeleting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+
+                  {/* Collapse Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsExpanded(false);
+                    }}
+                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+                    title="Ciutkan bookmark"
+                    aria-label="Ciutkan bookmark"
+                  >
+                    <ChevronUp className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        ) : (
+            </div>
+          ) : (
           /* If COLLAPSED on Mobile */
           <div className="flex flex-row items-start justify-between gap-3 w-full">
             {/* Left Column: notes text clamped + toolbar */}
@@ -580,8 +605,8 @@ function BookmarkCard({
                   disabled={isPinning}
                   className={`p-1.5 rounded-full cursor-pointer transition-all ${
                     bm.raw.isPinned
-                      ? 'text-primary bg-surface-soft opacity-100'
-                      : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70'
+                      ? 'text-primary bg-surface-soft !border-0'
+                      : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
                   }`}
                   title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
                   aria-label="Pin Button"
@@ -602,8 +627,8 @@ function BookmarkCard({
                   disabled={isDeleting}
                   className={`p-1.5 rounded-full cursor-pointer transition-all ${
                     confirmDelete
-                      ? 'text-terminal-red bg-terminal-red/10'
-                      : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70'
+                      ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
+                      : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
                   }`}
                   title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
                   aria-label="Delete Button"

@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import {
-  PERSISTENT_DOCK_KEYBOARD,
+  REMOVE_DOCK_KEYBOARD,
   START_HELP_MENU_KEYBOARD,
   formatSnippetPage,
   formatNoteDateWib,
@@ -38,13 +38,9 @@ async function runAlignmentTests() {
     }
   }
 
-  // 1. Dock Keyboard
-  console.log('--- 1. Testing Dock Keyboard ---');
-  assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'keyboard is array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 1, 'Dock menu has 1 row');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row has exactly 2 buttons (Read & Pin)');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '📖 Read', 'Button 1 is 📖 Read');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
+  // 1. Dock Removal Keyboard
+  console.log('--- 1. Testing Dock Removal ---');
+  assert(REMOVE_DOCK_KEYBOARD.remove_keyboard === true, 'Dock is removed (remove_keyboard: true)');
 
   // 2. /help message content & hint commands
   console.log('\n--- 2. Testing /help message ---');
@@ -67,14 +63,18 @@ async function runAlignmentTests() {
   }
   assert(helpId.includes('https://unlazynotes.com/dashboard'), 'help ID includes website URL');
 
-  // 2b. /start & /help inline button menu: tags & review
+  // 2b. /start & /help inline button menu: read, review, tags, pin
   console.log('\n--- 2b. Testing /start & /help inline keyboard ---');
   assert(Array.isArray(START_HELP_MENU_KEYBOARD.inline_keyboard), 'START_HELP_MENU_KEYBOARD has inline_keyboard');
-  assert(START_HELP_MENU_KEYBOARD.inline_keyboard.length === 1, 'START_HELP_MENU_KEYBOARD has 1 row');
-  const startButtons = START_HELP_MENU_KEYBOARD.inline_keyboard[0];
-  assert(startButtons.length === 2, 'START_HELP_MENU_KEYBOARD has 2 buttons (Read & Review)');
-  assert(startButtons[0].text === '📖 Read' && startButtons[0].callback_data === 'menu:read', 'Button 1 is 📖 Read -> menu:read');
-  assert(startButtons[1].text === '📋 Review' && startButtons[1].callback_data === 'menu:review', 'Button 2 is 📋 Review -> menu:review');
+  assert(START_HELP_MENU_KEYBOARD.inline_keyboard.length === 2, 'START_HELP_MENU_KEYBOARD has 2 rows');
+  const startRow1 = START_HELP_MENU_KEYBOARD.inline_keyboard[0];
+  const startRow2 = START_HELP_MENU_KEYBOARD.inline_keyboard[1];
+  assert(startRow1.length === 2, 'Row 1 has 2 buttons (Read & Review)');
+  assert(startRow1[0].text === '📖 Read' && startRow1[0].callback_data === 'menu:read', 'Button 1 is 📖 Read -> menu:read');
+  assert(startRow1[1].text === '📋 Review' && startRow1[1].callback_data === 'menu:review', 'Button 2 is 📋 Review -> menu:review');
+  assert(startRow2.length === 2, 'Row 2 has 2 buttons (Tags & Pin)');
+  assert(startRow2[0].text === '🏷 Tags' && startRow2[0].callback_data === 'menu:tags', 'Button 3 is 🏷 Tags -> menu:tags');
+  assert(startRow2[1].text === '⭐️ Pin' && startRow2[1].callback_data === 'menu:pin', 'Button 4 is ⭐️ Pin -> menu:pin');
 
   // 2c. /tags header formatting
   console.log('\n--- 2c. Testing /tags header formatting ---');
@@ -102,24 +102,27 @@ async function runAlignmentTests() {
   const catKb = buildCategoriesGridKeyboard();
   assert(catKb !== undefined, 'Categories keyboard generated fallback');
   const allButtons = catKb?.inline_keyboard.flat() || [];
-  assert(allButtons.length === 9, 'Categories grid has 9 buttons (8 categories + vault)');
+  assert(allButtons.length === 10, 'Categories grid has 10 buttons (8 categories + vault + back)');
   assert(!allButtons.some((b) => b.text.toLowerCase().includes('others')), 'Categories grid does NOT include others');
+  assert(allButtons.some((b) => b.text.includes('Kembali') && b.callback_data === 'menu:start'), 'Categories grid includes ◀️ Kembali button');
 
   // Dynamic filter: user only has notes in 'todo' and 'finance', no vault
   const filteredKb1 = buildCategoriesGridKeyboard(new Set(['todo', 'finance']), false);
   assert(filteredKb1 !== undefined, 'Filtered keyboard created');
   const buttons1 = filteredKb1?.inline_keyboard.flat() || [];
-  assert(buttons1.length === 2, 'Filtered keyboard has only 2 buttons');
+  assert(buttons1.length === 3, 'Filtered keyboard has 3 buttons (2 categories + back)');
   assert(buttons1.some((b) => b.text.includes('Finance')), 'Includes Finance');
   assert(buttons1.some((b) => b.text.includes('Todo')), 'Includes Todo');
   assert(!buttons1.some((b) => b.text.includes('Bookmark')), 'Does not include 0-note Bookmark');
   assert(!buttons1.some((b) => b.text.includes('Vault')), 'Does not include 0-note Vault');
+  assert(buttons1.some((b) => b.text.includes('Kembali') && b.callback_data === 'menu:start'), 'Includes ◀️ Kembali button');
 
   // Dynamic filter: user has note in 'todo' and vault notes
   const filteredKb2 = buildCategoriesGridKeyboard(new Set(['todo']), true);
   const buttons2 = filteredKb2?.inline_keyboard.flat() || [];
-  assert(buttons2.length === 2, 'Filtered keyboard has 2 buttons (Todo + Vault)');
+  assert(buttons2.length === 3, 'Filtered keyboard has 3 buttons (Todo + Vault + back)');
   assert(buttons2.some((b) => b.text.includes('Vault')), 'Includes Vault when user has vault notes');
+  assert(buttons2.some((b) => b.text.includes('Kembali') && b.callback_data === 'menu:start'), 'Includes ◀️ Kembali button');
 
   // Dynamic filter: user has 0 notes in all categories and 0 in vault
   const emptyKb = buildCategoriesGridKeyboard(new Set(), false);
@@ -199,7 +202,7 @@ async function runAlignmentTests() {
   assert(reviewKb !== undefined, 'Review keyboard created');
   const reviewAllButtons = reviewKb?.inline_keyboard.flat() || [];
   assert(reviewAllButtons.some((b) => b.text.includes('Sync All') && b.callback_data === 'review:sync_all'), 'Review keyboard includes 🔄 Sync All button');
-  assert(reviewAllButtons.some((b) => b.text.includes('Kembali ke Tags') && b.callback_data === 'menu:tags'), 'Review keyboard includes Kembali ke Tags button');
+  assert(reviewAllButtons.some((b) => b.text.includes('Kembali') && b.callback_data === 'menu:start'), 'Review keyboard includes ◀️ Kembali button');
 
   // Test handleReviewCommand when count is 0 (empty review state includes button Kembali ke Tags)
   const emptyReviewRes = await handleReviewCommand('fake_chat_review_empty_99', 'non_existent_user_review_empty', 1, 'id', 999123);
@@ -250,15 +253,31 @@ async function runAlignmentTests() {
     'organized note detail does NOT include ✨ Sync AI button'
   );
 
-  // 8. Test Callback Query menu:read dispatch
-  console.log('\n--- 8. Testing Callback Query menu:read dispatch ---');
+  // 8. Test Callback Query menu:read, menu:pin, menu:start dispatch
+  console.log('\n--- 8. Testing Callback Query menu:read, menu:pin, menu:start dispatch ---');
   const cbRes = await processTelegramCallbackQuery({
     id: 'test_cb_1',
     from: { id: 99999999 },
     message: { message_id: 1, chat: { id: 99999999 } },
     data: 'menu:read',
   });
-  assert(cbRes.error === 'unauthenticated', 'menu:read is routed to read handler (returns unauthenticated for unlinked chat, NOT callback_unhandled)');
+  assert(cbRes.error === 'unauthenticated', 'menu:read is routed to read handler (returns unauthenticated for unlinked chat)');
+
+  const cbPinRes = await processTelegramCallbackQuery({
+    id: 'test_cb_2',
+    from: { id: 99999999 },
+    message: { message_id: 1, chat: { id: 99999999 } },
+    data: 'menu:pin',
+  });
+  assert(cbPinRes.error === 'unauthenticated', 'menu:pin is routed to pin handler (returns unauthenticated for unlinked chat)');
+
+  const cbStartRes = await processTelegramCallbackQuery({
+    id: 'test_cb_3',
+    from: { id: 99999999 },
+    message: { message_id: 1, chat: { id: 99999999 } },
+    data: 'menu:start',
+  });
+  assert(cbStartRes.ok === true && cbStartRes.action === 'callback_menu_start', 'menu:start is routed to start/help callback handler');
 
   console.log('\n================================================================');
   console.log(`SUMMARY: ${passed}/${total} TESTS PASSED`);

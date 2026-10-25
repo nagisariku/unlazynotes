@@ -1,7 +1,4 @@
 import { format, addDays, setDate, setMonth, isValid } from 'date-fns';
-import { sanitizeTags } from '../sanitizer';
-import { enrichDualLayerTags } from './general';
-import type { NoteTagResult } from '../types';
 import type { ScheduleMetadata } from '../../../db/schema';
 
 export type { ScheduleMetadata };
@@ -247,54 +244,3 @@ export function parseScheduleMetadata(content: string, baseDate: Date = new Date
   };
 }
 
-/**
- * Specialized Schedule Module parser.
- * Extracts concrete activity entities and maps all referenced target dates into YYYY-MM-DD.
- */
-export function processScheduleNote(
-  content: string,
-  baseDate: Date = new Date(),
-  existingUserTags?: string[]
-): NoteTagResult {
-  const text = content.trim();
-  const lower = text.toLowerCase();
-  const scheduleMeta = parseScheduleMetadata(text, baseDate);
-  const scheduleDates = scheduleMeta.dates;
-
-  const enriched = enrichDualLayerTags([], 'schedule', text);
-  const tags: string[] = [...enriched];
-
-  // Specific concrete activity keywords
-  if (lower.includes('gym')) tags.push('gym');
-  if (lower.includes('meeting') || lower.includes('rapat')) tags.push('meeting');
-  if (lower.includes('client') || lower.includes('klien')) tags.push('client');
-  if (lower.includes('desain')) tags.push('desain');
-  if (lower.includes('dokter')) tags.push('dokter');
-  if (lower.includes('flight') || lower.includes('terbang')) tags.push('flight');
-  if (lower.includes('futsal')) tags.push('futsal');
-  if (lower.includes('kajian')) tags.push('kajian');
-  if (lower.includes('jogging')) tags.push('jogging');
-
-  if (tags.length === 0) {
-    const words = lower.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-    const nonTimeWords = words.filter(
-      (w) =>
-        w.length >= 3 &&
-        !/^\d+$/.test(w) &&
-        !/^(jam|pukul|pagi|siang|sore|malam|besok|lusa|kemarin|tanggal|tgl|senin|selasa|rabu|kamis|jumat|sabtu|minggu|hari)$/i.test(w)
-    );
-    if (nonTimeWords.length > 0) {
-      tags.push(...nonTimeWords.slice(0, 2));
-    } else {
-      tags.push('schedule');
-    }
-  }
-
-  return {
-    category: 'schedule',
-    specific_tags: sanitizeTags(tags, 'schedule', text, 5, existingUserTags),
-    schedule: scheduleMeta,
-    schedule_dates: scheduleDates,
-    source: null,
-  };
-}

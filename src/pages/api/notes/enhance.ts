@@ -6,59 +6,10 @@ import { format } from 'date-fns';
 import { normalizeCategory, normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
 import { sanitizeTags } from '@/lib/ai/sanitizer';
 import { normalizeNominal } from '@/lib/ai/batch-organizer';
-import { heuristicTagNote } from '@/lib/ai';
 import { recordAiUsage } from '@/lib/ai-usage';
 import type { NoteCategory, ScheduleMetadata, ExpenseEntry, IncomeEntry, DebtEntry, BookmarkType, CredentialType } from '@/db/schema';
 
 export const prerender = false;
-
-/**
- * Heuristic fallback note enhancer for offline or mock AI environments.
- */
-function heuristicEnhanceText(raw: string): string {
-  const text = raw.trim();
-  if (!text) return '';
-
-  const isMultiItem =
-    text.includes('\n') ||
-    (text.includes(',') && !/^\d+,\d+$/.test(text)) ||
-    (text.includes(';') && text.length > 10);
-
-  const isTaskLike =
-    /\b(beli|bayar|kerjain|bikin|buat|kirim|pesan|cek|hubungi|chat|telp|meeting|rapat|deadline|simpan)\b/i.test(
-      text
-    );
-
-  if (isMultiItem && isTaskLike) {
-    const rawItems = text
-      .split(/[\n,;]+/)
-      .map((i) => i.trim().replace(/^[-*•\d.)\]\s]+/, '').trim())
-      .filter(Boolean);
-
-    if (rawItems.length > 1) {
-      return rawItems
-        .map((item) => `- [ ] ${item.charAt(0).toUpperCase() + item.slice(1)}`)
-        .join('\n');
-    }
-  }
-
-  let polished = text
-    .replace(/\byg\b/gi, 'yang')
-    .replace(/\bdgn\b/gi, 'dengan')
-    .replace(/\butk\b/gi, 'untuk')
-    .replace(/\bbgt\b/gi, 'banget')
-    .replace(/\bga\b|\bgak\b/gi, 'tidak')
-    .replace(/\bsy\b/gi, 'saya')
-    .replace(/\btdk\b/gi, 'tidak')
-    .replace(/\bsdh\b|\bsudah\b/gi, 'sudah')
-    .replace(/\bblm\b/gi, 'belum')
-    .replace(/\btlg\b/gi, 'tolong')
-    .replace(/\bkmrn\b/gi, 'kemarin')
-    .replace(/\bbsk\b/gi, 'besok');
-
-  polished = polished.charAt(0).toUpperCase() + polished.slice(1);
-  return polished;
-}
 
 export const POST: APIRoute = async ({ request }) => {
   const user = await getSessionUser(request);
@@ -88,29 +39,14 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'deepseek-v4.1-flash';
+  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
-  // Fallback to heuristic if no LLM key configured or mock
   if (!apiKey || apiKey.startsWith('mock-')) {
-    const enhancedText = heuristicEnhanceText(rawText);
-    const fallbackTagResult = heuristicTagNote(rawText);
     return new Response(
-      JSON.stringify({
-        success: true,
-        enhancedText,
-        category: fallbackTagResult.category,
-        tags: fallbackTagResult.specific_tags,
-        schedule: fallbackTagResult.schedule,
-        scheduleDates: fallbackTagResult.schedule_dates,
-        expenses: fallbackTagResult.expenses,
-        income: fallbackTagResult.income,
-        debt: fallbackTagResult.debt,
-        bookmarkType: fallbackTagResult.bookmarkType || null,
-        credentialType: fallbackTagResult.credentialType || null,
-      }),
+      JSON.stringify({ error: 'AI API Key belum dikonfigurasi' }),
       {
-        status: 200,
+        status: 503,
         headers: { 'Content-Type': 'application/json' },
       }
     );
@@ -189,29 +125,10 @@ Input Note:
     try {
       parsed = JSON.parse(rawJson);
     } catch {
-      console.warn('[AI Note Enhance] Failed to parse JSON, falling back to raw text string');
-      const enhancedText = result.text.replace(/```(?:json)?\s*/gi, '').replace(/\s*```$/gi, '').trim() || heuristicEnhanceText(rawText);
-      const fallbackTagResult = heuristicTagNote(rawText);
-      return new Response(
-        JSON.stringify({
-          success: true,
-          enhancedText,
-          category: fallbackTagResult.category,
-          tags: fallbackTagResult.specific_tags,
-          schedule: fallbackTagResult.schedule,
-          scheduleDates: fallbackTagResult.schedule_dates,
-          expenses: fallbackTagResult.expenses,
-          income: fallbackTagResult.income,
-          debt: fallbackTagResult.debt,
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      throw new Error(`[AI Note Enhance] Gagal mem-parse respon AI: ${rawJson}`);
     }
 
-    const enhancedText = parsed.enhanced_text ? String(parsed.enhanced_text).trim() : heuristicEnhanceText(rawText);
+    const enhancedText = parsed.enhanced_text ? String(parsed.enhanced_text).trim() : rawText;
     const category: NoteCategory = normalizeCategory(parsed.category || '', rawText);
 
     let rawTags: string[] = [];
@@ -305,25 +222,13 @@ Input Note:
       }
     );
   } catch (err: any) {
-    console.warn('[AI Note Enhance] LLM call failed, falling back to heuristic:', err?.message);
-    const enhancedText = heuristicEnhanceText(rawText);
-    const fallbackTagResult = heuristicTagNote(rawText);
+    console.error('[AI Note Enhance] LLM call failed:', err?.message);
     return new Response(
       JSON.stringify({
-        success: true,
-        enhancedText,
-        category: fallbackTagResult.category,
-        tags: fallbackTagResult.specific_tags,
-        schedule: fallbackTagResult.schedule,
-        scheduleDates: fallbackTagResult.schedule_dates,
-        expenses: fallbackTagResult.expenses,
-        income: fallbackTagResult.income,
-        debt: fallbackTagResult.debt,
-        bookmarkType: fallbackTagResult.bookmarkType || null,
-        credentialType: fallbackTagResult.credentialType || null,
+        error: 'Gagal memproses catatan dengan AI: ' + (err?.message || 'Server AI tidak merespons'),
       }),
       {
-        status: 200,
+        status: 500,
         headers: { 'Content-Type': 'application/json' },
       }
     );

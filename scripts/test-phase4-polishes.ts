@@ -33,17 +33,9 @@ async function runPolishesTestSuite() {
     }
   }
 
-  // --- 1. Dock Menu (Tags, Pin, dan Sync, Tanpa Tutup Menu) ---
-  console.log('--- 1. Testing Persistent Dock Menu ---');
-    assert(Array.isArray(PERSISTENT_DOCK_KEYBOARD.keyboard), 'keyboard is array');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard.length === 1, 'Dock menu has 1 row');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0].length === 2, 'Row 1 has 2 buttons (Read & Pin)');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][0].text === '📖 Read', 'Button 1 is 📖 Read');
-  assert(PERSISTENT_DOCK_KEYBOARD.keyboard[0][1].text === '⭐️ Pin', 'Button 2 is ⭐️ Pin');
-  const hasTutupMenu = PERSISTENT_DOCK_KEYBOARD.keyboard.some((r) =>
-    r.some((b) => b.text.includes('Tutup Menu'))
-  );
-  assert(!hasTutupMenu, 'No "Tutup Menu" button in dock menu');
+  // --- 1. Dock Removal ---
+  console.log('--- 1. Testing Persistent Dock Removal ---');
+  assert(PERSISTENT_DOCK_KEYBOARD.remove_keyboard === true, 'Dock is removed (remove_keyboard: true)');
 
   // --- 2. Category Buttons in /tags (Minimal 1 Catatan & Emoji Updates) ---
   console.log('\n--- 2. Testing Category Buttons Filtering & Emoji Updates ---');

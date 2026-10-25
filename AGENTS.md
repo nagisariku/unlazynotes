@@ -17,3 +17,11 @@ Lingkungan ini difungsikan murni sebagai Sandbox / Testing Environment di VPS se
 ### ⚠️ Larangan Pengujian Inline dengan tsx -e
 - DILARANG menggunakan `tsx -e` atau `npm exec tsx -- -e` karena binary `tsx` tidak mendukung flag evaluasi inline dan memicu Node REPL interaktif yang menggantung (*infinite hang*).
 - Jika ingin melakukan pengujian inline cepat, gunakan: `node --import tsx -e "..."` (pastikan memanggil `process.exit(0)` di akhir) atau tulis skrip sementara di folder `scripts/` lalu jalankan `npx tsx scripts/<file>.ts`.
+
+### ⚠️ ATURAN MUTLAK: PURE LLM ARCHITECTURE (DILARANG REGEX / KEYWORD MATCHING / HEURISTIC FALLBACK)
+- **Zero Regex / Keyword Matching:** DILARANG KERAS membuat, memodifikasi, atau memelihara sistem regex, deteksi keyword/kata kunci, dictionary matching, atau router heuristik untuk mengklasifikasikan intent, menentukan kategori, mengekstrak entitas, atau menata tagging catatan.
+- **100% Pure LLM Processing:** Seluruh pemahaman semantik, klasifikasi kategori, penentuan tag, dan ekstraksi metadata catatan WAJIB diserahkan sepenuhnya ke LLM AI (`claude-haiku-5.5`).
+- **Fail-Fast Contract (Tanpa Pemrosesan Palsu):** Jika pemanggilan API LLM gagal (timeout, rate limit, kuota habis, network error, atau JSON parse error):
+  1. Sistem WAJIB mengembalikan respons gagal / error secara eksplisit.
+  2. DILARANG memproses data secara asal-asalan atau memalsukan hasil klasifikasi menggunakan fallback regex lokal.
+  3. Catatan tetap berada pada status belum diproses (`isProcessed = false`, default kategori `others`) untuk disinkronisasi ulang secara resmi oleh AI saat LLM kembali normal.
