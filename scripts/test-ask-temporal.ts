@@ -9,7 +9,7 @@ dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
 import { db } from '../src/db';
 import { users, notes } from '../src/db/schema';
 import { eq } from 'drizzle-orm';
-import { heuristicTagNote } from '../src/lib/ai';
+import { generateNoteTags } from '../src/lib/ai';
 import { answerNoteQuestion } from '../src/lib/ask';
 import { subDays } from 'date-fns';
 import assert from 'node:assert';
@@ -21,7 +21,7 @@ async function run() {
 
   // 1. Verify Category Classifier & Concrete Entity Tagging for 'tuweeb 2, tanggal 16'
   console.log('--- 1. Testing Schedule Classifier & Anti-Meta Tagging ---');
-  const catResult = heuristicTagNote('tuweeb 2, tanggal 16');
+  const catResult = await generateNoteTags('tuweeb 2, tanggal 16');
   console.log('Input: "tuweeb 2, tanggal 16" -> Category:', catResult.category, '| Tags:', catResult.specific_tags);
   if (catResult.category !== 'schedule') {
     console.error('❌ FAILED: Expected schedule, got', catResult.category);
@@ -31,7 +31,7 @@ async function run() {
     console.error('❌ FAILED: Expected concrete tag "tuweeb", got', catResult.specific_tags);
     process.exit(1);
   }
-  const hasMetaTag = catResult.specific_tags.some(t => /(-reference[ds]?|-item|-info|-marker|date-reference|date-referenced|time|note)/i.test(t));
+  const hasMetaTag = catResult.specific_tags.some((t: string) => /(-reference[ds]?|-item|-info|-marker|date-reference|date-referenced|time|note)/i.test(t));
   if (hasMetaTag) {
     console.error('❌ FAILED: Found forbidden meta-descriptor tag:', catResult.specific_tags);
     process.exit(1);
@@ -40,7 +40,7 @@ async function run() {
 
   // 1b. Test Doctor Non-Meeting Guard
   console.log('--- 1b. Testing Doctor Schedule (Non-Meeting Guard) ---');
-  const doctorResult = heuristicTagNote('kontrol dokter gigi tgl 25');
+  const doctorResult = await generateNoteTags('kontrol dokter gigi tgl 25');
   console.log('Input: "kontrol dokter gigi tgl 25" -> Category:', doctorResult.category, '| Tags:', doctorResult.specific_tags);
   if (doctorResult.category !== 'schedule') {
     console.error('❌ FAILED: Expected schedule, got', doctorResult.category);

@@ -32,7 +32,10 @@ async function main() {
     // 1b. Daftarkan menu perintah resmi Telegram (Hamburger Menu)
     try {
       await bot.api.setMyCommands([
-        { command: 'help', description: '💡 Bantuan & panduan bot' },
+        { command: 'help', description: '💡 Panduan bot lengkap' },
+        { command: 'read', description: '📖 Baca catatan terbaru' },
+        { command: 'pin', description: '⭐️ Catatan tersemat' },
+        { command: 'sync_all', description: '🔄 Sync all catatan' },
       ]);
       console.log('✅ Bot commands menu successfully registered.');
     } catch (cmdErr) {

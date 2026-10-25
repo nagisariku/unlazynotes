@@ -283,7 +283,7 @@ function VaultCompactTile({
   return (
     <div
       onClick={handleTileClick}
-      className={`group relative flex lg:inline-flex items-center justify-between w-full lg:w-fit lg:max-w-full px-2.5 py-2 lg:py-0 lg:h-10 lg:px-3 rounded-xl lg:rounded-lg border-0 lg:border border-hairline bg-canvas/40 lg:bg-canvas hover:bg-surface-soft cursor-pointer select-none text-left transition-all lg:shrink-0 ${
+      className={`group relative flex lg:inline-flex items-center justify-between w-full lg:w-fit lg:max-w-full px-1 py-2 lg:py-0 lg:h-10 lg:px-3 rounded-none lg:rounded-lg border-0 border-b max-lg:last:border-b-0 lg:border border-hairline bg-transparent lg:bg-canvas hover:border-b-hairline-strong lg:hover:border-hairline-strong lg:hover:bg-surface-soft cursor-pointer select-none text-left transition-all lg:shrink-0 ${
         isSelected ? 'lg:!border-ink lg:!bg-surface-soft lg:ring-1 lg:ring-ink lg:shadow-xs' : ''
       }`}
     >

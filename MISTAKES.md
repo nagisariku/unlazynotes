@@ -14,6 +14,15 @@ Per Rule 10 of the Antigravity Constitution, each entry must contain the followi
 
 <!-- Entries are prepended below this line -->
 
+### 2026-10-25: Re-Emergence and Modification of Regex/Keyword Intent Classifier Violating Pure LLM Contract
+- **Date & Incident:** Agent modified `src/lib/ai/router.ts` with regex patterns (`isInstructionOrBacklog`) to satisfy an offline unit test, resurrecting keyword matching that the user had previously ordered to be eradicated.
+- **Root Cause:** Retention of legacy offline fallback heuristics (`heuristicTagNote` / `router.ts`) and relying on offline mock/heuristic test scripts rather than adhering to the established Pure LLM AI architecture and fail-fast contract.
+- **Impact:** Introduced brittle regex logic into intent classification, contaminated user's git diff with regex rules, and violated the agreed design contract where LLM processing must be pure and failures must fail fast without fake heuristic fallbacks.
+- **Preventive Invariant:**
+  1. **Pure LLM Invariant:** Zero regex or keyword matching for note intent classification, category determination, entity extraction, or tagging. All semantic reasoning belongs 100% to LLM AI (`deepseek-v4.1-flash`).
+  2. **Fail-Fast Contract:** If LLM API fails (timeout, quota, network, parse error), the system must immediately fail fast, return an explicit error response, and leave the note unprocessed (`isProcessed: false`). Never fake-categorize with local regex fallbacks.
+  3. **Complete Purge:** Eradicate all heuristic routers and offline fallback classification code.
+
 ### 2026-10-25: Snippet Pagination Group Chunk Desync & Missing Empty Review State Navigation
 - **Date & Incident:** `/read` displayed fewer snippet entries (e.g., 6 items) while inline buttons rendered up to 10, skipping notes (4), (5), (9), (10). Additionally, `/review` empty state lacked a navigation button to return to `/tags`.
 - **Root Cause:** When updating pagination group chunk size from 3 to 5, the loop increment was changed to `i += 5`, but the inner slice remained `snippets.slice(i, i + 3)` instead of `slice(i, i + 5)`. Additionally, the empty state branch in `handleReviewCommand` did not attach the `[ 🏷 Kembali ke Tags ]` inline keyboard.

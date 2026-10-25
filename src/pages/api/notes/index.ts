@@ -6,9 +6,7 @@ import { getSessionUser } from '@/lib/session';
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import { CATEGORIES } from '@/lib/constants';
-import { generateNoteTags, parseScheduleDates, parseScheduleMetadata, extractFinanceEntries, heuristicExtractFinance } from '@/lib/ai';
-import { processBookmarkNote } from '@/lib/ai/modules/bookmark';
-import { processCredentialNote } from '@/lib/ai/modules/credential';
+import { generateNoteTags, parseScheduleDates, parseScheduleMetadata, extractFinanceEntries } from '@/lib/ai';
 import { normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
 import { encryptSecret } from '@/lib/crypto';
 import { ensureUserInitialResources } from '@/lib/auth';
@@ -240,11 +238,6 @@ export const POST: APIRoute = async ({ request }) => {
         if (!targetDate) {
           targetDate = extractEarliestScheduleDate(trimmedContent, now);
         }
-      } else if (finalCategory === 'finance') {
-        const quickFin = heuristicExtractFinance(trimmedContent);
-        expenses = quickFin.expenses;
-        income = quickFin.income;
-        debt = quickFin.debt;
       }
     } else if (body.category === 'others' && Array.isArray(body.specificTags) && body.specificTags.length > 0) {
       // Explicit 'others' with specific tags
@@ -276,13 +269,11 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     if (finalCategory === 'bookmark' && !bookmarkType) {
-      const bm = processBookmarkNote(trimmedContent);
-      bookmarkType = bm.bookmarkType || 'reading_other';
+      bookmarkType = 'reading_other';
     }
 
     if (finalCategory === 'credential' && !credentialType) {
-      const cred = processCredentialNote(trimmedContent);
-      credentialType = cred.credentialType || 'other';
+      credentialType = 'other';
     }
 
     const noteId = crypto.randomUUID();

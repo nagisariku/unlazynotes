@@ -9,7 +9,7 @@ import { db } from '../src/db';
 import { users, notes, apiKeys, subscriptions } from '../src/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { extractEarliestScheduleDate, extractAllDates } from '../src/lib/date-extractor';
-import { processBookmarkNote } from '../src/lib/ai/modules/bookmark';
+import { generateNoteTags } from '../src/lib/ai';
 import { organizeUserNotes } from '../src/lib/ai/batch-organizer';
 import crypto from 'node:crypto';
 
@@ -92,13 +92,13 @@ async function runTests() {
       Koleksi materi animasi dan devops
     `;
 
-    const bmResult = processBookmarkNote(multiLinkText);
+    const bmResult = await generateNoteTags(multiLinkText);
     assert(bmResult.category === 'bookmark', 'Multi-link note correctly categorized as bookmark');
     assert(Array.isArray(bmResult.specific_tags), 'specific_tags is an array');
 
     // Platform tags should be capped to max 3 dominant platforms
     const platformKeywords = ['youtube', 'github', 'twitter', 'instagram', 'tiktok'];
-    const presentPlatformTags = bmResult.specific_tags.filter((t) => platformKeywords.includes(t));
+    const presentPlatformTags = bmResult.specific_tags.filter((t: string) => platformKeywords.includes(t));
     assert(presentPlatformTags.length <= 3, `Platform tags capped to max 3 (got ${presentPlatformTags.length}: ${presentPlatformTags.join(', ')})`);
     assert(bmResult.specific_tags.length <= 5, 'Total bookmark tags capped within bounds (max 5)');
 

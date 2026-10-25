@@ -449,16 +449,16 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
             </h2>
           </div>
 
-          {/* Schedule Notes Masonry Grid: 1 column strictly in mobile divider mode (<md), capped at max 4 columns in card mode (>=md) with wider card width */}
+          {/* Schedule Notes List (Row view with horizontal line divider) */}
           {filteredItems.length > 0 ? (
-            <div className="w-full columns-1 md:columns-4 md:[column-count:4] md:[column-width:320px] gap-3.5 [column-gap:0.875rem] max-w-full 2xl:max-w-[105rem]">
+            <div className="w-full flex flex-col">
               {filteredItems.map((item) => (
                 <NoteCard
                   key={item.id}
                   note={item}
-                  showDateTime={true}
+                  showDateTime={false}
                   showCategory={false}
-                  variant="timeline"
+                  variant="row"
                   onDelete={handleDeleteById}
                   onTogglePin={(id) => handleTogglePinById(id, Boolean(item.isPinned))}
                   onEdit={(n) => {

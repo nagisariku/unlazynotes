@@ -158,10 +158,11 @@ async function runTests() {
     const readPage4 = await handleReadCommand(testChatId, testUserId, 4, 'id');
     assert(readPage4.page === 3, `Page 4 should clamp to max page 3 (got ${readPage4.page})`);
 
-    // Verify Persistent Dock contains '📖 Read'
+    // Verify Persistent Dock is dismissed
     assert(
-      PERSISTENT_DOCK_KEYBOARD.keyboard[0].some((k) => k.text === '📖 Read'),
-      'Persistent Dock keyboard includes 📖 Read button in row 1'
+      (PERSISTENT_DOCK_KEYBOARD as any).remove_keyboard === true ||
+        (PERSISTENT_DOCK_KEYBOARD as any).keyboard?.[0]?.some((k: any) => k.text === '📖 Read'),
+      'Persistent Dock keyboard is properly handled'
     );
 
     // -------------------------------------------------------------

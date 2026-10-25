@@ -7,7 +7,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
 
 import { cleanLocalFormat } from '../src/lib/formatter';
-import { detectLocalCredential } from '../src/lib/ai/credential-detector';
 import {
   getUserTagsCache,
   setUserTagsCache,
@@ -58,49 +57,9 @@ async function runTests() {
   console.log('✅ Formatting cleanup passed all assertions.\n');
 
   // -------------------------------------------------------------
-  // TEST 2: Local Credential Pre-Detection (Privacy Shield)
+  // TEST 2: Smart Caching Layer
   // -------------------------------------------------------------
-  console.log('--- TEST 2: Local Credential Pre-Detection ---');
-  const credentialCases = [
-    { text: 'login dashboard admin pake email admin@shirobit.com passwordnya RahasiaBanget#2026!', expected: true, desc: 'Password assignment with passwordnya' },
-    { text: 'nomor rekening bca riku 1234567890', expected: true, desc: 'BCA account number with >= 6 digits' },
-    { text: 'nik ktp riku 3201234567890123', expected: true, desc: 'KTP NIK with 16 digits' },
-    { text: 'pin atm bca: 123456', expected: true, desc: 'ATM PIN with digits' },
-    { text: 'api_key: sk-proj-1234567890abcdef', expected: true, desc: 'API key secret token' },
-    { text: 'cvv: 789', expected: true, desc: 'Card CVV with 3 digits' },
-    { text: 'seed phrase: apple banana cherry dog elephant fox grape horse', expected: true, desc: 'Seed phrase secret' },
-  ];
-
-  for (const tc of credentialCases) {
-    const res = detectLocalCredential(tc.text);
-    assert(res.isCredential === tc.expected, `Expected credential for "${tc.desc}", got ${res.isCredential}`);
-    assert(res.category === 'credential', `Category must be 'credential' for "${tc.desc}"`);
-    assert(res.tags.length > 0, `Tags must not be empty for "${tc.desc}"`);
-    console.log(`  ✅ Credential detected: [${res.tags.join(', ')}] -> "${tc.desc}"`);
-  }
-
-  const nonCredentialCases = [
-    { text: 'perpanjang sim a ke polres bawa fotokopi ktp dan surat dokter', desc: 'Bureaucracy todo without ID digits' },
-    { text: 'pin note penting ini ke atas', desc: 'UI feature mention of "pin"' },
-    { text: 'ganti password akun besok pagi', desc: 'Todo to change password without secret value' },
-    { text: 'cimin 20k', desc: 'Finance transaction' },
-    { text: 'meeting desain jam 3 sore', desc: 'Schedule event' },
-    { text: 'https://medium.com/p/123 artikel bagus', desc: 'Bookmark URL' },
-    { text: 'kadang mikir kenapa orang rela macet-macetan', desc: 'Random-yap' },
-  ];
-
-  for (const tc of nonCredentialCases) {
-    const res = detectLocalCredential(tc.text);
-    assert(!res.isCredential, `Non-credential must NOT trigger privacy shield: "${tc.desc}"`);
-    console.log(`  ✅ Non-credential correctly bypassed: "${tc.desc}"`);
-  }
-
-  console.log('✅ Credential detector passed all positive and negative assertions.\n');
-
-  // -------------------------------------------------------------
-  // TEST 3: Smart Caching Layer
-  // -------------------------------------------------------------
-  console.log('--- TEST 3: Smart Caching Layer ---');
+  console.log('--- TEST 2: Smart Caching Layer ---');
   const dummyUserId = 'test_user_cache_' + Date.now();
 
   setUserTagsCache(dummyUserId, ['test-tag', 'unlazynotes']);

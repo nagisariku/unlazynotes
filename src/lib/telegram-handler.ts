@@ -1,6 +1,6 @@
 import { db } from '@/db';
 import { users, apiKeys, notes } from '@/db/schema';
-import { eq, ne, and, desc, sql, ilike } from 'drizzle-orm';
+import { eq, ne, and, or, desc, sql, ilike } from 'drizzle-orm';
 import crypto from 'node:crypto';
 import { format } from 'date-fns';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
@@ -48,18 +48,21 @@ export const START_HELP_MENU_KEYBOARD = {
       { text: '📖 Read', callback_data: 'menu:read' },
       { text: '📋 Review', callback_data: 'menu:review' },
     ],
+    [
+      { text: '🏷 Tags', callback_data: 'menu:tags' },
+      { text: '⭐️ Pin', callback_data: 'menu:pin' },
+    ],
   ],
 };
 
-export const PERSISTENT_DOCK_KEYBOARD = {
-  keyboard: [
-    [{ text: '📖 Read' }, { text: '⭐️ Pin' }],
-  ],
-  resize_keyboard: true,
+export const REMOVE_DOCK_KEYBOARD = {
+  remove_keyboard: true as const,
 };
+
+export const PERSISTENT_DOCK_KEYBOARD = REMOVE_DOCK_KEYBOARD;
 
 export function getDockKeyboard(_unorganizedCount: number = 0) {
-  return PERSISTENT_DOCK_KEYBOARD;
+  return REMOVE_DOCK_KEYBOARD;
 }
 
 export function getWebDashboardUrl(forInlineButton = false): string {
@@ -336,6 +339,8 @@ export function buildCategoriesGridKeyboard(
   availableCategories?: Set<string>,
   hasVaultNotes: boolean = false
 ) {
+  const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+
   if (availableCategories !== undefined) {
     const filtered = ALL_CATEGORIES.filter((c) => c.key !== 'others' && availableCategories.has(c.key));
     const buttons: Array<{ text: string; callback_data: string }> = filtered.map((cat) => ({
@@ -349,17 +354,13 @@ export function buildCategoriesGridKeyboard(
 
     if (buttons.length === 0) return undefined;
 
-    const rows: Array<Array<{ text: string; callback_data: string }>> = [];
     const chunkSize = buttons.length <= 4 ? 2 : 3;
     for (let i = 0; i < buttons.length; i += chunkSize) {
       rows.push(buttons.slice(i, i + chunkSize));
     }
-    return { inline_keyboard: rows };
-  }
-
-  // Fallback when called without arguments
-  return {
-    inline_keyboard: [
+  } else {
+    // Fallback when called without arguments
+    rows.push(
       [
         { text: '💰 Finance', callback_data: 'page:tags:finance:1' },
         { text: '📋 Todo', callback_data: 'page:tags:todo:1' },
@@ -374,9 +375,14 @@ export function buildCategoriesGridKeyboard(
         { text: '📝 Draft', callback_data: 'page:tags:draft:1' },
         { text: '💬 Random-yap', callback_data: 'page:tags:random-yap:1' },
         { text: '🔑 Vault', callback_data: 'menu:vault' },
-      ],
-    ],
-  };
+      ]
+    );
+  }
+
+  // Tombol navigasi kembali ke Menu Start
+  rows.push([{ text: '◀️ Kembali', callback_data: 'menu:start' }]);
+
+  return { inline_keyboard: rows };
 }
 
 
@@ -519,8 +525,12 @@ export async function handleTagFilter(
   const totalCount = Number(countResult?.count || 0);
 
   if (totalCount === 0) {
+    const backMarkup = {
+      inline_keyboard: [[{ text: '🏷 Kembali ke Tags', callback_data: 'menu:tags' }]],
+    };
     await sendTelegramMessage(chatId, getTelegramMsg('tags_none_found', activeLocale, { tag: targetTag }), {
       parse_mode: 'Markdown',
+      reply_markup: backMarkup,
     });
     return { ok: true, action: 'tags_none_found', tag: targetTag };
   }
@@ -664,7 +674,9 @@ export function buildNoteDetailKeyboard(
       [
         {
           text: '⬅️ Kembali ke Daftar',
-          callback_data: `page:${type}:${queryVal}:${currentPage}`,
+          callback_data: queryVal
+            ? `page:${type}:${queryVal}:${currentPage}`
+            : (type === 'tags' ? 'menu:tags' : (type === 'read' || type === 'pin' || type === 'review' ? `menu:${type}` : 'menu:start')),
         },
         {
           text: '🏷 Menu Tags',
@@ -801,15 +813,22 @@ export function buildPaginationKeyboard(
         callback_data: 'review:sync_all',
       },
       {
-        text: '🏷 Kembali ke Tags',
-        callback_data: 'menu:tags',
+        text: '◀️ Kembali',
+        callback_data: 'menu:start',
       },
     ]);
-  } else if (type === 'tags' || type === 'pin' || type === 'read') {
+  } else if (type === 'tags') {
     rows.push([
       {
         text: '🏷 Kembali ke Tags',
         callback_data: 'menu:tags',
+      },
+    ]);
+  } else if (type === 'pin' || type === 'read' || type === 'search') {
+    rows.push([
+      {
+        text: '◀️ Kembali',
+        callback_data: 'menu:start',
       },
     ]);
   }
@@ -846,10 +865,13 @@ export async function handlePinList(
 
   if (totalCount === 0) {
     const emptyMsg = '📌 Anda belum memiliki catatan yang dipin. Buka detail catatan dan tekan tombol "📌 Pin" untuk menandainya.';
+    const backMarkup = {
+      inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+    };
     if (messageId) {
-      await editTelegramMessage(chatId, messageId, emptyMsg, { parse_mode: 'Markdown' });
+      await editTelegramMessage(chatId, messageId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backMarkup });
     } else {
-      await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown' });
+      await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backMarkup });
     }
     return { ok: true, action: 'pin_empty' };
   }
@@ -923,10 +945,13 @@ export async function handleReadCommand(
 
   if (totalCount === 0) {
     const emptyMsg = getTelegramMsg('read_empty', activeLocale);
+    const backMarkup = {
+      inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+    };
     if (messageId) {
-      await editTelegramMessage(chatId, messageId, emptyMsg);
+      await editTelegramMessage(chatId, messageId, emptyMsg, { reply_markup: backMarkup });
     } else {
-      await sendTelegramMessage(chatId, emptyMsg, { reply_markup: PERSISTENT_DOCK_KEYBOARD });
+      await sendTelegramMessage(chatId, emptyMsg, { reply_markup: backMarkup });
     }
     return { ok: true, action: 'read_empty' };
   }
@@ -1009,10 +1034,13 @@ export async function handleVaultCommand(
       .orderBy(desc(notes.createdAt));
 
     if (vaultNotes.length === 0) {
+      const backMarkup = {
+        inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+      };
       await sendTelegramMessage(
         chatId,
         getTelegramMsg('vault_empty', activeLocale),
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown', reply_markup: backMarkup }
       );
       return { ok: true, action: 'vault_empty' };
     }
@@ -1028,7 +1056,10 @@ export async function handleVaultCommand(
       totalCount: vaultNotes.length,
       keysList,
     });
-    await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
+    const backMarkup = {
+      inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+    };
+    await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown', reply_markup: backMarkup });
     return { ok: true, action: 'vault_list' };
   }
 
@@ -1047,10 +1078,13 @@ export async function handleVaultCommand(
     .limit(5);
 
   if (matchedVaults.length === 0) {
+    const backMarkup = {
+      inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+    };
     await sendTelegramMessage(
       chatId,
       getTelegramMsg('vault_not_found', activeLocale, { keyword: cleanQuery }),
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: backMarkup }
     );
     return { ok: true, action: 'vault_not_found' };
   }
@@ -1108,8 +1142,11 @@ export async function handleReviewCommand(
   const reviewCondition = and(
     eq(notes.userId, userId),
     eq(notes.isEncrypted, false),
-    eq(notes.isProcessed, false),
-    eq(notes.isArchived, false)
+    eq(notes.isArchived, false),
+    or(
+      eq(notes.isProcessed, false),
+      eq(notes.category, 'others')
+    )
   );
 
   const [countResult] = await db
@@ -1121,20 +1158,20 @@ export async function handleReviewCommand(
 
   if (totalCount === 0) {
     const emptyMsg = getTelegramMsg('review_empty', activeLocale);
-    const backToTagsKeyboard = {
+    const backKeyboard = {
       inline_keyboard: [
         [
           {
-            text: '🏷 Kembali ke Tags',
-            callback_data: 'menu:tags',
+            text: '◀️ Kembali',
+            callback_data: 'menu:start',
           },
         ],
       ],
     };
     if (messageId) {
-      await editTelegramMessage(chatId, messageId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backToTagsKeyboard });
+      await editTelegramMessage(chatId, messageId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backKeyboard });
     } else {
-      await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backToTagsKeyboard });
+      await sendTelegramMessage(chatId, emptyMsg, { parse_mode: 'Markdown', reply_markup: backKeyboard });
     }
     return { ok: true, action: 'review_empty' };
   }
@@ -1604,7 +1641,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
         });
         await sendTelegramMessage(chatId, welcomeMsg, {
           parse_mode: 'Markdown',
-          reply_markup: PERSISTENT_DOCK_KEYBOARD,
+          reply_markup: REMOVE_DOCK_KEYBOARD,
         });
 
         const helpMsg = getTelegramMsg('help', activeLocale, {
@@ -1628,13 +1665,13 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     if (existingKey) {
       const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, existingKey.userId)).limit(1);
       activeLocale = detectTelegramLocale(message, u?.preferredLocale);
+    }
 
-      // Aktifkan persistent dock menu di layar bawah Telegram user
-      const dockGreeting = activeLocale === 'id'
-        ? '⚡️ UnlazyNotes aktif. Menu dock siap digunakan di bawah.'
-        : '⚡️ UnlazyNotes active. Dock menu ready below.';
-      await sendTelegramMessage(chatId, dockGreeting, {
-        reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    if (text.startsWith('/start')) {
+      const welcomeBackMsg = activeLocale === 'id' ? '⚡️ *UnlazyNotes* siap.' : '⚡️ *UnlazyNotes* ready.';
+      await sendTelegramMessage(chatId, welcomeBackMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: REMOVE_DOCK_KEYBOARD,
       });
     }
 
@@ -1855,13 +1892,23 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     }
   }
 
-  // 5. /tags (tanpa argumen) atau tombol dock '🏷 Tags'
-  if (text === '/tags' || /^(\/tags)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '🏷 Tags') {
+  // 5. /tags (tanpa argumen) atau /tg atau tombol dock '🏷 Tags'
+  if (
+    text === '/tags' ||
+    text === '/tg' ||
+    /^(\/(tags|tg))(@[a-zA-Z0-9_]+)?$/.test(text) ||
+    text === '🏷 Tags'
+  ) {
     const overview = await getTagsOverviewData(activeKey.userId);
     const unorganizedCount = await getOrFetchUnorganizedCount(activeKey.userId);
 
     if (!overview.hasNotes && unorganizedCount === 0) {
-      await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale));
+      const backMarkup = {
+        inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+      };
+      await sendTelegramMessage(chatId, getTelegramMsg('tags_empty', activeLocale), {
+        reply_markup: backMarkup,
+      });
       return { ok: true, action: 'tags_empty' };
     }
 
@@ -1887,9 +1934,13 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'tags_list' };
   }
 
-  // 6. /tags <nama_tag>
-  if (text.startsWith('/tags ')) {
-    const rawArg = text.substring(6).trim();
+  // 6. /tags <nama_tag> atau /tg <nama_tag>
+  if (
+    text.startsWith('/tags ') ||
+    text.startsWith('/tg ') ||
+    /^(\/(tags|tg))(@[a-zA-Z0-9_]+)?\s+/.test(text)
+  ) {
+    const rawArg = text.replace(/^\/(tags|tg)(@[a-zA-Z0-9_]+)?\s+/, '').trim();
     let targetTag = normalizeTag(rawArg);
 
     // Jika argumen berupa angka (misal: /tags 1 atau /tags (1)), cek sesi aktif nomor tag
@@ -1918,13 +1969,24 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handlePinList(chatId, activeKey.userId, 1, activeLocale);
   }
 
-  // 6b2. /read atau tombol dock '📖 Read'
-  if (text === '/read' || /^(\/read)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '📖 Read') {
+  // 6b2. /read atau /rd atau tombol dock '📖 Read'
+  if (
+    text === '/read' ||
+    text === '/rd' ||
+    /^(\/(read|rd))(@[a-zA-Z0-9_]+)?$/.test(text) ||
+    text === '📖 Read'
+  ) {
     return await handleReadCommand(chatId, activeKey.userId, 1, activeLocale);
   }
 
-  // 6b3. /review atau tombol '📋 Review' / 'Review'
-  if (text === '/review' || /^(\/review)(@[a-zA-Z0-9_]+)?$/.test(text) || text === '📋 Review' || text === 'Review') {
+  // 6b3. /review atau /rv atau tombol '📋 Review' / 'Review'
+  if (
+    text === '/review' ||
+    text === '/rv' ||
+    /^(\/(review|rv))(@[a-zA-Z0-9_]+)?$/.test(text) ||
+    text === '📋 Review' ||
+    text === 'Review'
+  ) {
     return await handleReviewCommand(chatId, activeKey.userId, 1, activeLocale);
   }
 
@@ -1933,28 +1995,36 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleDashboardCommand(chatId, activeLocale);
   }
 
-  // 6d. /sync atau /organize atau /rapikan atau tombol dock '🔄 Sync' / 'Sync'
+  // 6d. /sync atau /sync_all atau /sync all atau /organize atau /rapikan
   if (
     text === '🔄 Sync' ||
     text === 'Sync' ||
-    /^\/?(sync|organize|rapikan)\b/i.test(text) ||
+    text === '/sync all' ||
+    text === '/sync_all' ||
+    /^\/?(sync|sync_all|organize|rapikan)\b/i.test(text) ||
     text.startsWith('🪄 Organize') ||
     text.startsWith('🪄 Rapikan')
   ) {
     return await handleSyncCommand(chatId, activeKey.userId, activeLocale);
   }
 
-  // 6e. /dock atau /menu (Refresh dock keyboard)
+  // 6e. /dock atau /menu (Dock menu disabled)
   if (text === '/dock' || text === '/menu') {
-    await sendTelegramMessage(chatId, activeLocale === 'id' ? 'Menu dock telah disegarkan.' : 'Dock menu refreshed.', {
-      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+    await sendTelegramMessage(chatId, activeLocale === 'id' ? '👌 Menu dock telah dinonaktifkan. Gunakan menu perintah resmi (/) atau inline menu.' : '👌 Dock menu is disabled. Use the official commands menu (/) or inline menu.', {
+      reply_markup: REMOVE_DOCK_KEYBOARD,
     });
-    return { ok: true, action: 'dock_refreshed' };
+    return { ok: true, action: 'dock_disabled' };
   }
 
-  // 7. /search <kata_kunci>
-  if (text.startsWith('/search')) {
-    const keyword = text.replace(/^\/search\s*/, '').trim();
+  // 7. /search <kata_kunci> atau /src <kata_kunci>
+  if (
+    text === '/search' ||
+    text === '/src' ||
+    text.startsWith('/search ') ||
+    text.startsWith('/src ') ||
+    /^(\/(search|src))(@[a-zA-Z0-9_]+)?(\s+[\s\S]*)?$/.test(text)
+  ) {
+    const keyword = text.replace(/^\/(search|src)(@[a-zA-Z0-9_]+)?\s*/, '').trim();
 
     if (!keyword) {
       await sendTelegramMessage(chatId, getTelegramMsg('search_missing_keyword', activeLocale), {
@@ -1979,10 +2049,13 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     const totalCount = Number(countResult?.count || 0);
 
     if (totalCount === 0) {
+      const backMarkup = {
+        inline_keyboard: [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]],
+      };
       await sendTelegramMessage(
         chatId,
         getTelegramMsg('search_empty', activeLocale, { keyword }),
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown', reply_markup: backMarkup }
       );
       return { ok: true, action: 'search_empty' };
     }
@@ -2068,8 +2141,14 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'ask_processing' };
   }
 
-  // 9. /secure <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
-  if (text.startsWith('/secure')) {
+  // 9. /secure <kunci> <isi_rahasia> atau /sc <kunci> <isi_rahasia> (AES-256-GCM Private Vault - Bypass AI)
+  if (
+    text === '/secure' ||
+    text === '/sc' ||
+    text.startsWith('/secure ') ||
+    text.startsWith('/sc ') ||
+    /^(\/(secure|sc))(@[a-zA-Z0-9_]+)?(\s+[\s\S]*)?$/.test(text)
+  ) {
     if (!quotaInfo.isPro) {
       const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL, activeLocale);
       await sendTelegramMessage(chatId, gated.text, {
@@ -2078,7 +2157,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'secure_requires_pro' };
     }
 
-    const secureMatch = text.match(/^\/secure\s+(\S+)\s+([\s\S]+)$/);
+    const secureMatch = text.match(/^\/(?:secure|sc)(?:@[a-zA-Z0-9_]+)?\s+(\S+)\s+([\s\S]+)$/);
 
     if (!secureMatch) {
       await sendTelegramMessage(
@@ -2115,15 +2194,29 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'secure_saved', noteId };
   }
 
-  // 10. /vault [kunci] (Buka rahasia atau list kunci Private Vault)
-  if (text.startsWith('/vault')) {
-    const vaultParam = text.replace(/^\/vault\s*/, '').trim();
+  // 10. /vault [kunci] atau /vl [kunci] (Buka rahasia atau list kunci Private Vault)
+  if (
+    text === '/vault' ||
+    text === '/vl' ||
+    text.startsWith('/vault ') ||
+    text.startsWith('/vl ') ||
+    /^(\/(vault|vl))(@[a-zA-Z0-9_]+)?(\s+[\s\S]*)?$/.test(text)
+  ) {
+    const vaultParam = text.replace(/^\/(vault|vl)(@[a-zA-Z0-9_]+)?\s*/, '').trim();
     return await handleVaultCommand(chatId, activeKey, activeLocale, vaultParam);
   }
 
-  // 10a. /temp <isi_catatan> (Catatan Sementara / Ephemeral Note - TTL 7 Hari)
-  if (text.startsWith('/temp')) {
-    const tempContent = text.replace(/^\/temp\s*/, '').trim();
+  // 10a. /temp atau /tp atau /temporary <isi_catatan> (Catatan Sementara / Ephemeral Note - TTL 7 Hari)
+  if (
+    text === '/temp' ||
+    text === '/tp' ||
+    text === '/temporary' ||
+    text.startsWith('/temp ') ||
+    text.startsWith('/tp ') ||
+    text.startsWith('/temporary ') ||
+    /^(\/(temp|tp|temporary))(@[a-zA-Z0-9_]+)?(\s+[\s\S]*)?$/.test(text)
+  ) {
+    const tempContent = text.replace(/^\/(temp|tp|temporary)(@[a-zA-Z0-9_]+)?\s*/, '').trim();
     if (!tempContent) {
       await sendTelegramMessage(
         chatId,
@@ -2168,7 +2261,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
 
     await sendTelegramMessage(chatId, reply, {
       parse_mode: 'Markdown',
-      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      reply_markup: REMOVE_DOCK_KEYBOARD,
     });
 
     return { ok: true, action: 'temp_saved', noteId };
@@ -2177,7 +2270,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   // 10b. Invalid Command Guard (pesan berawalan '/' tanpa command yang cocok)
   if (text.startsWith('/')) {
     await sendTelegramMessage(chatId, getTelegramMsg('invalid_command', activeLocale), {
-      reply_markup: PERSISTENT_DOCK_KEYBOARD,
+      reply_markup: REMOVE_DOCK_KEYBOARD,
     });
     return { ok: true, action: 'invalid_command' };
   }
@@ -2291,6 +2384,22 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     const activeLocale = detectTelegramLocale(callbackQuery, matchedUser?.preferredLocale);
 
+    // Safety guard: Jika targetTag kosong/hilang, jangan query string kosong, langsung arahkan ke menu tags
+    if (!targetTag || targetTag.trim() === '') {
+      const overview = await getTagsOverviewData(activeKey.userId);
+      const msg = getTelegramMsg('tags_header', activeLocale, {
+        latestTagsText: overview.latestTagsText,
+        activeTagsText: overview.activeTagsText,
+        recentTagsText: overview.recentTagsText,
+      });
+      const keyboard = buildCategoriesGridKeyboard(overview.existingCategories, overview.hasVaultNotes);
+      if (messageId) {
+        await editTelegramMessage(chatId, messageId, msg, { parse_mode: 'HTML', reply_markup: keyboard });
+      }
+      await answerTelegramCallbackQuery(callbackId);
+      return { ok: true, action: 'callback_menu_tags' };
+    }
+
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(notes)
@@ -2350,7 +2459,13 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const nav = noteNavMap.get(noteId);
     const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
-    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+    let queryVal = '';
+    if (parts.length > 5) {
+      const extracted = parts.slice(4, parts.length - 1).join(':').trim();
+      queryVal = extracted || (nav?.queryVal || '');
+    } else {
+      queryVal = nav?.queryVal || '';
+    }
 
     const res = await displayNoteDetail(chatId, messageId, noteId, type, queryVal, pageNum);
     await answerTelegramCallbackQuery(callbackId);
@@ -2387,7 +2502,13 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const nav = noteNavMap.get(noteId);
     const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
-    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+    let queryVal = '';
+    if (parts.length > 5) {
+      const extracted = parts.slice(4, parts.length - 1).join(':').trim();
+      queryVal = extracted || (nav?.queryVal || '');
+    } else {
+      queryVal = nav?.queryVal || '';
+    }
 
     const [note] = await db
       .select()
@@ -2420,7 +2541,13 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const nav = noteNavMap.get(noteId);
     const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
-    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+    let queryVal = '';
+    if (parts.length > 5) {
+      const extracted = parts.slice(4, parts.length - 1).join(':').trim();
+      queryVal = extracted || (nav?.queryVal || '');
+    } else {
+      queryVal = nav?.queryVal || '';
+    }
 
     const rawExecCb = `note:delete_exec:${noteId}:${type}:${queryVal}:${pageNum}`;
     const execCb = rawExecCb.length <= 64 ? rawExecCb : `note:delete_exec:${noteId}`;
@@ -2452,7 +2579,13 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     const nav = noteNavMap.get(noteId);
     const type = (parts[3] as 'tags' | 'search' | 'pin' | 'read') || nav?.type || 'tags';
     const pageNum = parseInt(parts[parts.length - 1], 10) || nav?.page || 1;
-    let queryVal = parts.length > 5 ? parts.slice(4, parts.length - 1).join(':') : (nav?.queryVal || '');
+    let queryVal = '';
+    if (parts.length > 5) {
+      const extracted = parts.slice(4, parts.length - 1).join(':').trim();
+      queryVal = extracted || (nav?.queryVal || '');
+    } else {
+      queryVal = nav?.queryVal || '';
+    }
 
     await db.delete(notes).where(eq(notes.id, noteId));
     noteNavMap.delete(noteId);
@@ -2519,10 +2652,46 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
     return { ok: true, action: 'note_media_sent', noteId };
   }
 
-  // 1g. Pagination untuk /pin: page:pin:<queryVal>:<page_num>
-  if (data.startsWith('page:pin:')) {
+  // 1f3. Menu Start / Kembali ke Start: menu:start
+  if (data === 'menu:start') {
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    let activeLocale: SupportedLocale = 'id';
+    if (activeKey) {
+      const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, activeKey.userId)).limit(1);
+      activeLocale = detectTelegramLocale(callbackQuery, u?.preferredLocale);
+    } else {
+      activeLocale = detectTelegramLocale(callbackQuery, null);
+    }
+
+    const helpMsg = getTelegramMsg('help', activeLocale, {
+      dashboardUrl: getWebDashboardUrl(),
+    });
+
+    if (messageId) {
+      await editTelegramMessage(chatId, messageId, helpMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: START_HELP_MENU_KEYBOARD,
+      });
+    } else {
+      await sendTelegramMessage(chatId, helpMsg, {
+        parse_mode: 'Markdown',
+        reply_markup: START_HELP_MENU_KEYBOARD,
+      });
+    }
+
+    await answerTelegramCallbackQuery(callbackId);
+    return { ok: true, action: 'callback_menu_start' };
+  }
+
+  // 1g. Pagination untuk /pin: page:pin:<queryVal>:<page_num> atau menu:pin
+  if (data === 'menu:pin' || data.startsWith('page:pin:')) {
     const parts = data.split(':');
-    const pageNum = parseInt(parts[3] || '1', 10) || 1;
+    const pageNum = data === 'menu:pin' ? 1 : parseInt(parts[3] || '1', 10) || 1;
 
     const [activeKey] = await db
       .select()

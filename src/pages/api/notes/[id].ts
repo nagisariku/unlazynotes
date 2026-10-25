@@ -6,7 +6,7 @@ import { getSessionUser } from '@/lib/session';
 import { CATEGORIES } from '@/lib/constants';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import { extractEarliestScheduleDate } from '@/lib/date-extractor';
-import { heuristicExtractFinance, extractFinanceEntries } from '@/lib/ai';
+import { extractFinanceEntries } from '@/lib/ai';
 import { normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
 
 export const prerender = false;
@@ -307,10 +307,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       (isContentChanged || (updates.category === 'finance' && existing.category !== 'finance'))
     ) {
       const targetText = content !== undefined ? content.trim() : existingCleanContent;
-      const quickFin = heuristicExtractFinance(targetText);
-      updates.expenses = quickFin.expenses;
-      updates.income = quickFin.income;
-      updates.debt = quickFin.debt;
 
       // Picu re-ekstraksi finance di background secara hening (deepseek-v4.1-flash)
       extractFinanceEntries(targetText)

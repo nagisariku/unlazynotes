@@ -11,8 +11,7 @@ import {
   ExternalLink,
   FileIcon,
   ImageIcon,
-  Calendar,
-} from 'lucide-react';
+  } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { id as localeId } from 'date-fns/locale';
@@ -51,7 +50,7 @@ interface NoteCardProps {
   className?: string;
   showDateTime?: boolean;
   showCategory?: boolean;
-  variant?: 'default' | 'timeline';
+  variant?: 'default' | 'timeline' | 'row';
   maxHeight?: string;
   showTags?: boolean;
   isSelectable?: boolean;
@@ -104,34 +103,6 @@ export default function NoteCard({
 
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
   const urls = Array.from(new Set(note.content.match(urlRegex) || []));
-
-  const targetDateBadge = useMemo(() => {
-    let dateStr = '';
-    if (note.targetDate) {
-      if (typeof note.targetDate === 'string') {
-        dateStr = note.targetDate.split('T')[0];
-      } else if (note.targetDate instanceof Date) {
-        dateStr = note.targetDate.toISOString().split('T')[0];
-      }
-    } else if (note.scheduleDates && note.scheduleDates.length > 0) {
-      dateStr = note.scheduleDates[0];
-    } else if (note.schedule?.dates && note.schedule.dates.length > 0) {
-      dateStr = note.schedule.dates[0];
-    }
-    if (!dateStr) return null;
-
-    try {
-      const d = parseISO(dateStr);
-      const formatted = format(d, 'd MMM yyyy', { locale: localeId });
-      const isRecurring = Boolean(note.schedule?.isRecurring);
-      return {
-        text: formatted,
-        isRecurring,
-      };
-    } catch {
-      return null;
-    }
-  }, [note.targetDate, note.scheduleDates, note.schedule]);
 
   const isBookmark =
     note.category?.toLowerCase() === 'bookmark' || note.category?.toLowerCase() === 'bookmarks';
@@ -233,25 +204,29 @@ export default function NoteCard({
     }
   };
 
+  const isRow = variant === 'row';
   const isTimeline = variant === 'timeline';
   const effectiveMaxHeight = isMobile && isExpanded ? undefined : maxHeight;
-  const hasHeaderLeft =
-    (showCategory && note.category) ||
-    targetDateBadge ||
-    isSelectable ||
-    Boolean(note.expiresAt);
 
   return (
     <div
       onClick={handleCardClick}
       className={
-        isTimeline
+        isRow
           ? `group relative flex flex-col justify-between ${
               isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
             } ${
               isExpanded && isMobile
                 ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-                : 'px-2.5 py-3 md:p-3.5 rounded-xl md:rounded-lg border-0 md:border md:border-hairline bg-canvas/40 md:bg-canvas cursor-pointer select-none mb-1 md:mb-3.5'
+                : 'px-1 sm:px-2 py-3.5 rounded-none border-0 border-b border-hairline last:border-b-0 bg-transparent hover:bg-surface-soft/40 cursor-pointer select-none mb-0'
+            } text-left break-inside-avoid w-full overflow-hidden transition-all ${className}`.trim()
+          : isTimeline
+          ? `group relative flex flex-col justify-between ${
+              isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
+            } ${
+              isExpanded && isMobile
+                ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
+                : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-lg border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline md:last:border-b bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none mb-0 md:mb-3.5'
             } text-left break-inside-avoid mb-0 md:mb-3.5 w-full overflow-hidden transition-all ${className}`.trim()
           : `group relative flex flex-col justify-between p-3.5 rounded-lg border ${
               isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
@@ -262,74 +237,187 @@ export default function NoteCard({
             } text-left break-inside-avoid mb-3.5 w-full overflow-hidden transition-all ${className}`.trim()
       }
     >
-      <div className="w-full max-w-full min-w-0">
-        {/* Card Header: Category badge on left, Action buttons on right */}
-        <div
-          className={`flex items-center ${
-            hasHeaderLeft ? 'justify-between' : 'justify-end'
-          } gap-1.5 mb-2.5 select-none`}
-        >
-          {hasHeaderLeft && (
-            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-              {isSelectable && (
-                <div
-                  className="cursor-pointer p-0.5 mr-0.5 flex items-center justify-center"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleSelect?.(note.id);
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={Boolean(isSelected)}
-                    onChange={() => {}}
-                    className="w-4 h-4 rounded border-hairline-strong text-primary accent-primary cursor-pointer align-middle"
-                  />
-                </div>
-              )}
-              {showCategory && note.category && (
-                <span
-                  className={`px-2 py-0.5 rounded-full ${
-                    isExpanded && isMobile
-                      ? 'bg-zinc-100 border border-hairline-strong text-ink'
-                      : 'bg-surface-soft text-ink'
-                  } text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]`}
-                >
-                  {note.category}
-                </span>
-              )}
-              {note.expiresAt && (
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
-                    isExpanded && isMobile
-                      ? 'bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300'
-                      : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                  } text-[10px] font-mono font-medium`}
-                >
-                  ⏳ Temp
-                </span>
-              )}
-              {targetDateBadge && (
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
-                    isExpanded && isMobile
-                      ? 'bg-zinc-100 border border-hairline-strong text-ink'
-                      : 'bg-surface-soft text-ink'
-                  } text-[10px] font-mono font-medium`}
-                >
-                  <Calendar className="w-3 h-3 text-mute shrink-0" />
-                  <span>{targetDateBadge.text}</span>
-                  {targetDateBadge.isRecurring && (
-                    <span className="text-[9px] text-primary uppercase font-bold tracking-wider ml-0.5">
-                      (Rutin)
-                    </span>
-                  )}
-                </span>
-              )}
+      <div className="w-full max-w-full min-w-0 flex flex-col justify-between flex-1">
+        <div className="w-full max-w-full min-w-0">
+          {/* Checkbox if selectable (Manage Mode) */}
+          {isSelectable && (
+            <div
+              className="cursor-pointer p-0.5 mb-2 -ml-0.5 flex items-center justify-start select-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleSelect?.(note.id);
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={Boolean(isSelected)}
+                onChange={() => {}}
+                className="w-4 h-4 rounded border-hairline-strong text-primary accent-primary cursor-pointer align-middle"
+              />
             </div>
           )}
 
-          {/* Action Buttons Toolbar */}
+          {/* Date and Time displayed at top when expanded on mobile */}
+          {isExpanded && isMobile && (
+            <div className="text-[11px] text-mute font-mono mb-2.5 select-none">
+              {formattedDate}
+            </div>
+          )}
+
+          {/* Notes Content: fully revealed without max height when expanded on mobile, selectable */}
+          <div
+            onClick={(e) => {
+              if (isExpanded && isMobile) {
+                e.stopPropagation();
+              }
+            }}
+            className={`text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal whitespace-pre-wrap ${
+              isExpanded && isMobile ? 'select-text cursor-text' : 'select-none'
+            } ${
+              isExpanded && isMobile
+                ? 'line-clamp-none'
+                : isBookmark && thumbnail && !imgError
+                ? 'line-clamp-3'
+                : effectiveMaxHeight
+                ? `overflow-hidden ${effectiveMaxHeight}`
+                : 'line-clamp-none'
+            }`}
+          >
+            {note.content}
+          </div>
+
+          {/* Bookmark OG Image Thumbnail (16:9, below notes, no extra border, no hover scale) */}
+          {isBookmark && thumbnail && !imgError && (
+            <div className="relative aspect-video w-full rounded-md overflow-hidden bg-surface-soft mt-2.5 shrink-0">
+              <img
+                src={thumbnail}
+                alt="Bookmark thumbnail"
+                loading="lazy"
+                className="w-full h-full object-cover"
+                onError={() => setImgError(true)}
+              />
+            </div>
+          )}
+
+          {/* Embedded URL Link Cards when expanded on mobile */}
+          {isExpanded && isMobile && urls.length > 0 && (
+            <div className="pt-3.5 flex flex-wrap gap-2 select-none">
+              {urls.map((linkUrl) => {
+                let domain = '';
+                try {
+                  domain = new URL(linkUrl).hostname.replace('www.', '');
+                } catch {
+                  domain = linkUrl;
+                }
+                return (
+                  <a
+                    key={linkUrl}
+                    href={linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+                      isExpanded && isMobile
+                        ? 'bg-zinc-100 border border-hairline-strong hover:bg-zinc-200'
+                        : 'bg-canvas border border-hairline hover:border-hairline-strong'
+                    } group text-left max-w-full`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-mute shrink-0 group-hover:text-ink" />
+                    <span className="text-[11px] font-medium text-ink group-hover:underline truncate max-w-[200px]">
+                      {domain}
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Specific Tags when expanded on mobile (warna teks sama seperti date & time: text-mute) */}
+          {showTags && isExpanded && isMobile && note.specificTags && note.specificTags.length > 0 && (
+            <div className="pt-2.5 flex flex-wrap items-center gap-2 select-none">
+              {note.specificTags.map((tag) => (
+                <span
+                  key={tag}
+                  onClick={(e) => {
+                    if (onTagClick) {
+                      e.stopPropagation();
+                      onTagClick(tag);
+                    }
+                  }}
+                  className="text-caption-sm text-mute hover:text-ink font-sans font-medium cursor-pointer transition-colors"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Attachments when expanded on mobile */}
+          {isExpanded && isMobile && note.attachments && note.attachments.length > 0 && (
+            <div className="pt-3 flex flex-wrap gap-2 select-none">
+              {note.attachments.map((att: any, i: number) => (
+                <div
+                  key={att.fileId || i}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${
+                    isExpanded && isMobile
+                      ? 'bg-zinc-100 border border-hairline-strong'
+                      : 'bg-canvas border border-hairline'
+                  } text-[11px] text-ink max-w-full font-mono`}
+                >
+                  {att.type === 'image' ? (
+                    <ImageIcon className="w-3.5 h-3.5 text-mute shrink-0" />
+                  ) : (
+                    <FileIcon className="w-3.5 h-3.5 text-mute shrink-0" />
+                  )}
+                  <span className="truncate max-w-[180px]">{att.fileName || `Attachment-${i + 1}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Optional Date and Time at bottom (e.g. for pinned notes when NOT expanded) */}
+          {showDateTime && !isExpanded && note.createdAt && (
+            <div className="mt-2.5 flex items-center text-[11px] text-mute font-mono select-none">
+              <span className="whitespace-nowrap">{format(new Date(note.createdAt), 'dd MMM yyyy, HH:mm')}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Card Bottom: Category badge on left, Action buttons on right (visible on hover or expanded) */}
+        <div
+          className={`flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none min-h-[26px] ${
+            (isExpanded && isMobile) || confirmDelete
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100'
+          } transition-opacity duration-150`}
+        >
+          {/* Left: Category badge & Temp badge */}
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            {showCategory && note.category && (
+              <span
+                className={`px-2 py-0.5 rounded-full ${
+                  isExpanded && isMobile
+                    ? 'bg-zinc-100 border border-hairline-strong text-ink'
+                    : 'bg-surface-soft text-ink'
+                } text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]`}
+              >
+                {note.category}
+              </span>
+            )}
+            {note.expiresAt && (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${
+                  isExpanded && isMobile
+                    ? 'bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                } text-[10px] font-mono font-medium`}
+              >
+                ⏳ Temp
+              </span>
+            )}
+          </div>
+
+          {/* Right: Action Buttons Toolbar */}
           {!isSelectable && (
             <div className="flex items-center gap-1 shrink-0 ml-auto">
               {/* Pin Button */}
@@ -337,10 +425,10 @@ export default function NoteCard({
                 type="button"
                 onClick={handleTogglePinInternal}
                 disabled={isPinning}
-                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
+                className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
                   note.isPinned
-                    ? 'text-primary bg-surface-soft'
-                    : 'text-mute hover:text-ink hover:bg-surface-soft opacity-70 group-hover:opacity-100'
+                    ? 'text-primary bg-surface-soft !border-0'
+                    : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
                 }`}
                 title={note.isPinned ? 'Lepas Pin' : 'Pin Catatan'}
                 aria-label="Pin Button"
@@ -359,7 +447,7 @@ export default function NoteCard({
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
                   title="Salin isi catatan"
                   aria-label="Salin catatan"
                 >
@@ -372,7 +460,7 @@ export default function NoteCard({
                 <button
                   type="button"
                   onClick={handleEdit}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
                   title="Edit catatan"
                   aria-label="Edit catatan"
                 >
@@ -385,10 +473,10 @@ export default function NoteCard({
                 type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className={`p-1.5 rounded-full cursor-pointer transition-colors ${
+                className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
                   confirmDelete
-                    ? 'bg-terminal-red text-white hover:bg-terminal-red/90'
-                    : 'text-mute hover:text-terminal-red hover:bg-surface-soft opacity-70 group-hover:opacity-100'
+                    ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
+                    : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
                 }`}
                 title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus catatan'}
                 aria-label="Delete Button"
@@ -408,7 +496,7 @@ export default function NoteCard({
                     e.stopPropagation();
                     setIsExpanded(false);
                   }}
-                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+                  className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
                   title="Ciutkan catatan"
                   aria-label="Ciutkan catatan"
                 >
@@ -418,131 +506,6 @@ export default function NoteCard({
             </div>
           )}
         </div>
-
-        {/* Date and Time displayed at top when expanded on mobile */}
-        {isExpanded && isMobile && (
-          <div className="text-[11px] text-mute font-mono mb-2.5 select-none">
-            {formattedDate}
-          </div>
-        )}
-
-        {/* Notes Content: fully revealed without max height when expanded on mobile, selectable */}
-        <div
-          onClick={(e) => {
-            if (isExpanded && isMobile) {
-              e.stopPropagation();
-            }
-          }}
-          className={`text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal whitespace-pre-wrap ${
-            isExpanded && isMobile ? 'select-text cursor-text' : 'select-none'
-          } ${
-            isExpanded && isMobile
-              ? 'line-clamp-none'
-              : isBookmark && thumbnail && !imgError
-              ? 'line-clamp-3'
-              : effectiveMaxHeight
-              ? `overflow-hidden ${effectiveMaxHeight}`
-              : 'line-clamp-none'
-          }`}
-        >
-          {note.content}
-        </div>
-
-        {/* Bookmark OG Image Thumbnail (16:9, below notes, no extra border, no hover scale) */}
-        {isBookmark && thumbnail && !imgError && (
-          <div className="relative aspect-video w-full rounded-md overflow-hidden bg-surface-soft mt-2.5 shrink-0">
-            <img
-              src={thumbnail}
-              alt="Bookmark thumbnail"
-              loading="lazy"
-              className="w-full h-full object-cover"
-              onError={() => setImgError(true)}
-            />
-          </div>
-        )}
-
-        {/* Embedded URL Link Cards when expanded on mobile */}
-        {isExpanded && isMobile && urls.length > 0 && (
-          <div className="pt-3.5 flex flex-wrap gap-2 select-none">
-            {urls.map((linkUrl) => {
-              let domain = '';
-              try {
-                domain = new URL(linkUrl).hostname.replace('www.', '');
-              } catch {
-                domain = linkUrl;
-              }
-              return (
-                <a
-                  key={linkUrl}
-                  href={linkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg ${
-                    isExpanded && isMobile
-                      ? 'bg-zinc-100 border border-hairline-strong hover:bg-zinc-200'
-                      : 'bg-canvas border border-hairline hover:border-hairline-strong'
-                  } group text-left max-w-full`}
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-mute shrink-0 group-hover:text-ink" />
-                  <span className="text-[11px] font-medium text-ink group-hover:underline truncate max-w-[200px]">
-                    {domain}
-                  </span>
-                </a>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Specific Tags when expanded on mobile (warna teks sama seperti date & time: text-mute) */}
-        {showTags && isExpanded && isMobile && note.specificTags && note.specificTags.length > 0 && (
-          <div className="pt-2.5 flex flex-wrap items-center gap-2 select-none">
-            {note.specificTags.map((tag) => (
-              <span
-                key={tag}
-                onClick={(e) => {
-                  if (onTagClick) {
-                    e.stopPropagation();
-                    onTagClick(tag);
-                  }
-                }}
-                className="text-caption-sm text-mute hover:text-ink font-sans font-medium cursor-pointer transition-colors"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Attachments when expanded on mobile */}
-        {isExpanded && isMobile && note.attachments && note.attachments.length > 0 && (
-          <div className="pt-3 flex flex-wrap gap-2 select-none">
-            {note.attachments.map((att: any, i: number) => (
-              <div
-                key={att.fileId || i}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${
-                  isExpanded && isMobile
-                    ? 'bg-zinc-100 border border-hairline-strong'
-                    : 'bg-canvas border border-hairline'
-                } text-[11px] text-ink max-w-full font-mono`}
-              >
-                {att.type === 'image' ? (
-                  <ImageIcon className="w-3.5 h-3.5 text-mute shrink-0" />
-                ) : (
-                  <FileIcon className="w-3.5 h-3.5 text-mute shrink-0" />
-                )}
-                <span className="truncate max-w-[180px]">{att.fileName || `Attachment-${i + 1}`}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Optional Date and Time at bottom (e.g. for pinned notes when NOT expanded) */}
-        {showDateTime && !isExpanded && note.createdAt && (
-          <div className="mt-3 flex items-center text-[11px] text-mute font-mono select-none">
-            <span className="whitespace-nowrap">{format(new Date(note.createdAt), 'dd MMM yyyy, HH:mm')}</span>
-          </div>
-        )}
       </div>
     </div>
   );

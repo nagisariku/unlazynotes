@@ -57,12 +57,16 @@ const period = url.searchParams.get('period') || 'monthly';
         </div>
       </div>
 
+      <!-- Error Message Banner -->
+      <div id="sim-error" class="hidden p-3 rounded-xl bg-terminal-red/10 border border-terminal-red/20 text-terminal-red text-caption-sm text-center font-sans">
+      </div>
+
       <!-- Action Buttons -->
       <div class="space-y-3 pt-2">
         <button
           id="btn-pay-success"
           type="button"
-          class="w-full h-10 px-5 rounded-full bg-primary hover:bg-ink-deep text-on-primary text-button-md cursor-pointer select-none"
+          class="w-full h-10 px-5 rounded-full bg-primary hover:bg-ink-deep text-on-primary text-button-md cursor-pointer select-none !border-0"
         >
           Simulasikan Bayar Sukses (Lunas)
         </button>
@@ -90,6 +94,8 @@ const period = url.searchParams.get('period') || 'monthly';
       btnSuccess.addEventListener('click', async () => {
         btnSuccess.setAttribute('disabled', 'true');
         btnSuccess.textContent = 'Memproses Webhook...';
+        const errEl = document.getElementById('sim-error');
+        if (errEl) errEl.classList.add('hidden');
 
         try {
           const res = await fetch('/api/payment/webhook', {
@@ -107,13 +113,20 @@ const period = url.searchParams.get('period') || 'monthly';
           if (res.ok) {
             window.location.href = '/dashboard/settings?payment=success';
           } else {
-            alert('Gagal memproses webhook pembayaran');
+            if (errEl) {
+              errEl.textContent = 'Gagal memproses webhook pembayaran';
+              errEl.classList.remove('hidden');
+            }
             btnSuccess.removeAttribute('disabled');
             btnSuccess.textContent = 'Simulasikan Bayar Sukses (Lunas)';
           }
         } catch {
-          alert('Terjadi kesalahan jaringan');
+          if (errEl) {
+            errEl.textContent = 'Terjadi kesalahan jaringan saat memproses webhook';
+            errEl.classList.remove('hidden');
+          }
           btnSuccess.removeAttribute('disabled');
+          btnSuccess.textContent = 'Simulasikan Bayar Sukses (Lunas)';
         }
       });
     }
