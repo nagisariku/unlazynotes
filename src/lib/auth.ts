@@ -90,6 +90,10 @@ export const auth = betterAuth({
         type: 'string',
         defaultValue: 'id',
       },
+      timezone: {
+        type: 'string',
+        defaultValue: 'Asia/Jakarta',
+      },
       tier: {
         type: 'string',
         defaultValue: 'free',

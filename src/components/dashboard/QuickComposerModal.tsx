@@ -279,7 +279,10 @@ export default function QuickComposerModal({
     try {
       const res = await fetch('/api/notes/enhance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta',
+        },
         body: JSON.stringify({ text }),
       });
 
@@ -363,7 +366,10 @@ export default function QuickComposerModal({
 
       const res = await fetch('/api/notes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta',
+        },
         body: JSON.stringify(payload),
       });
 
@@ -396,7 +402,7 @@ export default function QuickComposerModal({
     <>
       {/* Full-screen Backdrop covering 100% viewport - overlay click does NOT close modal */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+        className="fixed inset-0 z-[9998] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         aria-hidden="true"
       />
@@ -587,7 +593,7 @@ export default function QuickComposerModal({
                       <div
                         role="listbox"
                         aria-label="Daftar Kategori"
-                        className="absolute bottom-full left-0 mb-2 w-44 sm:w-48 max-h-44 sm:max-h-48 overflow-y-auto rounded-xl border border-hairline bg-canvas/95 backdrop-blur-md shadow-xl py-1 z-30 flex flex-col overscroll-contain animate-in fade-in zoom-in-95 duration-100"
+                        className="absolute bottom-full left-0 mb-2 w-44 sm:w-48 max-h-44 sm:max-h-48 overflow-y-auto rounded-xl border border-hairline bg-canvas shadow-xl py-1 z-30 flex flex-col overscroll-contain animate-in fade-in zoom-in-95 duration-100"
                       >
                         <button
                           type="button"
@@ -801,7 +807,7 @@ export default function QuickComposerModal({
         <>
           {/* High z-index backdrop overlay */}
           <div
-            className="fixed inset-0 z-[10001] bg-black/75 backdrop-blur-sm select-none pointer-events-auto"
+            className="fixed inset-0 z-[10001] bg-black/75 select-none pointer-events-auto"
             style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             onClick={() => setIsDatePickerOpen(false)}
             aria-hidden="true"

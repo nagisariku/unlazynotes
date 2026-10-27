@@ -50,12 +50,13 @@ const serializedItems = todoNotes.map((n) => ({
   isPinned: n.isPinned,
   isProcessed: n.isProcessed,
   attachments: n.attachments,
+  todos: n.todos,
   createdAt: n.createdAt.toISOString(),
 }));
 ---
 
 <Layout title="To Do – UnlazyNotes">
-  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+  <div class="flex flex-col md:flex-row h-screen h-[100dvh] bg-canvas text-ink overflow-hidden">
     <Sidebar
       client:load
       currentPath="/dashboard/todo"
@@ -64,7 +65,7 @@ const serializedItems = todoNotes.map((n) => ({
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
       <TodoView
         client:load
         initialItems={serializedItems}

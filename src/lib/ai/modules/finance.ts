@@ -11,7 +11,7 @@ export type { ExpenseEntry, IncomeEntry, DebtEntry };
  */
 export async function extractFinanceEntries(
   content: string,
-  modelName: string = process.env.AI_MODEL_NAME || process.env.COSMOSHUB_MODEL || 'claude-haiku-5.5'
+  modelName: string = process.env.AI_MODEL_NAME || process.env.COSMOSHUB_MODEL || 'gemini-3.8-flash'
 ): Promise<{ expenses: ExpenseEntry[]; income: IncomeEntry[]; debt: DebtEntry[] }> {
   const text = content.trim();
   if (!text) return { expenses: [], income: [], debt: [] };

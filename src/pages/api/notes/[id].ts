@@ -1,13 +1,14 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { notes, type NoteCategory, type ScheduleMetadata, type ExpenseEntry, type IncomeEntry, type DebtEntry, type BookmarkType, type CredentialType } from '@/db/schema';
+import { notes, type NoteCategory, type ScheduleMetadata, type ExpenseEntry, type IncomeEntry, type DebtEntry, type BookmarkType, type CredentialType, type TodoEntry } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { CATEGORIES } from '@/lib/constants';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
-import { extractEarliestScheduleDate } from '@/lib/date-extractor';
-import { extractFinanceEntries } from '@/lib/ai';
+import { extractFinanceEntries, extractTodoEntries, extractScheduleEntries, safeExtractTargetDate } from '@/lib/ai';
+import { enrichNoteBookmarkAsync } from '@/lib/link-enricher';
 import { normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
+import crypto from 'node:crypto';
 
 export const prerender = false;
 
@@ -53,12 +54,13 @@ export const GET: APIRoute = async ({ params, request }) => {
         vaultKey: note.vaultKey,
         isPinned: note.isPinned,
         isProcessed: note.isProcessed,
-        targetDate: note.targetDate ? note.targetDate.toISOString() : null,
+        targetDate: note.targetDate instanceof Date && !isNaN(note.targetDate.getTime()) ? note.targetDate.toISOString() : (typeof note.targetDate === 'string' ? note.targetDate : null),
         scheduleDates: note.scheduleDates,
         schedule: note.schedule,
         expenses: note.expenses,
         income: note.income,
         debt: note.debt,
+        todos: note.todos,
         attachments: note.attachments,
         createdAt: note.createdAt.toISOString(),
       },
@@ -156,6 +158,7 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       expenses: ExpenseEntry[];
       income: IncomeEntry[];
       debt: DebtEntry[];
+      todos: TodoEntry[];
       bookmarkType: BookmarkType | null;
       credentialType: CredentialType | null;
     }> = {};
@@ -213,14 +216,13 @@ export const PATCH: APIRoute = async ({ params, request }) => {
           updates.targetDate = parsed;
         }
       }
-    } else if (category === 'schedule' && !existing.targetDate) {
-      const textToInspect = content !== undefined ? content : (existing.isEncrypted ? decryptSecret(existing.content, user.id) : existing.content);
-      updates.targetDate = extractEarliestScheduleDate(textToInspect);
     }
 
+    const clientTz = request.headers.get('x-user-timezone') || user.timezone;
+
     if (!updates.targetDate && !existing.targetDate && updates.scheduleDates && updates.scheduleDates.length > 0) {
-      const parsed = new Date(`${updates.scheduleDates[0]}T00:00:00Z`);
-      if (!isNaN(parsed.getTime())) updates.targetDate = parsed;
+      const parsed = safeExtractTargetDate(updates.scheduleDates[0], undefined, clientTz);
+      if (parsed) updates.targetDate = parsed;
     }
 
     if (attachments !== undefined) {
@@ -246,6 +248,20 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         dates,
         isRecurring: false,
       };
+    }
+
+    if (category === 'schedule' && body.schedule === undefined && body.scheduleDates === undefined) {
+      const textToInspect = content !== undefined ? content : (existing.isEncrypted ? decryptSecret(existing.content, user.id) : existing.content);
+      try {
+        const sched = await extractScheduleEntries(textToInspect, new Date(), undefined, clientTz);
+        updates.schedule = sched.schedule;
+        updates.scheduleDates = sched.scheduleDates;
+        if (!updates.targetDate && !existing.targetDate) {
+          updates.targetDate = sched.targetDate;
+        }
+      } catch (err) {
+        console.warn('[Schedule Update Extraction Error]:', err);
+      }
     }
 
     if (body.expenses !== undefined && Array.isArray(body.expenses)) {
@@ -274,6 +290,18 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       }));
     }
 
+    if (body.todos !== undefined && Array.isArray(body.todos)) {
+      updates.todos = body.todos
+        .map((t: any) => ({
+          id: String(t.id || crypto.randomUUID()),
+          task: String(t.task || t.title || '').trim(),
+          isCompleted: Boolean(t.isCompleted),
+          completedAt: t.completedAt ? String(t.completedAt) : t.isCompleted ? new Date().toISOString() : null,
+          priority: t.priority && ['low', 'normal', 'high'].includes(t.priority) ? t.priority : null,
+        }))
+        .filter((t: any) => t.task.length > 0);
+    }
+
     if (body.bookmarkType !== undefined) {
       updates.bookmarkType = body.bookmarkType ? normalizeBookmarkType(body.bookmarkType) : null;
     }
@@ -294,8 +322,78 @@ export const PATCH: APIRoute = async ({ params, request }) => {
       }
     }
 
-    // Otomatisasi Background: Jika kategori finance dan teks konten berubah (atau beralih ke finance),
-    // otomatis lakukan pemetaan cepat dan picu background re-ekstraksi secara hening
+    // 0-Token Lightweight To-Do Completion / Priority Toggle
+    if (body.todoId !== undefined) {
+      const currentTodos = Array.isArray(existing.todos) ? [...existing.todos] : [];
+      let idx = currentTodos.findIndex((t: any) => t.id === body.todoId);
+      if (idx === -1 && (body.todoId === 'default' || currentTodos.length === 0)) {
+        currentTodos.push({
+          id: crypto.randomUUID(),
+          task: existing.content,
+          isCompleted: false,
+          completedAt: null,
+          priority: null,
+        });
+        idx = currentTodos.length - 1;
+      }
+      if (idx !== -1 && currentTodos[idx]) {
+        if (typeof body.isCompleted === 'boolean') {
+          currentTodos[idx] = {
+            ...currentTodos[idx],
+            isCompleted: body.isCompleted,
+            completedAt: body.isCompleted ? new Date().toISOString() : null,
+          };
+        }
+        if (body.priority !== undefined) {
+          const validPriority = ['low', 'normal', 'high'].includes(body.priority) ? body.priority : null;
+          currentTodos[idx] = {
+            ...currentTodos[idx],
+            priority: validPriority,
+          };
+        }
+        updates.todos = currentTodos;
+      }
+    } else if (body.todoIndex !== undefined) {
+      const currentTodos = Array.isArray(existing.todos) ? [...existing.todos] : [];
+      if (currentTodos.length === 0 && body.todoIndex === 0) {
+        currentTodos.push({
+          id: crypto.randomUUID(),
+          task: existing.content,
+          isCompleted: false,
+          completedAt: null,
+          priority: null,
+        });
+      }
+      if (currentTodos[body.todoIndex]) {
+        if (typeof body.isCompleted === 'boolean') {
+          currentTodos[body.todoIndex] = {
+            ...currentTodos[body.todoIndex],
+            isCompleted: body.isCompleted,
+            completedAt: body.isCompleted ? new Date().toISOString() : null,
+          };
+        }
+        if (body.priority !== undefined) {
+          const validPriority = ['low', 'normal', 'high'].includes(body.priority) ? body.priority : null;
+          currentTodos[body.todoIndex] = {
+            ...currentTodos[body.todoIndex],
+            priority: validPriority,
+          };
+        }
+        updates.todos = currentTodos;
+      }
+    }
+
+    // 1. Pembersihan Metadata jika beralih KELUAR dari finance atau todo
+    if (updates.category && updates.category !== 'finance' && existing.category === 'finance') {
+      if (body.expenses === undefined) updates.expenses = [];
+      if (body.income === undefined) updates.income = [];
+      if (body.debt === undefined) updates.debt = [];
+    }
+    if (updates.category && updates.category !== 'todo' && existing.category === 'todo') {
+      if (body.todos === undefined) updates.todos = [];
+    }
+
+    // 2. Ekstraksi Sinkron (await) via LLM jika kategori finance dan konten berubah, atau baru beralih ke finance
     const effectiveCategory = updates.category || existing.category;
     const existingCleanContent = existing.isEncrypted
       ? decryptSecret(existing.content, user.id)
@@ -304,27 +402,95 @@ export const PATCH: APIRoute = async ({ params, request }) => {
 
     if (
       effectiveCategory === 'finance' &&
-      (isContentChanged || (updates.category === 'finance' && existing.category !== 'finance'))
+      (isContentChanged || (updates.category === 'finance' && existing.category !== 'finance')) &&
+      body.expenses === undefined &&
+      body.income === undefined &&
+      body.debt === undefined
     ) {
       const targetText = content !== undefined ? content.trim() : existingCleanContent;
+      try {
+        const fin = await extractFinanceEntries(targetText);
+        updates.expenses = fin.expenses;
+        updates.income = fin.income;
+        updates.debt = fin.debt;
+      } catch (err) {
+        console.warn('[Finance Re-extract Error]:', err);
+      }
+    }
 
-      // Picu re-ekstraksi finance di background secara hening (deepseek-v4.1-flash)
-      extractFinanceEntries(targetText)
-        .then(async (fin) => {
-          if (fin.expenses.length > 0 || fin.income.length > 0 || fin.debt.length > 0) {
-            await db
-              .update(notes)
-              .set({
-                expenses: fin.expenses,
-                income: fin.income,
-                debt: fin.debt,
-              })
-              .where(eq(notes.id, id));
+    // 2b. Ekstraksi Sinkron via LLM jika kategori todo dan konten berubah, atau baru beralih ke todo
+    if (
+      effectiveCategory === 'todo' &&
+      (isContentChanged || (updates.category === 'todo' && existing.category !== 'todo')) &&
+      body.todos === undefined &&
+      body.todoId === undefined &&
+      body.todoIndex === undefined
+    ) {
+      const targetText = content !== undefined ? content.trim() : existingCleanContent;
+      try {
+        const extractedTodos = await extractTodoEntries(targetText);
+
+        // Smart reconciliation with existing.todos:
+        // Preserves completion state, completed timestamp, and user-assigned priority
+        const existingTodos: TodoEntry[] = Array.isArray(existing.todos) ? existing.todos : [];
+        const matchedOldIds = new Set<string>();
+
+        const mergedTodos: TodoEntry[] = extractedTodos.map((newTodo) => {
+          const newNormalized = newTodo.task.trim().toLowerCase();
+
+          // Priority 1: Exact task match
+          let match = existingTodos.find(
+            (old) => !matchedOldIds.has(old.id) && old.task.trim().toLowerCase() === newNormalized
+          );
+
+          // Priority 2: Substring / minor phrasing match for small edits
+          if (!match) {
+            match = existingTodos.find(
+              (old) =>
+                !matchedOldIds.has(old.id) &&
+                ((old.task.trim().toLowerCase().length >= 4 && newNormalized.includes(old.task.trim().toLowerCase())) ||
+                 (newNormalized.length >= 4 && old.task.trim().toLowerCase().includes(newNormalized)))
+            );
           }
-        })
-        .catch((err) => {
-          console.warn('[Background Finance Re-extract Error]:', err);
+
+          if (match) {
+            matchedOldIds.add(match.id);
+            return {
+              id: match.id,
+              task: newTodo.task,
+              isCompleted: newTodo.isCompleted || match.isCompleted,
+              completedAt: newTodo.isCompleted && !match.isCompleted ? new Date().toISOString() : match.completedAt,
+              priority: match.priority || null,
+            };
+          }
+
+          return newTodo;
         });
+
+        updates.todos = mergedTodos;
+      } catch (err) {
+        console.warn('[Todo Re-extract Error]:', err);
+        // Fail-safe: Jangan timpa atau rusak existing.todos jika AI mengalami network error
+        updates.todos = Array.isArray(existing.todos) && existing.todos.length > 0 ? existing.todos : [
+          {
+            id: crypto.randomUUID(),
+            task: targetText,
+            isCompleted: false,
+            completedAt: null,
+          },
+        ];
+      }
+    }
+
+    // 3. Otomatisasi Bookmark: Jika beralih ke bookmark atau konten link berubah, jalankan background enrichment
+    if (
+      effectiveCategory === 'bookmark' &&
+      (updates.category === 'bookmark' || isContentChanged) &&
+      /(https?:\/\/[^\s]+)/i.test(content !== undefined ? content : existingCleanContent)
+    ) {
+      enrichNoteBookmarkAsync(id, content !== undefined ? content : existingCleanContent).catch((err) => {
+        console.warn('[Background Bookmark Re-enrich Error]:', err);
+      });
     }
 
     // Human Intent Trumps AI: Any explicit edit from web locks the note from future AI batch sync overwrites
@@ -355,12 +521,13 @@ export const PATCH: APIRoute = async ({ params, request }) => {
           specificTags: updated.specificTags,
           source: updated.source,
           isProcessed: updated.isProcessed,
-          targetDate: updated.targetDate ? updated.targetDate.toISOString() : null,
+          targetDate: updated.targetDate instanceof Date && !isNaN(updated.targetDate.getTime()) ? updated.targetDate.toISOString() : (typeof updated.targetDate === 'string' ? updated.targetDate : null),
           scheduleDates: updated.scheduleDates,
           schedule: updated.schedule,
           expenses: updated.expenses,
           income: updated.income,
           debt: updated.debt,
+          todos: updated.todos,
           bookmarkType: updated.bookmarkType,
           credentialType: updated.credentialType,
           attachments: updated.attachments,

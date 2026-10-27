@@ -39,7 +39,7 @@ export function extractBookmarkThumbnail(
         /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
       );
       if (m && m[1]) {
-        thumbnail = `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
+        thumbnail = `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
       }
     }
     // 2. GitHub

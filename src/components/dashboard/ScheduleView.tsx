@@ -15,12 +15,17 @@ import {
   isSameMonth,
   isSameDay,
   parseISO,
+  subDays,
+  addDays,
+  startOfDay,
+  endOfDay,
 } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Button, SearchPill, Calendar } from '../ui';
 import NoteCard from './NoteCard';
-import EditNoteModal from './EditNoteModal';
+import AskAiButton from './AskAiButton';
+import AskAiModal from './AskAiModal';
 import NoteDetailModal from './NoteDetailModal';
 import NewScheduleModal from './NewScheduleModal';
 
@@ -76,25 +81,113 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
   // Calendar Navigation & Filter State
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [tabFilter, setTabFilter] = useState<'this_month' | 'past' | 'all'>('this_month');
+
+  // Helper: check if item matches the selected tab based on mapped schedule dates (not createdAt)
+  const itemMatchesTab = (item: ScheduleItem, tab: 'this_month' | 'past' | 'all'): boolean => {
+    if (tab === 'all') return true;
+
+    const concreteDates: Date[] = [];
+    if (item.targetDate) {
+      const d = new Date(item.targetDate);
+      if (!isNaN(d.getTime())) concreteDates.push(d);
+    }
+    const arrayDates = item.schedule?.dates || item.scheduleDates || [];
+    if (Array.isArray(arrayDates)) {
+      for (const s of arrayDates) {
+        if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const d = parseISO(s);
+          if (!isNaN(d.getTime())) concreteDates.push(d);
+        }
+      }
+    }
+
+    const isRecurring = Boolean(item.schedule?.isRecurring);
+    const now = new Date();
+
+    if (tab === 'this_month') {
+      // 1 minggu yang lalu (7 hari lalu) s.d. 3 minggu mendatang (21 hari ke depan)
+      const rangeStart = startOfDay(subDays(now, 7));
+      const rangeEnd = endOfDay(addDays(now, 21));
+
+      // Concrete date match
+      const hasConcreteInRange = concreteDates.some((d) => d >= rangeStart && d <= rangeEnd);
+      if (hasConcreteInRange) return true;
+
+      // Recurring projection
+      if (isRecurring) {
+        const rule = item.schedule?.recurrenceRule || { frequency: 'weekly' };
+        const anchor = concreteDates.length > 0
+          ? concreteDates[0]
+          : (item.targetDate ? new Date(item.targetDate) : new Date(item.createdAt));
+        const anchorDayOfWeek = !isNaN(anchor.getTime()) ? anchor.getDay() : 1;
+        const normalizedFreq = (rule.frequency || 'weekly').toLowerCase();
+
+        const curr = new Date(rangeStart);
+        while (curr <= rangeEnd) {
+          let match = false;
+          if (startOfDay(curr) >= startOfDay(anchor)) {
+            if (normalizedFreq === 'daily') {
+              const interval = rule.intervalDays && rule.intervalDays > 1 ? rule.intervalDays : 1;
+              const diffDays = Math.round((startOfDay(curr).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+              match = diffDays >= 0 && diffDays % interval === 0;
+            } else if (normalizedFreq === 'weekly') {
+              const targetDays = Array.isArray(rule.daysOfWeek) && rule.daysOfWeek.length > 0
+                ? rule.daysOfWeek
+                : [anchorDayOfWeek];
+              match = targetDays.includes(curr.getDay());
+            } else if (normalizedFreq === 'monthly') {
+              const targetDay = rule.dayOfMonth || (anchor ? anchor.getDate() : 1);
+              match = curr.getDate() === targetDay;
+            } else if (normalizedFreq === 'custom_interval' && rule.intervalDays && rule.intervalDays > 0) {
+              const diffDays = Math.round((startOfDay(curr).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+              match = diffDays >= 0 && diffDays % rule.intervalDays === 0;
+            }
+          }
+          if (match) return true;
+          curr.setDate(curr.getDate() + 1);
+        }
+      }
+
+      return false;
+    }
+
+    if (tab === 'past') {
+      const todayStart = startOfDay(now);
+      return concreteDates.some((d) => d < todayStart);
+    }
+
+    return true;
+  };
 
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [editingItem, setEditingItem] = useState<ScheduleItem | null>(null);
-  const [detailItem, setDetailItem] = useState<ScheduleItem | null>(null);
-  const openedFromDetailRef = useRef(false);
+  const [activeScheduleModal, setActiveScheduleModal] = useState<ScheduleItem | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
+
+  const handleOpenDetail = (item: ScheduleItem) => {
+    setActiveScheduleModal(item);
+    setModalMode('view');
+  };
+
+  const handleOpenEdit = (item: ScheduleItem) => {
+    setActiveScheduleModal(item);
+    setModalMode('edit');
+  };
 
   // Lock body scroll when any modal is open
   useEffect(() => {
-    if (isCreateModalOpen || detailItem || editingItem) {
+    if (isCreateModalOpen || activeScheduleModal) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [isCreateModalOpen, detailItem, editingItem]);
+  }, [isCreateModalOpen, activeScheduleModal]);
 
   // Group schedules by YYYY-MM-DD
   const scheduleMap = useMemo(() => {
@@ -127,8 +220,11 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
 
       // 2. Map to targetDate if present
       if (item.targetDate) {
-        const targetKey = format(new Date(item.targetDate), 'yyyy-MM-dd');
-        addEntry(targetKey, item);
+        const parsedTarget = new Date(item.targetDate);
+        if (!isNaN(parsedTarget.getTime())) {
+          const targetKey = format(parsedTarget, 'yyyy-MM-dd');
+          addEntry(targetKey, item);
+        }
       }
 
       // 3. Map to all dates in schedule.dates or scheduleDates array
@@ -148,35 +244,45 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
           ? parseISO(concreteDates[0])
           : (item.targetDate ? new Date(item.targetDate) : new Date(item.createdAt));
         const anchorDayOfWeek = !isNaN(anchor.getTime()) ? anchor.getDay() : 1;
+        const normalizedFreq = (rule.frequency || 'weekly').toLowerCase();
 
-        if (rule.frequency === 'daily') {
+        if (normalizedFreq === 'daily') {
           const interval = rule.intervalDays && rule.intervalDays > 1 ? rule.intervalDays : 1;
-          for (let d = 1; d <= totalDaysInMonth; d += interval) {
-            const dateStr = format(new Date(year, month, d), 'yyyy-MM-dd');
-            addEntry(dateStr, item);
+          for (let d = 1; d <= totalDaysInMonth; d++) {
+            const dt = new Date(year, month, d);
+            if (startOfDay(dt) >= startOfDay(anchor)) {
+              const diffDays = Math.round((startOfDay(dt).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 0 && diffDays % interval === 0) {
+                addEntry(format(dt, 'yyyy-MM-dd'), item);
+              }
+            }
           }
-        } else if (rule.frequency === 'weekly' || !rule.frequency) {
+        } else if (normalizedFreq === 'weekly') {
           const targetDays = Array.isArray(rule.daysOfWeek) && rule.daysOfWeek.length > 0
             ? rule.daysOfWeek
             : [anchorDayOfWeek];
           for (let d = 1; d <= totalDaysInMonth; d++) {
             const dt = new Date(year, month, d);
-            if (targetDays.includes(dt.getDay())) {
+            if (startOfDay(dt) >= startOfDay(anchor) && targetDays.includes(dt.getDay())) {
               addEntry(format(dt, 'yyyy-MM-dd'), item);
             }
           }
-        } else if (rule.frequency === 'monthly') {
+        } else if (normalizedFreq === 'monthly') {
           const targetDay = rule.dayOfMonth && rule.dayOfMonth >= 1 && rule.dayOfMonth <= totalDaysInMonth
             ? rule.dayOfMonth
             : (!isNaN(anchor.getTime()) ? anchor.getDate() : 1);
-          addEntry(format(new Date(year, month, targetDay), 'yyyy-MM-dd'), item);
-        } else if (rule.frequency === 'custom_interval' && rule.intervalDays && rule.intervalDays > 0) {
+          const dt = new Date(year, month, targetDay);
+          if (startOfDay(dt) >= startOfDay(anchor)) {
+            addEntry(format(dt, 'yyyy-MM-dd'), item);
+          }
+        } else if (normalizedFreq === 'custom_interval' && rule.intervalDays && rule.intervalDays > 0) {
           for (let d = 1; d <= totalDaysInMonth; d++) {
             const candidate = new Date(year, month, d);
-            const diffTime = candidate.getTime() - anchor.getTime();
-            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-            if (diffDays >= 0 && diffDays % rule.intervalDays === 0) {
-              addEntry(format(candidate, 'yyyy-MM-dd'), item);
+            if (startOfDay(candidate) >= startOfDay(anchor)) {
+              const diffDays = Math.round((startOfDay(candidate).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+              if (diffDays >= 0 && diffDays % rule.intervalDays === 0) {
+                addEntry(format(candidate, 'yyyy-MM-dd'), item);
+              }
             }
           }
         }
@@ -218,7 +324,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setItems((prev) => prev.filter((i) => i.id !== id));
-        if (detailItem?.id === id) setDetailItem(null);
+        if (activeScheduleModal?.id === id) setActiveScheduleModal(null);
         toast.success('Jadwal berhasil dihapus');
       } else {
         toast.error('Gagal menghapus jadwal');
@@ -263,7 +369,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setItems((prev) => prev.filter((i) => i.id !== id));
-        if (detailItem?.id === id) setDetailItem(null);
+        if (activeScheduleModal?.id === id) setActiveScheduleModal(null);
         toast.success('Jadwal berhasil dihapus');
       } else {
         toast.error('Gagal menghapus jadwal');
@@ -328,10 +434,12 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
   const filteredItems = useMemo(() => {
     let result = items;
 
-    // Filter by selected date if active
+    // Filter by selected date if active, otherwise filter by active tab
     if (selectedDate) {
       const key = format(selectedDate, 'yyyy-MM-dd');
       result = scheduleMap.get(key) || [];
+    } else {
+      result = result.filter((item) => itemMatchesTab(item, tabFilter));
     }
 
     // Filter by search query
@@ -350,36 +458,89 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       if (!a.isPinned && b.isPinned) return 1;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [items, selectedDate, searchQuery, scheduleMap]);
+  }, [items, selectedDate, tabFilter, searchQuery, scheduleMap]);
 
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
             {/* =========================================================================
           1. HEADER (Title & Subtitle)
           ========================================================================= */}
-      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
-            <span>{userLastName}</span>
-            <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
-              Schedule
-            </span>
-          </h1>
+      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
+              <span>{userLastName}</span>
+              <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
+                Schedule
+              </span>
+            </h1>
+          </div>
+          <p className="text-body-sm text-body mt-0.5">
+            Visualisasi kalender kegiatan, agenda rapat, dan jadwal penting yang terpetakan otomatis.
+          </p>
         </div>
-        <p className="text-body-sm text-body mt-0.5">
-          Visualisasi kalender kegiatan, agenda rapat, dan jadwal penting yang terpetakan otomatis.
-        </p>
+
+        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+          <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Schedule" />
+        </div>
       </div>
 
       {/* =========================================================================
-          2. CONTROLS ROW: Searchbox (Sticky on Mobile & Desktop across whole page, solid white background flush at top)
+          2. CONTROLS ROW: Searchbox + Tabs (Sticky on Mobile & Desktop across whole page, solid white background flush at top)
           ========================================================================= */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2">
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
         <SearchPill
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Cari jadwal & agenda..."
+          wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
         />
+
+        {/* Option Tabs: Terdekat, Terlewat, Semua Waktu (Style matching Credential/Vault) */}
+        <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setTabFilter('this_month');
+              setSelectedDate(null);
+            }}
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+              tabFilter === 'this_month' && !selectedDate
+                ? 'bg-canvas text-ink shadow-xs font-semibold'
+                : 'text-body hover:text-ink'
+            }`}
+          >
+            Terdekat
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTabFilter('past');
+              setSelectedDate(null);
+            }}
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+              tabFilter === 'past' && !selectedDate
+                ? 'bg-canvas text-ink shadow-xs font-semibold'
+                : 'text-body hover:text-ink'
+            }`}
+          >
+            Terlewat
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setTabFilter('all');
+              setSelectedDate(null);
+            }}
+            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+              tabFilter === 'all' && !selectedDate
+                ? 'bg-canvas text-ink shadow-xs font-semibold'
+                : 'text-body hover:text-ink'
+            }`}
+          >
+            Semua Waktu
+          </button>
+        </div>
       </div>
 
       {/* =========================================================================
@@ -441,12 +602,25 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
 
         {/* Right Column: Agenda and Schedule Notes Gallery */}
         <div className="flex-1 min-w-0 w-full space-y-4">
-          <div className="flex items-center justify-between">
+          <div>
             <h2 className="text-xl sm:text-2xl font-normal text-ink tracking-tight font-sans">
               {selectedDate
                 ? `Agenda: ${format(selectedDate, 'd MMMM yyyy', { locale: id })}`
-                : 'Agenda'}
+                : tabFilter === 'this_month'
+                ? 'Agenda Terdekat'
+                : tabFilter === 'past'
+                ? 'Agenda Terlewat'
+                : 'Semua Agenda'}
             </h2>
+            <p className="text-body-sm text-body mt-0.5 font-normal">
+              {selectedDate
+                ? `Menampilkan agenda untuk tanggal ${format(selectedDate, 'd MMMM yyyy', { locale: id })}.`
+                : tabFilter === 'this_month'
+                ? 'Menampilkan agenda terdekat (dari minggu lalu sampai 3 minggu mendatang).'
+                : tabFilter === 'past'
+                ? 'Menampilkan agenda yang sudah terlewat.'
+                : 'Menampilkan seluruh agenda tanpa batasan waktu.'}
+            </p>
           </div>
 
           {/* Schedule Notes List (Row view with horizontal line divider) */}
@@ -461,15 +635,12 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
                   variant="row"
                   onDelete={handleDeleteById}
                   onTogglePin={(id) => handleTogglePinById(id, Boolean(item.isPinned))}
-                  onEdit={(n) => {
-                    openedFromDetailRef.current = false;
-                    setEditingItem(n as ScheduleItem);
-                  }}
+                  onEdit={(n) => handleOpenEdit(n as ScheduleItem)}
                   onClick={(n) => {
                     if (typeof window !== 'undefined' && window.innerWidth < 768) {
                       return; // In-place expansion on mobile, do not open detail modal
                     }
-                    setDetailItem(n as ScheduleItem);
+                    handleOpenDetail(n as ScheduleItem);
                   }}
                 />
               ))}
@@ -519,62 +690,31 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
       )}
 
       {/* =========================================================================
-          5. MODAL: SCHEDULE NOTE DETAIL (Using standard NoteDetailModal)
+          5. MODAL: UNIFIED SCHEDULE NOTE MODAL
           ========================================================================= */}
-      {detailItem && (
+      {activeScheduleModal && (
         <NoteDetailModal
-          isOpen={Boolean(detailItem)}
-          note={detailItem}
-          onClose={() => setDetailItem(null)}
-          onEdit={(noteToEdit) => {
-            const item = items.find((i) => i.id === noteToEdit.id) || (noteToEdit as ScheduleItem);
-            openedFromDetailRef.current = true;
-            setDetailItem(null);
-            setEditingItem(item);
-          }}
+          isOpen={Boolean(activeScheduleModal)}
+          initialMode={modalMode}
+          note={activeScheduleModal as any}
+          onClose={() => setActiveScheduleModal(null)}
           onDelete={(id) => {
             setItems((prev) => prev.filter((i) => i.id !== id));
-            setDetailItem(null);
+            setActiveScheduleModal(null);
             toast.success('Jadwal berhasil dihapus');
           }}
           onTogglePin={(id, isPinned) => {
             setItems((prev) =>
               prev.map((i) => (i.id === id ? { ...i, isPinned } : i))
             );
-            if (detailItem && detailItem.id === id) {
-              setDetailItem((prev) => (prev ? { ...prev, isPinned } : null));
-            }
+            setActiveScheduleModal((prev) => (prev && prev.id === id ? { ...prev, isPinned } : prev));
             toast.success(isPinned ? 'Jadwal disematkan ke atas' : 'Sematan jadwal dilepas');
           }}
-        />
-      )}
-
-      {/* =========================================================================
-          6. MODAL: EDIT NOTE MODAL
-          ========================================================================= */}
-      {editingItem && (
-        <EditNoteModal
-          isOpen={Boolean(editingItem)}
-          note={editingItem}
-          onClose={() => {
-            setEditingItem(null);
-            openedFromDetailRef.current = false;
-          }}
-          onCancel={() => {
-            const itemToRestore = editingItem;
-            const wasFromDetail = openedFromDetailRef.current;
-            setEditingItem(null);
-            openedFromDetailRef.current = false;
-            if (itemToRestore && wasFromDetail) {
-              setDetailItem(itemToRestore);
-            }
-          }}
           onSave={(updated) => {
-            openedFromDetailRef.current = false;
             setItems((prev) =>
               prev.map((i) => (i.id === updated.id ? { ...i, ...updated } : i))
             );
-            setEditingItem(null);
+            setActiveScheduleModal((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
             toast.success('Jadwal berhasil diperbarui');
           }}
         />
@@ -591,6 +731,14 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
         <span className="hidden sm:inline text-body-sm font-medium">Tambah Jadwal</span>
         <Plus className="w-7 h-7 sm:w-4.5 sm:h-4.5 text-ink" />
       </button>
+      {/* Dedicated Ask AI Modal */}
+      <AskAiModal
+        isOpen={isAskAiOpen}
+        onClose={() => setIsAskAiOpen(false)}
+        category="schedule"
+        placeholder="Tanya jadwal, agenda rapat, atau waktu kegiatan Anda..."
+        contextTitle="Jadwal & Agenda"
+      />
     </div>
   );
 }

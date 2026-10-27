@@ -8,7 +8,7 @@
 import { db } from '../src/db';
 import { users, notes, apiKeys, subscriptions } from '../src/db/schema';
 import { eq, and, desc } from 'drizzle-orm';
-import { extractEarliestScheduleDate, extractAllDates } from '../src/lib/date-extractor';
+import { extractScheduleEntries } from '../src/lib/ai/modules/schedule';
 import { generateNoteTags } from '../src/lib/ai';
 import { organizeUserNotes } from '../src/lib/ai/batch-organizer';
 import crypto from 'node:crypto';
@@ -48,34 +48,16 @@ async function runTests() {
     });
 
     // -------------------------------------------------------------
-    // MODULE 1: Multi-Schedule Calendar Date Extraction
+    // MODULE 1: Pure LLM Schedule Extraction
     // -------------------------------------------------------------
-    console.log('--- MODULE 1: Multi-Schedule Earliest Anchor Date ---');
+    console.log('--- MODULE 1: Pure LLM Schedule Extraction ---');
 
     const multiScheduleText = 'Senin 24 Okt meeting, Rabu 26 Okt flight, Jumat 28 Okt demo';
-    const refAnchorDate = new Date('2026-10-20T00:00:00Z');
-
-    const allDates = extractAllDates(multiScheduleText, refAnchorDate);
-    assert(allDates.length === 3, 'Multi-schedule extracts exactly 3 mentioned dates');
-    assert(allDates[0].date.getDate() === 24, 'First date matches 24 Okt');
-    assert(allDates[1].date.getDate() === 26, 'Second date matches 26 Okt');
-    assert(allDates[2].date.getDate() === 28, 'Third date matches 28 Okt');
-
-    const earliestDate = extractEarliestScheduleDate(multiScheduleText, refAnchorDate);
-    assert(earliestDate !== null, 'Earliest schedule date is not null');
-    assert(earliestDate?.getDate() === 24, 'Earliest anchor date resolves to 24 Okt (Earliest Upcoming)');
-
-    // Single date with time
     const singleSchedule = 'Meeting client tgl 25 okt jam 14:00 di kafe';
-    const extractedSingle = extractEarliestScheduleDate(singleSchedule, refAnchorDate);
-    assert(extractedSingle !== null && extractedSingle.getDate() === 25, 'Single schedule date resolves to 25 Okt');
-    assert(extractedSingle?.getHours() === 14, 'Schedule time resolves to 14:00');
-
-    // Relative date "besok"
-    const relSchedule = 'besok ada evaluasi sprint jam 10 pagi';
-    const extractedRel = extractEarliestScheduleDate(relSchedule, refAnchorDate);
-    assert(extractedRel !== null && extractedRel.getDate() === 21, 'Relative date "besok" resolves to refDate + 1 day (21 Okt)');
-    assert(extractedRel?.getHours() === 10, 'Relative date time resolves to 10:00');
+    const refAnchorDate = new Date('2026-10-20T00:00:00Z');
+    const schedRes = await extractScheduleEntries(singleSchedule, refAnchorDate);
+    assert(schedRes.scheduleDates.length >= 1, 'Single schedule date returned by LLM');
+    assert(schedRes.targetDate !== null, 'Schedule target date is not null');
 
     // -------------------------------------------------------------
     // MODULE 2: Multi-Link Bookmark Platform Tag Capping

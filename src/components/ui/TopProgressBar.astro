@@ -1,0 +1,166 @@
+---
+// TopProgressBar.astro
+// Global industry-standard top loading bar for Astro ClientRouter page transitions.
+// Styled in light pastel green with fluid, organic easing.
+---
+
+<div
+  id="global-progress-bar"
+  transition:persist="global-progress-bar"
+  aria-hidden="true"
+  class="fixed top-0 left-0 right-0 h-[2.5px] z-[99999] pointer-events-none opacity-0 transition-opacity duration-300"
+>
+  <div
+    id="global-progress-bar-fill"
+    class="relative h-full"
+    style="width: 0%; background: linear-gradient(90deg, #a7f3d0 0%, #6ee7b7 50%, #86efac 100%);"
+  >
+    <!-- Soft glowing leading peg -->
+    <div
+      class="absolute right-0 top-0 bottom-0 w-24 h-full pointer-events-none"
+      style="box-shadow: 0 0 12px rgba(110, 231, 183, 0.85), 0 0 5px rgba(134, 239, 172, 0.95); transform: rotate(3deg) translate(0px, -3px);"
+    ></div>
+  </div>
+</div>
+
+<script>
+  let isNavigating = false;
+  let progress = 0;
+  let trickleInterval: ReturnType<typeof setInterval> | null = null;
+  let resetTimeout: ReturnType<typeof setTimeout> | null = null;
+  let safetyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const getElements = () => {
+    const container = document.getElementById('global-progress-bar');
+    const fill = document.getElementById('global-progress-bar-fill');
+    return { container, fill };
+  };
+
+  const setProgress = (value: number) => {
+    progress = Math.min(value, 100);
+    const { fill } = getElements();
+    if (fill) {
+      fill.style.width = `${progress}%`;
+    }
+  };
+
+  const clearAllTimers = () => {
+    if (trickleInterval) {
+      clearInterval(trickleInterval);
+      trickleInterval = null;
+    }
+    if (resetTimeout) {
+      clearTimeout(resetTimeout);
+      resetTimeout = null;
+    }
+    if (safetyTimeout) {
+      clearTimeout(safetyTimeout);
+      safetyTimeout = null;
+    }
+  };
+
+  const startProgress = () => {
+    clearAllTimers();
+
+    const { container, fill } = getElements();
+    if (!container || !fill) return;
+
+    isNavigating = true;
+
+    // Reset without transition to 0%
+    fill.style.transition = 'none';
+    setProgress(0);
+    container.style.transition = 'opacity 150ms ease-out';
+    container.style.opacity = '1';
+
+    // Force browser reflow to reset transition cleanly
+    void fill.offsetWidth;
+
+    // Organic initial surge to 25% with gentle cubic-bezier curve
+    fill.style.transition = 'width 350ms cubic-bezier(0.16, 1, 0.3, 1)';
+    setProgress(25);
+
+    // Continuous, fluid trickling (duration exceeds interval to prevent stepped/rigid stops)
+    trickleInterval = setInterval(() => {
+      if (!isNavigating) return;
+
+      if (progress < 45) {
+        fill.style.transition = 'width 350ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+        setProgress(progress + (Math.random() * 8 + 5));
+      } else if (progress < 70) {
+        fill.style.transition = 'width 400ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+        setProgress(progress + (Math.random() * 5 + 2.5));
+      } else if (progress < 85) {
+        fill.style.transition = 'width 450ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+        setProgress(progress + (Math.random() * 2 + 1));
+      } else if (progress < 92) {
+        fill.style.transition = 'width 500ms cubic-bezier(0.2, 0.8, 0.2, 1)';
+        setProgress(progress + (Math.random() * 0.8 + 0.3));
+      }
+    }, 280);
+
+    // Safety fallback: auto-finish if navigation hangs longer than 8s
+    safetyTimeout = setTimeout(() => {
+      if (isNavigating) {
+        finishProgress();
+      }
+    }, 8000);
+  };
+
+  const finishProgress = () => {
+    if (!isNavigating) return;
+
+    if (trickleInterval) {
+      clearInterval(trickleInterval);
+      trickleInterval = null;
+    }
+    if (safetyTimeout) {
+      clearTimeout(safetyTimeout);
+      safetyTimeout = null;
+    }
+
+    const { container, fill } = getElements();
+    if (!container || !fill) {
+      isNavigating = false;
+      return;
+    }
+
+    // Elastic, snappy completion to 100%
+    fill.style.transition = 'width 200ms cubic-bezier(0.16, 1, 0.3, 1)';
+    setProgress(100);
+
+    // Smooth fade out
+    resetTimeout = setTimeout(() => {
+      container.style.transition = 'opacity 300ms cubic-bezier(0.4, 0, 0.2, 1)';
+      container.style.opacity = '0';
+      resetTimeout = setTimeout(() => {
+        fill.style.transition = 'none';
+        setProgress(0);
+        isNavigating = false;
+      }, 320);
+    }, 200);
+  };
+
+  // Listen to Astro ClientRouter navigation lifecycle
+  document.addEventListener('astro:before-preparation', (event: any) => {
+    // Avoid triggering on same-page hash changes
+    if (
+      event.to &&
+      event.from &&
+      event.to.pathname === event.from.pathname &&
+      event.to.search === event.from.search
+    ) {
+      return;
+    }
+    startProgress();
+  });
+
+  document.addEventListener('astro:page-load', () => {
+    finishProgress();
+  });
+
+  // Safety net: in case an unhandled error aborts navigation
+  window.addEventListener('error', () => {
+    if (isNavigating) finishProgress();
+  });
+</script>

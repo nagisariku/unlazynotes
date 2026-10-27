@@ -24,7 +24,6 @@ import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Button, SearchPill } from '../ui';
 import NoteCard from './NoteCard';
-import EditNoteModal from './EditNoteModal';
 import NoteDetailModal from './NoteDetailModal';
 import type { CredentialType } from '../../db/schema';
 
@@ -342,6 +341,7 @@ function VaultCompactTile({
           )}
         </button>
       </div>
+
     </div>
   );
 }
@@ -431,22 +431,30 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isCreateModalOpen, isSubmitting]);
 
-  // Detail Modal State (Desktop click)
-  const [selectedNoteForDetail, setSelectedNoteForDetail] = useState<VaultNoteItem | null>(null);
+  // Unified Modal State
+  const [activeVaultModal, setActiveVaultModal] = useState<VaultNoteItem | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
 
-  // Edit Modal State
-  const [editingItem, setEditingItem] = useState<VaultNoteItem | null>(null);
+  const handleOpenDetail = (item: VaultNoteItem) => {
+    setActiveVaultModal(item);
+    setModalMode('view');
+  };
+
+  const handleOpenEdit = (item: VaultNoteItem) => {
+    setActiveVaultModal(item);
+    setModalMode('edit');
+  };
 
   // Lock body scroll when any modal is open
   useEffect(() => {
-    if (isCreateModalOpen || editingItem || selectedNoteForDetail) {
+    if (isCreateModalOpen || activeVaultModal) {
       const originalOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = originalOverflow;
       };
     }
-  }, [isCreateModalOpen, editingItem, selectedNoteForDetail]);
+  }, [isCreateModalOpen, activeVaultModal]);
 
   // Desktop Master-Detail Pane States for Vault (Supports multi-item selection & search auto-display)
   const [selectedVaultItemIds, setSelectedVaultItemIds] = useState<string[]>([]);
@@ -879,12 +887,8 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
         showCategory={false}
         onDelete={handleDeleteNote}
         onTogglePin={(id, isPinned) => handleTogglePin(id, isPinned)}
-        onEdit={(n) => {
-          setEditingItem(n as VaultNoteItem);
-        }}
-        onClick={(n) => {
-          setSelectedNoteForDetail(n as VaultNoteItem);
-        }}
+        onEdit={(n) => handleOpenEdit(n as VaultNoteItem)}
+        onClick={(n) => handleOpenDetail(n as VaultNoteItem)}
       />
     );
   };
@@ -944,26 +948,29 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
           ========================================================================= */}
       <div className="flex-1 min-w-0 h-full overflow-y-auto px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12">
         {/* 1. Header: Title and Subtitle */}
-        <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
-              <span>{userLastName}</span>
-              <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
-                {activeSection === 'vault' ? 'Vault' : 'Credentials'}
-              </span>
-            </h1>
+        <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
+                <span>{userLastName}</span>
+                <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
+                  {activeSection === 'vault' ? 'Vault' : 'Credentials'}
+                </span>
+              </h1>
+            </div>
+            <p className="text-body-sm text-body mt-0.5">
+              {activeSection === 'vault'
+                ? 'Brankas terenkripsi AES-256-GCM untuk dokumen, recovery keys, dan catatan sensitif Anda.'
+                : 'Penyimpanan terenkripsi aman untuk akun bank, crypto wallet, API keys, dan kata sandi.'}
+            </p>
           </div>
-          <p className="text-body-sm text-body mt-0.5">
-            {activeSection === 'vault'
-              ? 'Brankas terenkripsi AES-256-GCM untuk dokumen, recovery keys, dan catatan sensitif Anda.'
-              : 'Penyimpanan terenkripsi aman untuk akun bank, crypto wallet, API keys, dan kata sandi.'}
-          </p>
+
         </div>
 
         {/* 2. Controls Row: Segmented Control (Radio) + Searchbox (Sticky on Mobile & Desktop, solid white background flush at top) */}
         <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 sm:gap-2.5 flex-nowrap">
           {/* Segmented Radio Button Control */}
-          <div className="inline-flex items-center p-1 rounded-full border border-hairline bg-surface-soft shrink-0">
+          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
             <button
               type="button"
               role="radio"
@@ -1058,7 +1065,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
                         isSelected={isTileSelected(note.id)}
                         onDelete={handleDeleteNote}
                         onTogglePin={handleTogglePin}
-                        onEdit={(n) => setEditingItem(n)}
+                        onEdit={(n) => handleOpenEdit(n)}
                         onClick={(n) => handleSelectVaultItem(n)}
                       />
                     ))}
@@ -1077,7 +1084,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
                           isSelected={isTileSelected(note.id)}
                           onDelete={handleDeleteNote}
                           onTogglePin={handleTogglePin}
-                          onEdit={(n) => setEditingItem(n)}
+                          onEdit={(n) => handleOpenEdit(n)}
                           onClick={(n) => handleSelectVaultItem(n)}
                         />
                       ))}
@@ -1094,7 +1101,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
                     isSelected={isTileSelected(note.id)}
                     onDelete={handleDeleteNote}
                     onTogglePin={handleTogglePin}
-                    onEdit={(n) => setEditingItem(n)}
+                    onEdit={(n) => handleOpenEdit(n)}
                     onClick={(n) => handleSelectVaultItem(n)}
                   />
                 ))}
@@ -1380,7 +1387,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
         <>
           {/* Full-screen Backdrop covering 100% viewport */}
           <div
-            className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+            className="fixed inset-0 z-[9998] bg-black/75 select-none"
             style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             aria-hidden="true"
           />
@@ -1541,45 +1548,31 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
       )}
 
       {/* =========================================================================
-          5. MODAL: NOTE DETAIL (Desktop click to view detail)
+          5. MODAL: UNIFIED VAULT NOTE MODAL
           ========================================================================= */}
-      {selectedNoteForDetail && (
+      {activeVaultModal && (
         <NoteDetailModal
-          isOpen={Boolean(selectedNoteForDetail)}
+          isOpen={Boolean(activeVaultModal)}
+          initialMode={modalMode}
           note={{
-            ...selectedNoteForDetail,
-            createdAt: selectedNoteForDetail.createdAt,
+            ...activeVaultModal,
+            createdAt: activeVaultModal.createdAt,
           }}
-          isVault={isVaultItem(selectedNoteForDetail)}
-          onClose={() => setSelectedNoteForDetail(null)}
-          onEdit={(n) => {
-            setSelectedNoteForDetail(null);
-            setEditingItem(n as VaultNoteItem);
-          }}
+          isVault={isVaultItem(activeVaultModal)}
+          onClose={() => setActiveVaultModal(null)}
           onDelete={(id) => {
             handleDeleteNote(id);
-            setSelectedNoteForDetail(null);
+            setActiveVaultModal(null);
           }}
           onTogglePin={(id, isPinned) => {
             handleTogglePin(id, isPinned);
+            setActiveVaultModal((prev) => (prev && prev.id === id ? { ...prev, isPinned } : prev));
           }}
-        />
-      )}
-
-      {/* =========================================================================
-          6. MODAL: EDIT NOTE
-          ========================================================================= */}
-      {editingItem && (
-        <EditNoteModal
-          isOpen={Boolean(editingItem)}
-          note={editingItem}
-          isVault={isVaultItem(editingItem)}
-          onClose={() => setEditingItem(null)}
           onSave={(updated) => {
             setVaultNotes((prev) =>
               prev.map((n) => (n.id === updated.id ? { ...n, ...updated } : n))
             );
-            setEditingItem(null);
+            setActiveVaultModal((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
             toast.success('Catatan berhasil diperbarui');
           }}
         />

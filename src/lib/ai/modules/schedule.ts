@@ -1,246 +1,297 @@
-import { format, addDays, setDate, setMonth, isValid } from 'date-fns';
+import { recordAiUsage } from '@/lib/ai-usage';
+import { generateText } from 'ai';
+import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
+import { formatInUserTz, formatInWib, getTimezoneOffsetString, resolveUserTimezone } from '@/lib/timezone';
 import type { ScheduleMetadata } from '../../../db/schema';
 
 export type { ScheduleMetadata };
 
-const DAY_MAP: Record<string, number> = {
-  minggu: 0,
-  ahad: 0,
-  senin: 1,
-  selasa: 2,
-  rabu: 3,
-  kamis: 4,
-  jumat: 5,
-  "jum'at": 5,
-  sabtu: 6,
-};
-
-const MONTH_MAP: Record<string, number> = {
-  jan: 0, januari: 0,
-  feb: 1, februari: 1,
-  mar: 2, maret: 2,
-  apr: 3, april: 3,
-  mei: 4,
-  jun: 5, juni: 5,
-  jul: 6, juli: 6,
-  agu: 7, agustus: 7,
-  sep: 8, september: 8,
-  okt: 9, oktober: 9,
-  nov: 10, november: 10,
-  des: 11, desember: 11,
+const ICAL_DAY_MAP: Record<string, number> = {
+  su: 0, sun: 0, sunday: 0, minggu: 0, ahad: 0,
+  mo: 1, mon: 1, monday: 1, senin: 1,
+  tu: 2, tue: 2, tuesday: 2, selasa: 2,
+  we: 3, wed: 3, wednesday: 3, rabu: 3,
+  th: 4, thu: 4, thursday: 4, kamis: 4,
+  fr: 5, fri: 5, friday: 5, jumat: 5, "jum'at": 5,
+  sa: 6, sat: 6, saturday: 6, sabtu: 6,
 };
 
 /**
- * Parses all implied and explicit schedule target dates from text into ISO 'YYYY-MM-DD' strings.
- * Accurately maps relative future days based on baseDate (e.g. Kamis 22 Okt -> Sabtu: 2026-10-24, Senin: 2026-10-26).
+ * Safely extracts a valid Date object from date strings and optional time strings.
+ * Operates purely on structured data (never on raw user text).
+ * Returns null if invalid, never throws or returns Invalid Date.
  */
-export function parseScheduleDates(content: string, baseDate: Date = new Date()): string[] {
-  const text = content.toLowerCase();
-  const foundDates: Set<string> = new Set();
-  const baseDayOfWeek = baseDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 4 = Thursday, 6 = Saturday
+export function safeExtractTargetDate(dateStr: string | null | undefined, timeStr?: string, userTimezone?: string): Date | null {
+  if (!dateStr || typeof dateStr !== 'string') return null;
 
-  // 1a. Date range with named month (e.g. "10-14 November 2026", "10 - 14 Nov", "10 s/d 14 November")
-  const dateRangeMonthRegex = /\b(\d{1,2})\s*(?:-|–|—|\s+s\/?d\s+|\s+sd\s+|\s+sampai\s+|\s+to\s+)\s*(\d{1,2})\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)(?:\s+(\d{4}))?\b/gi;
-  for (const m of text.matchAll(dateRangeMonthRegex)) {
-    const startDay = parseInt(m[1], 10);
-    const endDay = parseInt(m[2], 10);
-    const monthKey = m[3].toLowerCase();
-    const month = MONTH_MAP[monthKey];
-    const year = m[4] ? parseInt(m[4], 10) : baseDate.getFullYear();
-    if (!isNaN(startDay) && !isNaN(endDay) && month !== undefined && startDay <= endDay) {
-      for (let d = startDay; d <= endDay; d++) {
-        const dateObj = new Date(year, month, d);
-        if (isValid(dateObj)) {
-          foundDates.add(format(dateObj, 'yyyy-MM-dd'));
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?(?:Z|[+-]\d{2}:?\d{2})?)?/i);
+  if (match) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const day = parseInt(match[3], 10);
+
+    let hours = 0;
+    let minutes = 0;
+
+    if (timeStr && /^\d{1,2}:\d{2}$/.test(timeStr)) {
+      const [h, m] = timeStr.split(':').map((v) => parseInt(v, 10));
+      hours = h;
+      minutes = m;
+    } else if (match[4] && match[5]) {
+      hours = parseInt(match[4], 10);
+      minutes = parseInt(match[5], 10);
+    }
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    // Anchor explicitly to user's timezone offset so server timezone differences never shift the date/time
+    const offset = getTimezoneOffsetString(userTimezone);
+    const isoString = `${year}-${pad(month + 1)}-${pad(day)}T${pad(hours)}:${pad(minutes)}:00${offset}`;
+    const d = new Date(isoString);
+    return !isNaN(d.getTime()) ? d : null;
+  }
+
+  const genericDate = new Date(trimmed);
+  return !isNaN(genericDate.getTime()) ? genericDate : null;
+}
+
+/**
+ * Sanitizes and validates structured schedule JSON returned by the LLM.
+ * Operates strictly on LLM output objects (zero regex or parsing on user text).
+ */
+export function sanitizeScheduleJson(
+  rawSchedule: any,
+  baseDate: Date | string = new Date(),
+  userTimezone?: string
+): {
+  schedule: ScheduleMetadata;
+  scheduleDates: string[];
+  targetDate: Date | null;
+} {
+  const baseDateObj = baseDate instanceof Date ? baseDate : new Date(baseDate);
+  const safeBaseDate = !isNaN(baseDateObj.getTime()) ? baseDateObj : new Date();
+
+  if (!rawSchedule || typeof rawSchedule !== 'object') {
+    return {
+      schedule: { dates: [], isRecurring: false },
+      scheduleDates: [],
+      targetDate: null,
+    };
+  }
+
+  // 1. Sanitize dates into clean YYYY-MM-DD strings
+  const cleanDates: string[] = [];
+  let embeddedTime: string | undefined = undefined;
+
+  const rawArray = Array.isArray(rawSchedule.dates)
+    ? rawSchedule.dates
+    : (rawSchedule.dates ? [rawSchedule.dates] : []);
+
+  for (const raw of rawArray) {
+    if (!raw) continue;
+    const str = String(raw).trim();
+    const m = str.match(/^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}:\d{2}))?/);
+    if (m) {
+      if (!cleanDates.includes(m[1])) {
+        cleanDates.push(m[1]);
+      }
+      if (m[2] && !embeddedTime) {
+        embeddedTime = m[2];
+      }
+    }
+  }
+  cleanDates.sort();
+
+  // 2. Sanitize recurrence
+  const isRecurring = Boolean(rawSchedule.isRecurring);
+  let recurrenceRule: ScheduleMetadata['recurrenceRule'] = undefined;
+
+  if (isRecurring && rawSchedule.recurrenceRule && typeof rawSchedule.recurrenceRule === 'object') {
+    const rawRule = rawSchedule.recurrenceRule;
+
+    // Frequency
+    const rawFreq = String(rawRule.frequency || rawRule.freq || 'weekly').toLowerCase();
+    let frequency: 'daily' | 'weekly' | 'monthly' | 'custom_interval' = 'weekly';
+    if (rawFreq.includes('daily') || rawFreq === 'day') {
+      frequency = 'daily';
+    } else if (rawFreq.includes('monthly') || rawFreq === 'month') {
+      frequency = 'monthly';
+    } else if (rawFreq.includes('custom') || rawFreq.includes('interval')) {
+      frequency = 'custom_interval';
+    } else {
+      frequency = 'weekly';
+    }
+
+    // Days of week
+    const daysOfWeekSet = new Set<number>();
+    const rawDays = rawRule.daysOfWeek ?? rawRule.byDay ?? rawRule.byday ?? rawRule.days ?? [];
+    const daysArray = Array.isArray(rawDays)
+      ? rawDays
+      : typeof rawDays === 'string'
+        ? rawDays.split(',')
+        : [rawDays];
+
+    for (const item of daysArray) {
+      if (typeof item === 'number' && item >= 0 && item <= 6) {
+        daysOfWeekSet.add(item);
+      } else if (typeof item === 'string') {
+        const clean = item.trim().toLowerCase();
+        if (/^[0-6]$/.test(clean)) {
+          daysOfWeekSet.add(parseInt(clean, 10));
+        } else if (ICAL_DAY_MAP[clean] !== undefined) {
+          daysOfWeekSet.add(ICAL_DAY_MAP[clean]);
         }
       }
     }
-  }
 
-  // 1. Explicit calendar dates: "tanggal 25", "tgl 16", "25 okt", "16 oktober 2026"
-  const explicitMonthRegex = /\b(\d{1,2})\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des|januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)(?:\s+(\d{4}))?\b/gi;
-  for (const m of text.matchAll(explicitMonthRegex)) {
-    const day = parseInt(m[1], 10);
-    const monthKey = m[2].toLowerCase();
-    const month = MONTH_MAP[monthKey];
-    const year = m[3] ? parseInt(m[3], 10) : baseDate.getFullYear();
-    if (!isNaN(day) && month !== undefined) {
-      const d = new Date(year, month, day);
-      if (isValid(d)) {
-        foundDates.add(format(d, 'yyyy-MM-dd'));
-      }
+    const anchorDate = cleanDates.length > 0 ? safeExtractTargetDate(cleanDates[0], embeddedTime) : safeBaseDate;
+    if (frequency === 'weekly' && daysOfWeekSet.size === 0 && anchorDate && !isNaN(anchorDate.getTime())) {
+      daysOfWeekSet.add(anchorDate.getDay());
     }
-  }
 
-  const explicitDayOnlyRegex = /\b(?:tanggal|tgl)\s+(\d{1,2})\b/gi;
-  for (const m of text.matchAll(explicitDayOnlyRegex)) {
-    const day = parseInt(m[1], 10);
-    if (!isNaN(day) && day >= 1 && day <= 31) {
-      let target = setDate(baseDate, day);
-      // If day has passed earlier this month, map to next month
-      if (day < baseDate.getDate() - 3) {
-        target = setMonth(target, target.getMonth() + 1);
-      }
-      if (isValid(target)) {
-        foundDates.add(format(target, 'yyyy-MM-dd'));
-      }
+    const daysOfWeek = Array.from(daysOfWeekSet).sort((a, b) => a - b);
+
+    // TimeString
+    let timeString = rawRule.timeString || rawRule.time || embeddedTime;
+    if (typeof timeString === 'string') {
+      const tm = timeString.trim().match(/^(\d{1,2})[:.](\d{2})/);
+      timeString = tm ? `${tm[1].padStart(2, '0')}:${tm[2]}` : undefined;
+    } else {
+      timeString = undefined;
     }
-  }
 
-  // 2. Relative keywords: "besok", "lusa"
-  if (/\bbesok\b/i.test(text)) {
-    foundDates.add(format(addDays(baseDate, 1), 'yyyy-MM-dd'));
-  }
-  if (/\blusa\b/i.test(text)) {
-    foundDates.add(format(addDays(baseDate, 2), 'yyyy-MM-dd'));
-  }
-
-  // 3. Named day keywords: senin, selasa, rabu, kamis, jumat, sabtu, minggu
-  const dayRegex = /\b(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|ahad)\b/gi;
-  for (const m of text.matchAll(dayRegex)) {
-    const dayName = m[1].toLowerCase();
-    const targetDay = DAY_MAP[dayName];
-    if (targetDay !== undefined) {
-      let diff = (targetDay - baseDayOfWeek + 7) % 7;
-      // If same day mentioned in schedule context, treat as today (or if past, next week)
-      if (diff === 0 && text.includes('minggu depan')) {
-        diff = 7;
-      }
-      const targetDate = addDays(baseDate, diff);
-      foundDates.add(format(targetDate, 'yyyy-MM-dd'));
+    let intervalDays: number | undefined = undefined;
+    if (rawRule.intervalDays || rawRule.interval) {
+      const parsed = parseInt(rawRule.intervalDays || rawRule.interval, 10);
+      if (!isNaN(parsed) && parsed > 0) intervalDays = parsed;
     }
-  }
 
-  return Array.from(foundDates).sort();
-}
-
-/**
- * Parses recurrence patterns and time details into structured ScheduleMetadata.
- */
-export function parseScheduleMetadata(content: string, baseDate: Date = new Date()): ScheduleMetadata {
-  const dates = parseScheduleDates(content, baseDate);
-  const lower = content.toLowerCase();
-
-  // Extract explicit time string if present (e.g. "14.00", "08:20", "jam 3 sore", "19:00")
-  let timeString: string | undefined = undefined;
-  const timeRegex = /\b(?:jam|pukul)?\s*(\d{1,2})[.:](\d{2})(?:\s*(pagi|siang|sore|malam|am|pm))?\b/i;
-  const timeMatch = lower.match(timeRegex);
-  if (timeMatch) {
-    let hour = parseInt(timeMatch[1], 10);
-    const minute = timeMatch[2];
-    const period = timeMatch[3];
-    if (period === 'sore' || period === 'malam' || period === 'pm') {
-      if (hour < 12) hour += 12;
+    let dayOfMonth: number | undefined = undefined;
+    if (rawRule.dayOfMonth || rawRule.day) {
+      const parsed = parseInt(rawRule.dayOfMonth || rawRule.day, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 31) dayOfMonth = parsed;
     }
-    timeString = `${String(hour).padStart(2, '0')}:${minute}`;
-  } else {
-    const singleHourMatch = lower.match(/\b(?:jam|pukul)\s*(\d{1,2})(?:\s*(pagi|siang|sore|malam))?\b/i);
-    if (singleHourMatch) {
-      let hour = parseInt(singleHourMatch[1], 10);
-      const period = singleHourMatch[2];
-      if (period === 'sore' || period === 'malam') {
-        if (hour < 12) hour += 12;
-      }
-      timeString = `${String(hour).padStart(2, '0')}:00`;
-    }
-  }
 
-  // Recurrence detection
-  const isRecurring = /\b(tiap|setiap|rutin|berkala|daily|weekly|monthly|sehari-hari|mingguan|bulanan)\b/i.test(lower);
-
-  if (!isRecurring) {
-    return {
-      dates,
-      isRecurring: false,
+    recurrenceRule = {
+      frequency,
+      ...(daysOfWeek.length > 0 ? { daysOfWeek } : {}),
+      ...(intervalDays !== undefined ? { intervalDays } : {}),
+      ...(dayOfMonth !== undefined ? { dayOfMonth } : {}),
+      ...(timeString ? { timeString } : {}),
     };
   }
 
-  // Custom interval (e.g. "tiap 3 hari sekali", "tiap 2 minggu")
-  const intervalDaysMatch = lower.match(/\b(?:tiap|setiap)\s*(\d+)\s*hari\s*(?:sekali)?\b/i);
-  if (intervalDaysMatch) {
-    const intervalDays = parseInt(intervalDaysMatch[1], 10);
-    return {
-      dates,
-      isRecurring: true,
-      recurrenceRule: {
-        frequency: 'custom_interval',
-        intervalDays,
-        timeString,
-      },
-    };
+  // 3. Compute targetDate from LLM targetDate or cleanDates[0]
+  let targetDate: Date | null = null;
+  if (rawSchedule.targetDate) {
+    targetDate = safeExtractTargetDate(String(rawSchedule.targetDate), recurrenceRule?.timeString || embeddedTime, userTimezone);
   }
-
-  // Daily
-  if (/\b(?:tiap|setiap)\s*hari\b/i.test(lower) || /\bdaily\b/i.test(lower)) {
-    return {
-      dates,
-      isRecurring: true,
-      recurrenceRule: {
-        frequency: 'daily',
-        timeString,
-      },
-    };
-  }
-
-  // Monthly by day of month (e.g. "tiap tanggal 25", "setiap tgl 10")
-  const dayOfMonthMatch = lower.match(/\b(?:tiap|setiap)\s*(?:tanggal|tgl)\s*(\d{1,2})\b/i);
-  if (dayOfMonthMatch) {
-    const dayOfMonth = parseInt(dayOfMonthMatch[1], 10);
-    return {
-      dates,
-      isRecurring: true,
-      recurrenceRule: {
-        frequency: 'monthly',
-        dayOfMonth,
-        timeString,
-      },
-    };
-  }
-
-  if (/\b(?:tiap|setiap)\s*(?:awal\s*bulan|bulan)\b/i.test(lower) || /\bmonthly\b/i.test(lower)) {
-    return {
-      dates,
-      isRecurring: true,
-      recurrenceRule: {
-        frequency: 'monthly',
-        dayOfMonth: 1,
-        timeString,
-      },
-    };
-  }
-
-  // Weekly by days of week (e.g. "tiap selasa", "tiap senin-jumat")
-  const daysOfWeek: number[] = [];
-  if (/\b(?:tiap|setiap)\s*senin\s*-\s*jumat\b/i.test(lower)) {
-    daysOfWeek.push(1, 2, 3, 4, 5);
-  } else {
-    for (const [dayName, dayNum] of Object.entries(DAY_MAP)) {
-      const dayPat = new RegExp(`\\b(?:tiap|setiap)\\s*${dayName}\\b`, 'i');
-      if (dayPat.test(lower)) {
-        if (!daysOfWeek.includes(dayNum)) daysOfWeek.push(dayNum);
-      }
-    }
-  }
-
-  if (daysOfWeek.length > 0 || /\bweekly\b/i.test(lower) || /\b(?:tiap|setiap)\s*minggu\b/i.test(lower)) {
-    return {
-      dates,
-      isRecurring: true,
-      recurrenceRule: {
-        frequency: 'weekly',
-        daysOfWeek: daysOfWeek.length > 0 ? daysOfWeek : undefined,
-        timeString,
-      },
-    };
+  if (!targetDate && cleanDates.length > 0) {
+    targetDate = safeExtractTargetDate(cleanDates[0], recurrenceRule?.timeString || embeddedTime, userTimezone);
   }
 
   return {
-    dates,
-    isRecurring: true,
-    recurrenceRule: {
-      frequency: 'custom_interval',
-      timeString,
+    schedule: {
+      dates: cleanDates,
+      isRecurring,
+      ...(recurrenceRule ? { recurrenceRule } : {}),
     },
+    scheduleDates: cleanDates,
+    targetDate,
   };
 }
 
+/**
+ * Pure AI-powered schedule extraction pipeline.
+ * Extracts event dates, times, and recurrence rules using Gemini 3.8 Flash.
+ * 100% Pure LLM processing. Zero regex / keyword fallbacks on user text.
+ */
+export async function extractScheduleEntries(
+  content: string,
+  baseDate: Date | string = new Date(),
+  modelName: string = process.env.AI_MODEL_NAME || process.env.COSMOSHUB_MODEL || 'gemini-3.8-flash',
+  userTimezone?: string
+): Promise<{
+  schedule: ScheduleMetadata;
+  scheduleDates: string[];
+  targetDate: Date | null;
+}> {
+  const text = content.trim();
+  if (!text) {
+    return {
+      schedule: { dates: [], isRecurring: false },
+      scheduleDates: [],
+      targetDate: null,
+    };
+  }
+
+  const safeTz = resolveUserTimezone(userTimezone);
+  const baseDateObj = baseDate instanceof Date ? baseDate : new Date(baseDate);
+  const safeBaseDate = !isNaN(baseDateObj.getTime()) ? baseDateObj : new Date();
+  const { dateStr: refDateStr, dayName: refDayName, timeStr: refTimeStr, offsetStr } = formatInUserTz(safeBaseDate, safeTz);
+
+  const apiKey = process.env.AI_PROVIDER_API_KEY || process.env.COSMOSHUB_API_KEY;
+  const baseURL = process.env.AI_BASE_URL || process.env.COSMOSHUB_BASE_URL || 'https://api.cosmoshub.tech/v1';
+
+  if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
+    throw new Error('[Schedule] AI Provider API key not configured');
+  }
+
+  const openaiCompatible = createOpenAICompatible({
+    name: 'cosmoshub',
+    baseURL,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  const result = await generateText({
+    model: openaiCompatible(modelName),
+    temperature: 0,
+    system: `You are an automated schedule and calendar event extractor for UnlazyNotes.
+User Timezone: ${safeTz} (${offsetStr}).
+Reference Date: ${refDateStr} (${refDayName}), Current Time: ${refTimeStr}.
+All relative terms like "hari ini", "besok", "lusa", "minggu depan" MUST be resolved strictly relative to this reference date in ${safeTz}.
+
+Analyze the note and extract structured schedule metadata:
+1. "dates": Array of target date strings in "YYYY-MM-DD" format only (e.g. ["2026-11-04"]). Do NOT include time in this array.
+2. "isRecurring": boolean (true if the event is a routine, recurring schedule, weekly habit, or repeated occurrence).
+3. "recurrenceRule": Optional object if isRecurring is true:
+   {
+     "frequency": "daily" | "weekly" | "monthly" | "custom_interval",
+     "daysOfWeek": number[], // 0 for Sunday, 1 for Monday, ..., 3 for Wednesday, 6 for Saturday
+     "intervalDays"?: number,
+     "dayOfMonth"?: number,
+     "timeString"?: string // e.g. "16:00" in 24-hour HH:mm
+   }
+4. "targetDate": Earliest upcoming event timestamp in ISO 8601 (e.g. "2026-11-04T16:00:00${offsetStr}") or null.
+
+Return strict JSON ONLY:
+{
+  "dates": string[],
+  "isRecurring": boolean,
+  "recurrenceRule"?: object,
+  "targetDate"?: string | null
+}`,
+    prompt: `Extract schedule data as JSON from:\n"""${text}"""`,
+  });
+
+  await recordAiUsage({
+    feature: 'schedule',
+    model: modelName,
+    usage: result.usage,
+  });
+
+  const rawJson = result.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch (err) {
+    console.error('[Schedule] Failed to parse AI JSON:', result.text);
+    throw new Error('AI returned invalid schedule JSON');
+  }
+
+  return sanitizeScheduleJson(parsed, safeBaseDate, safeTz);
+}

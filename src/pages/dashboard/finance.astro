@@ -58,7 +58,7 @@ const serializedNotes = financeNotes.map((n) => ({
 ---
 
 <Layout title="Finance – UnlazyNotes">
-  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+  <div class="flex flex-col md:flex-row h-screen h-[100dvh] bg-canvas text-ink overflow-hidden">
     <Sidebar
       client:load
       currentPath="/dashboard/finance"
@@ -67,7 +67,7 @@ const serializedNotes = financeNotes.map((n) => ({
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
       <FinanceView
         client:load
         initialNotes={serializedNotes}

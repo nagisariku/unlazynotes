@@ -93,7 +93,7 @@ export default function ConfirmDialog({
     <>
       {/* Full-screen Backdrop covering 100% viewport (clicking does not close modal) */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+        className="fixed inset-0 z-[9998] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         aria-hidden="true"
       />

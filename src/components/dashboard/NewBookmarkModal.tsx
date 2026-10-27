@@ -21,12 +21,14 @@ interface NewBookmarkModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreated: (item: BookmarkItem) => void;
+  defaultContent?: string;
 }
 
 export default function NewBookmarkModal({
   isOpen,
   onClose,
   onCreated,
+  defaultContent,
 }: NewBookmarkModalProps) {
   const [mounted, setMounted] = useState(false);
   const [content, setContent] = useState('');
@@ -80,6 +82,7 @@ export default function NewBookmarkModal({
     if (isOpen) {
       setTimeout(() => {
         adjustTextareaHeight();
+        if (defaultContent) setContent(defaultContent);
         textareaRef.current?.focus();
       }, 50);
     } else {

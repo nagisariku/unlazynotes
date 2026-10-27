@@ -14,6 +14,15 @@ Per Rule 10 of the Antigravity Constitution, each entry must contain the followi
 
 <!-- Entries are prepended below this line -->
 
+### 2026-10-28: Modification of Regex Fallback Parsers in Schedule Module Violating Pure LLM Contract
+- **Date & Incident:** Agent modified `parseScheduleDates` with Indonesian keyword regexes (`depan|next`, `dayRegex`) and retained `parseScheduleMetadata` / `extractEarliestScheduleDate` fallback heuristics in `schedule.ts` and `batch-organizer.ts`, directly violating the absolute Zero Regex / Pure LLM Architecture directive.
+- **Root Cause:** Conflating schema deserialization/type casting of LLM JSON output with semantic extraction, leading the agent to reflexively modify and preserve legacy regex-based natural language parsers on note content instead of strictly relying on pure LLM extraction and failing fast.
+- **Impact:** Introduced brittle regex patterns into schedule processing, preserved legacy keyword fallbacks, and compromised the pure LLM architecture established across the platform.
+- **Preventive Invariant:**
+  1. **100% Pure LLM for Schedule Semantics:** All schedule intent, date identification, and recurrence extraction from user note content must be performed exclusively by LLM AI (`gemini-3.8-flash`) via `extractScheduleEntries` (matching `extractFinanceEntries` and `extractTodoEntries`).
+  2. **Schema Sanitization Separation:** Application code is strictly confined to data structure validation and type conversion of JSON already returned by the LLM (e.g. string to Date object for PostgreSQL). It must NEVER execute regex matching or keyword heuristics against raw user note text.
+  3. **Strict Fail-Fast:** If the LLM does not return schedule data, the system must leave the fields empty (`targetDate: null`, `schedule: undefined`). Local regex fallbacks on note content are strictly forbidden.
+
 ### 2026-10-25: Re-Emergence and Modification of Regex/Keyword Intent Classifier Violating Pure LLM Contract
 - **Date & Incident:** Agent modified `src/lib/ai/router.ts` with regex patterns (`isInstructionOrBacklog`) to satisfy an offline unit test, resurrecting keyword matching that the user had previously ordered to be eradicated.
 - **Root Cause:** Retention of legacy offline fallback heuristics (`heuristicTagNote` / `router.ts`) and relying on offline mock/heuristic test scripts rather than adhering to the established Pure LLM AI architecture and fail-fast contract.
@@ -31,7 +40,6 @@ Per Rule 10 of the Antigravity Constitution, each entry must contain the followi
   1. Chunked array partitioning must tie slice length strictly to the step stride or chunk constant (`slice(i, i + CHUNK_SIZE)`).
   2. Test assertions for paginated snippets must iterate and verify the presence of every single indexed item (1 through N) rather than only boundary samples.
   3. Empty state views on conversational Telegram interfaces must always offer direct return or fallback navigation action buttons.
-
 
 ### 2026-10-24: Finance Page UI Layout Regressed to Unconstrained Fullwidth Divs Instead of Design System
 - **Date & Incident:** User critiqued the newly generated Finance page for using unconstrained full-width wrappers and div-based list containers instead of following the established design system tokens and Admin dashboard layout.

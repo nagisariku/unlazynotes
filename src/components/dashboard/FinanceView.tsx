@@ -23,8 +23,9 @@ import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { SearchPill } from '../ui';
 import NoteDetailModal from './NoteDetailModal';
-import EditNoteModal from './EditNoteModal';
 import QuickComposerModal from './QuickComposerModal';
+import AskAiButton from './AskAiButton';
+import AskAiModal from './AskAiModal';
 import NotesFilterPopover, { type FinanceDateFilter } from './NotesFilterPopover';
 import type { NoteItem } from './NotesTimeline';
 import type { ExpenseEntry, IncomeEntry, DebtEntry } from '@/db/schema';
@@ -115,7 +116,7 @@ function FinanceChartCard({
           </div>
 
           {/* Mode View Tabs: Daily, Weekly, Monthly */}
-          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft border border-hairline shrink-0">
+          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
             {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
               <button
                 key={mode}
@@ -188,6 +189,7 @@ function FinanceChartCard({
           <div className="w-full h-full bg-surface-soft/40 animate-pulse rounded-lg" />
         )}
       </div>
+
     </div>
   );
 }
@@ -200,9 +202,15 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Modals
-  const [selectedNoteForDetail, setSelectedNoteForDetail] = useState<NoteItem | null>(null);
-  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
+  const [activeFinanceModal, setActiveFinanceModal] = useState<NoteItem | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
+
+  const handleOpenDetail = (note: NoteItem) => {
+    setActiveFinanceModal(note);
+    setModalMode('view');
+  };
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
 
   const handleNoteCreated = (newNote: NoteItem) => {
     setNotesList((prev) => [newNote as FinanceNoteItem, ...prev]);
@@ -519,18 +527,24 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
   return (
     <div className="w-full max-w-[1680px] 2xl:max-w-[1760px] px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
       {/* 1. Header (Matching Todo, Workspace & Admin Style) */}
-      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap font-sans">
-            <span>{userLastName}</span>
-            <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
-              Finance
-            </span>
-          </h1>
+      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap font-sans">
+              <span>{userLastName}</span>
+              <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
+                Finance
+              </span>
+            </h1>
+          </div>
+          <p className="text-body-sm text-body mt-0.5 font-sans">
+            Ringkasan arus kas keuangan, analitik pengeluaran, pemasukan, dan buku pinjaman.
+          </p>
         </div>
-        <p className="text-body-sm text-body mt-0.5 font-sans">
-          Ringkasan arus kas keuangan, analitik pengeluaran, pemasukan, dan buku pinjaman.
-        </p>
+
+        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+          <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Finance" />
+        </div>
       </div>
 
       {/* 2. Controls Row: Searchbox + Filter button (Sticky on Mobile & Desktop, solid white background flush at top) */}
@@ -704,7 +718,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
                             <span>{tx.title}</span>
                             <button
                               type="button"
-                              onClick={() => setSelectedNoteForDetail(tx.rawNote)}
+                              onClick={() => handleOpenDetail(tx.rawNote)}
                               className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
                               title="Lihat catatan asli"
                               aria-label="Lihat catatan asli"
@@ -766,7 +780,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
                             <span>{tx.title}</span>
                             <button
                               type="button"
-                              onClick={() => setSelectedNoteForDetail(tx.rawNote)}
+                              onClick={() => handleOpenDetail(tx.rawNote)}
                               className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
                               title="Lihat catatan asli"
                               aria-label="Lihat catatan asli"
@@ -868,7 +882,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
                             </span>
                             <button
                               type="button"
-                              onClick={() => setSelectedNoteForDetail(d.rawNote)}
+                              onClick={() => handleOpenDetail(d.rawNote)}
                               className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
                               title="Lihat catatan asli"
                               aria-label="Lihat catatan asli"
@@ -967,7 +981,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
                             </span>
                             <button
                               type="button"
-                              onClick={() => setSelectedNoteForDetail(d.rawNote)}
+                              onClick={() => handleOpenDetail(d.rawNote)}
                               className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
                               title="Lihat catatan asli"
                               aria-label="Lihat catatan asli"
@@ -1005,33 +1019,20 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
         onApplyFinanceFilter={(newFilter) => setDateFilter(newFilter)}
       />
 
-      {/* Note Detail Modal */}
-      {selectedNoteForDetail && (
+      {/* Unified Finance Note Modal */}
+      {activeFinanceModal && (
         <NoteDetailModal
-          note={selectedNoteForDetail}
-          isOpen={Boolean(selectedNoteForDetail)}
-          onClose={() => setSelectedNoteForDetail(null)}
-          onEdit={(n) => {
-            setSelectedNoteForDetail(null);
-            setEditingNote(n);
-          }}
+          note={activeFinanceModal}
+          isOpen={Boolean(activeFinanceModal)}
+          initialMode={modalMode}
+          onClose={() => setActiveFinanceModal(null)}
           onDelete={handleDeleteNote}
           onTogglePin={handleTogglePin}
-        />
-      )}
-
-      {/* Edit Note Modal */}
-      {editingNote && (
-        <EditNoteModal
-          note={editingNote}
-          isOpen={Boolean(editingNote)}
-          onClose={() => setEditingNote(null)}
-          onCancel={() => setEditingNote(null)}
           onSave={(updatedNote: any) => {
             setNotesList((prev) =>
               prev.map((n) => (n.id === updatedNote.id ? { ...n, ...updatedNote } : n))
             );
-            setEditingNote(null);
+            setActiveFinanceModal(updatedNote);
           }}
         />
       )}
@@ -1062,6 +1063,14 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           }}
         />
       )}
+      {/* Dedicated Ask AI Modal */}
+      <AskAiModal
+        isOpen={isAskAiOpen}
+        onClose={() => setIsAskAiOpen(false)}
+        category="finance"
+        placeholder="Tanya riwayat pengeluaran, pemasukan, atau pinjaman utang..."
+        contextTitle="Keuangan & Arus Kas"
+      />
     </div>
   );
 }

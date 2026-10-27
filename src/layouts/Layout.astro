@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import GlobalToaster from '../components/ui/GlobalToaster';
+import TopProgressBar from '../components/ui/TopProgressBar.astro';
 import { ClientRouter } from 'astro:transitions';
 
 interface Props {
@@ -20,6 +21,7 @@ const {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&display=swap" rel="stylesheet">
@@ -28,7 +30,25 @@ const {
     <ClientRouter />
   </head>
   <body transition:animate="none" class="min-h-screen antialiased bg-canvas text-ink selection:bg-primary selection:text-on-primary font-sans">
+    <TopProgressBar />
     <GlobalToaster client:load />
     <slot />
+    <script is:inline>
+      (function() {
+        try {
+          var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          var lastSyncedTz = sessionStorage.getItem('unlazynotes_user_tz');
+          if (tz && tz !== lastSyncedTz) {
+            fetch('/api/user/timezone', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ timezone: tz })
+            }).then(function(res) {
+              if (res.ok) sessionStorage.setItem('unlazynotes_user_tz', tz);
+            }).catch(function() {});
+          }
+        } catch (e) {}
+      })();
+    </script>
   </body>
 </html>

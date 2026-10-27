@@ -57,7 +57,15 @@ const serializedNotes = userNotes.map((n) => ({
   isPinned: n.isPinned,
   isProcessed: n.isProcessed,
   targetDate: n.targetDate ? n.targetDate.toISOString() : null,
+  schedule: n.schedule,
+  scheduleDates: n.scheduleDates,
+  todos: n.todos,
+  expenses: n.expenses,
+  income: n.income,
+  debt: n.debt,
   attachments: n.attachments,
+  bookmarkMeta: n.bookmarkMeta,
+  bookmarkType: n.bookmarkType,
   expiresAt: n.expiresAt ? n.expiresAt.toISOString() : null,
   isArchived: n.isArchived,
   createdAt: n.createdAt.toISOString(),
@@ -102,7 +110,7 @@ const telegramConnectUrl = apiKeyRecord?.rawKey
 ---
 
 <Layout title="Notes – UnlazyNotes">
-  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+  <div class="flex flex-col md:flex-row h-screen h-[100dvh] bg-canvas text-ink overflow-hidden">
     <Sidebar
       client:load
       currentPath="/dashboard"
@@ -111,7 +119,7 @@ const telegramConnectUrl = apiKeyRecord?.rawKey
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
       <NotesTimeline
         client:load
         initialNotes={serializedNotes}

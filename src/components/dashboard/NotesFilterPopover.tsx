@@ -1,28 +1,31 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check } from 'lucide-react';
-import { format, parseISO, isValid } from 'date-fns';
+import { format, parseISO, isValid, subMonths, startOfDay, endOfDay } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { Button, Calendar } from '../ui';
 
-export type TodoDateFilter = 'all' | 'today' | 'this_week';
+export type TodoDateFilter = 'this_month' | 'all';
+export type TodoStatusFilter = 'all' | 'pending';
 export type AdminRoleFilter = 'all' | 'pro' | 'free' | 'admin';
 export type FinanceDateFilter = 'this_month' | 'last_month' | 'all';
 
 export interface FilterState {
-  dateRange: 'all' | 'today' | 'this_week' | 'this_month' | 'custom';
+  dateRange: 'all' | 'today' | 'this_week' | 'this_month' | 'last_two_months' | 'custom';
   startDate: string;
   endDate: string;
   selectedCategories: string[];
   showOnlyUncategorized: boolean;
+  showBookmarks?: boolean;
 }
 
 const DEFAULT_FULL_FILTERS: FilterState = {
-  dateRange: 'all',
+  dateRange: 'last_two_months',
   startDate: '',
   endDate: '',
   selectedCategories: [],
   showOnlyUncategorized: false,
+  showBookmarks: false,
 };
 
 interface NotesFilterPopoverProps {
@@ -33,10 +36,12 @@ interface NotesFilterPopoverProps {
   onApply?: (filters: FilterState) => void;
   onReset?: () => void;
 
-  // Variant mode (Todo date-only)
+  // Variant mode (Todo date and status)
   variant?: 'full' | 'todo' | 'admin' | 'finance';
   currentDateFilter?: TodoDateFilter;
   onApplyDateFilter?: (filter: TodoDateFilter) => void;
+  currentTodoStatusFilter?: TodoStatusFilter;
+  onApplyTodoStatusFilter?: (status: TodoStatusFilter) => void;
 
   // Variant mode (Admin user role-only)
   currentAdminFilter?: AdminRoleFilter;
@@ -52,7 +57,6 @@ const ALL_CATEGORIES = [
   'schedule',
   'finance',
   'draft',
-  'bookmark',
   'reference',
   'random-yap',
   'others',
@@ -66,8 +70,10 @@ export default function NotesFilterPopover({
   onApply,
   onReset,
   variant = 'full',
-  currentDateFilter = 'all',
+  currentDateFilter = 'this_month',
   onApplyDateFilter,
+  currentTodoStatusFilter = 'all',
+  onApplyTodoStatusFilter,
   currentAdminFilter = 'all',
   onApplyAdminFilter,
   currentFinanceFilter = 'this_month',
@@ -76,6 +82,7 @@ export default function NotesFilterPopover({
   const [mounted, setMounted] = useState(false);
   const [draftFilters, setDraftFilters] = useState<FilterState>(currentFilters);
   const [draftDateFilter, setDraftDateFilter] = useState<TodoDateFilter>(currentDateFilter);
+  const [draftTodoStatusFilter, setDraftTodoStatusFilter] = useState<TodoStatusFilter>(currentTodoStatusFilter);
   const [draftAdminFilter, setDraftAdminFilter] = useState<AdminRoleFilter>(currentAdminFilter);
   const [draftFinanceFilter, setDraftFinanceFilter] = useState<FinanceDateFilter>(currentFinanceFilter);
 
@@ -88,6 +95,7 @@ export default function NotesFilterPopover({
     if (isOpen) {
       if (variant === 'todo') {
         setDraftDateFilter(currentDateFilter);
+        setDraftTodoStatusFilter(currentTodoStatusFilter);
       } else if (variant === 'admin') {
         setDraftAdminFilter(currentAdminFilter);
       } else if (variant === 'finance') {
@@ -112,6 +120,14 @@ export default function NotesFilterPopover({
   // Derived selected DateRange for RayUI DayPicker
   const selectedDateRange: DateRange | undefined = useMemo(() => {
     if (variant === 'todo') return undefined;
+    if (draftFilters.dateRange === 'last_two_months') {
+      const now = new Date();
+      return {
+        from: subMonths(startOfDay(now), 2),
+        to: endOfDay(now),
+      };
+    }
+    if (draftFilters.dateRange === 'all') return undefined;
     if (!draftFilters.startDate && !draftFilters.endDate) return undefined;
     const from = draftFilters.startDate ? parseISO(draftFilters.startDate) : undefined;
     const to = draftFilters.endDate ? parseISO(draftFilters.endDate) : undefined;
@@ -119,7 +135,7 @@ export default function NotesFilterPopover({
       from: from && isValid(from) ? from : undefined,
       to: to && isValid(to) ? to : undefined,
     };
-  }, [draftFilters.startDate, draftFilters.endDate, variant]);
+  }, [draftFilters.startDate, draftFilters.endDate, draftFilters.dateRange, variant]);
 
   if (!isOpen || !mounted) return null;
 
@@ -139,7 +155,7 @@ export default function NotesFilterPopover({
     if (!range) {
       setDraftFilters((prev) => ({
         ...prev,
-        dateRange: 'all',
+        dateRange: 'last_two_months',
         startDate: '',
         endDate: '',
       }));
@@ -160,6 +176,7 @@ export default function NotesFilterPopover({
   const handleApply = () => {
     if (variant === 'todo') {
       onApplyDateFilter?.(draftDateFilter);
+      onApplyTodoStatusFilter?.(draftTodoStatusFilter);
     } else if (variant === 'admin') {
       onApplyAdminFilter?.(draftAdminFilter);
     } else if (variant === 'finance') {
@@ -172,8 +189,10 @@ export default function NotesFilterPopover({
 
   const handleReset = () => {
     if (variant === 'todo') {
-      setDraftDateFilter('all');
-      onApplyDateFilter?.('all');
+      setDraftDateFilter('this_month');
+      setDraftTodoStatusFilter('all');
+      onApplyDateFilter?.('this_month');
+      onApplyTodoStatusFilter?.('all');
     } else if (variant === 'admin') {
       setDraftAdminFilter('all');
       onApplyAdminFilter?.('all');
@@ -194,6 +213,7 @@ export default function NotesFilterPopover({
   const handleCancel = () => {
     if (variant === 'todo') {
       setDraftDateFilter(currentDateFilter);
+      setDraftTodoStatusFilter(currentTodoStatusFilter);
     } else if (variant === 'admin') {
       setDraftAdminFilter(currentAdminFilter);
     } else if (variant === 'finance') {
@@ -208,7 +228,7 @@ export default function NotesFilterPopover({
     <>
       {/* Full-screen Backdrop covering 100% viewport */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+        className="fixed inset-0 z-[9998] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         onClick={handleCancel}
         aria-hidden="true"
@@ -246,43 +266,75 @@ export default function NotesFilterPopover({
 
           {/* Modal Body */}
           {variant === 'todo' ? (
-            <div className="py-2 space-y-3">
-              <p className="text-caption-sm text-body">
-                Pilih rentang waktu tugas yang ingin ditampilkan:
-              </p>
+            <div className="py-2 space-y-4">
+              {/* Status Filter Tabs (Semua vs Belum Selesai) */}
+              <div>
+                <label className="text-caption-sm font-semibold text-ink block font-sans mb-1.5">
+                  Status Tugas
+                </label>
+                <div className="grid grid-cols-2 p-1 rounded-full bg-surface-soft select-none">
+                  <button
+                    type="button"
+                    onClick={() => setDraftTodoStatusFilter('all')}
+                    className={`py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 text-center ${
+                      draftTodoStatusFilter === 'all'
+                        ? 'bg-canvas text-ink shadow-xs font-semibold'
+                        : 'text-body hover:text-ink'
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDraftTodoStatusFilter('pending')}
+                    className={`py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 text-center ${
+                      draftTodoStatusFilter === 'pending'
+                        ? 'bg-canvas text-ink shadow-xs font-semibold'
+                        : 'text-body hover:text-ink'
+                    }`}
+                  >
+                    Belum Selesai
+                  </button>
+                </div>
+              </div>
 
-              <div className="space-y-2">
-                {[
-                  { id: 'all', label: 'All Time', desc: 'Semua tugas dari seluruh waktu' },
-                  { id: 'today', label: 'Today', desc: 'Hanya tugas yang dibuat hari ini' },
-                  { id: 'this_week', label: 'This Week', desc: 'Tugas yang dibuat minggu ini' },
-                ].map((item) => {
-                  const isSelected = draftDateFilter === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => setDraftDateFilter(item.id as TodoDateFilter)}
-                      className={`w-full py-2.5 px-3.5 rounded-xl !border-0 text-left cursor-pointer transition-colors flex items-center justify-between ${
-                        isSelected
-                          ? 'bg-primary text-on-primary'
-                          : 'bg-surface-soft hover:bg-canvas text-ink'
-                      }`}
-                    >
-                      <div>
-                        <span className="text-body-sm font-medium block">{item.label}</span>
-                        <span
-                          className={`text-[11px] block mt-0.5 ${
-                            isSelected ? 'text-on-primary/70' : 'text-body'
-                          }`}
-                        >
-                          {item.desc}
-                        </span>
-                      </div>
-                      {isSelected && <Check className="w-4 h-4 text-on-primary shrink-0" />}
-                    </button>
-                  );
-                })}
+              {/* Periode Waktu */}
+              <div>
+                <label className="text-caption-sm font-semibold text-ink block font-sans mb-1.5">
+                  Periode Waktu
+                </label>
+                <div className="space-y-1.5">
+                  {[
+                    { id: 'this_month', label: 'Bulan Ini', desc: 'Hanya tugas yang dibuat pada bulan kalender aktif' },
+                    { id: 'all', label: 'Semua Waktu', desc: 'Seluruh tugas dari semua waktu tanpa batas tanggal' },
+                  ].map((item) => {
+                    const isSelected = draftDateFilter === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setDraftDateFilter(item.id as TodoDateFilter)}
+                        className={`w-full py-2.5 px-3.5 rounded-xl !border-0 text-left cursor-pointer transition-colors flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-primary text-on-primary'
+                            : 'bg-surface-soft hover:bg-canvas text-ink'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-body-sm font-medium block">{item.label}</span>
+                          <span
+                            className={`text-[11px] block mt-0.5 ${
+                              isSelected ? 'text-on-primary/70' : 'text-body'
+                            }`}
+                          >
+                            {item.desc}
+                          </span>
+                        </div>
+                        {isSelected && <Check className="w-4 h-4 text-on-primary shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           ) : variant === 'admin' ? (
@@ -380,7 +432,7 @@ export default function NotesFilterPopover({
                       onClick={() =>
                         setDraftFilters((prev) => ({
                           ...prev,
-                          dateRange: 'all',
+                          dateRange: 'last_two_months',
                           startDate: '',
                           endDate: '',
                         }))
@@ -390,6 +442,46 @@ export default function NotesFilterPopover({
                       Reset
                     </button>
                   )}
+                </div>
+
+                {/* Quick Presets: 2 Bulan Terakhir vs Semua Waktu */}
+                <div className="flex items-center gap-1.5 p-1 bg-surface-soft rounded-xl select-none">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        dateRange: 'last_two_months',
+                        startDate: '',
+                        endDate: '',
+                      }))
+                    }
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-caption-sm font-medium transition-colors cursor-pointer !border-0 text-center ${
+                      draftFilters.dateRange === 'last_two_months'
+                        ? 'bg-canvas text-ink shadow-xs'
+                        : 'text-body hover:text-ink'
+                    }`}
+                  >
+                    2 Bulan Terakhir
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        dateRange: 'all',
+                        startDate: '',
+                        endDate: '',
+                      }))
+                    }
+                    className={`flex-1 py-1.5 px-3 rounded-lg text-caption-sm font-medium transition-colors cursor-pointer !border-0 text-center ${
+                      draftFilters.dateRange === 'all'
+                        ? 'bg-canvas text-ink shadow-xs'
+                        : 'text-body hover:text-ink'
+                    }`}
+                  >
+                    Semua Waktu
+                  </button>
                 </div>
 
                 {/* RayUI Date Picker / Range Date - Clean calendar without bottom helper row */}
@@ -427,6 +519,24 @@ export default function NotesFilterPopover({
                       </button>
                     );
                   })}
+                </div>
+
+                {/* Bookmarks Toggle Checkbox */}
+                <div className="pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-caption-sm text-ink select-none font-medium">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(draftFilters.showBookmarks)}
+                      onChange={(e) =>
+                        setDraftFilters((prev) => ({
+                          ...prev,
+                          showBookmarks: e.target.checked,
+                        }))
+                      }
+                      className="w-4 h-4 rounded border-hairline text-primary focus:ring-primary/20 cursor-pointer accent-primary"
+                    />
+                    <span>Tampilkan bookmarks</span>
+                  </label>
                 </div>
               </div>
             </div>

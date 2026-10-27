@@ -1,18 +1,18 @@
 import type { APIRoute } from 'astro';
 import { db } from '@/db';
-import { notes, type NoteCategory, type ScheduleMetadata, type ExpenseEntry, type IncomeEntry, type DebtEntry, type BookmarkType, type CredentialType } from '@/db/schema';
-import { eq, and, desc, gte, lte, sql } from 'drizzle-orm';
+import { notes, type NoteCategory, type ScheduleMetadata, type ExpenseEntry, type IncomeEntry, type DebtEntry, type BookmarkType, type CredentialType, type TodoEntry } from '@/db/schema';
+import { eq, ne, and, desc, gte, lte, sql } from 'drizzle-orm';
 import { getSessionUser } from '@/lib/session';
 import { startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
 import { CATEGORIES } from '@/lib/constants';
-import { generateNoteTags, parseScheduleDates, parseScheduleMetadata, extractFinanceEntries } from '@/lib/ai';
+import { generateNoteTags, extractScheduleEntries, extractFinanceEntries, extractTodoEntries, safeExtractTargetDate } from '@/lib/ai';
 import { normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
 import { encryptSecret } from '@/lib/crypto';
 import { ensureUserInitialResources } from '@/lib/auth';
 import { checkUserQuotaAndTier, incrementUserMonthlyNotes } from '@/lib/quota-service';
-import { extractEarliestScheduleDate } from '@/lib/date-extractor';
 import { incrementUnorganizedCount, getOrFetchUserTags, invalidateUserTagsCache } from '@/lib/cache';
+import { enrichNoteBookmarkAsync, extractCleanDomain } from '@/lib/link-enricher';
 import crypto from 'node:crypto';
 
 export const prerender = false;
@@ -37,6 +37,11 @@ export const GET: APIRoute = async ({ request }) => {
   const endDateStr = url.searchParams.get('endDate')?.trim();
 
   const conditions = [eq(notes.userId, user.id)];
+
+  const excludeEncrypted = url.searchParams.get('excludeEncrypted') === 'true';
+  if (excludeEncrypted) {
+    conditions.push(ne(notes.category, 'credential'), eq(notes.isEncrypted, false));
+  }
 
   if (q) {
     conditions.push(buildFlexibleSearchCondition(q));
@@ -196,6 +201,18 @@ export const POST: APIRoute = async ({ request }) => {
         }))
       : [];
 
+    let todos: TodoEntry[] = Array.isArray(body.todos)
+      ? body.todos
+          .map((t: any) => ({
+            id: String(t.id || crypto.randomUUID()),
+            task: String(t.task || t.title || '').trim(),
+            isCompleted: Boolean(t.isCompleted),
+            completedAt: t.completedAt ? String(t.completedAt) : t.isCompleted ? new Date().toISOString() : null,
+            priority: t.priority && ['low', 'normal', 'high'].includes(t.priority) ? t.priority : null,
+          }))
+          .filter((t: any) => t.task.length > 0)
+      : [];
+
     // Parse targetDate from payload if provided
     if (body.targetDate) {
       const parsed = new Date(body.targetDate);
@@ -203,6 +220,16 @@ export const POST: APIRoute = async ({ request }) => {
         targetDate = parsed;
       }
     }
+
+    
+
+    let bookmarkType: BookmarkType | null = body.bookmarkType ? normalizeBookmarkType(body.bookmarkType) : null;
+    let credentialType: CredentialType | null = body.credentialType ? normalizeCredentialType(body.credentialType) : null;
+
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const detectedUrls = Array.from(trimmedContent.matchAll(urlRegex), (m) => m[0]);
+    const textWithoutUrls = trimmedContent.replace(urlRegex, '').trim();
+    const isPureLink = detectedUrls.length > 0 && textWithoutUrls.length === 0;
 
     if (shouldEncrypt) {
       finalContent = encryptSecret(trimmedContent, user.id);
@@ -227,16 +254,42 @@ export const POST: APIRoute = async ({ request }) => {
 
       if (finalCategory === 'schedule') {
         if (schedule.dates.length === 0 && scheduleDates.length === 0) {
-          const parsedMeta = parseScheduleMetadata(trimmedContent, now);
-          schedule = parsedMeta;
-          scheduleDates = parsedMeta.dates;
+          try {
+            const clientTz = request.headers.get('x-user-timezone') || user.timezone;
+            const sched = await extractScheduleEntries(trimmedContent, now, undefined, clientTz);
+            schedule = sched.schedule;
+            scheduleDates = sched.scheduleDates;
+            targetDate = sched.targetDate;
+          } catch (err) {
+            console.warn('[Schedule Initial Extraction Error]:', err);
+          }
         }
-        if (!targetDate && schedule.dates.length > 0) {
-          const parsed = new Date(`${schedule.dates[0]}T00:00:00Z`);
-          if (!isNaN(parsed.getTime())) targetDate = parsed;
+      }
+
+      if (finalCategory === 'finance' && expenses.length === 0 && income.length === 0 && debt.length === 0) {
+        try {
+          const fin = await extractFinanceEntries(trimmedContent);
+          expenses = fin.expenses;
+          income = fin.income;
+          debt = fin.debt;
+        } catch (err) {
+          console.warn('[Finance Initial Extraction Error]:', err);
         }
-        if (!targetDate) {
-          targetDate = extractEarliestScheduleDate(trimmedContent, now);
+      }
+
+      if (finalCategory === 'todo' && todos.length === 0) {
+        try {
+          todos = await extractTodoEntries(trimmedContent);
+        } catch (err) {
+          console.warn('[Todo Initial Extraction Error]:', err);
+          todos = [
+            {
+              id: crypto.randomUUID(),
+              task: trimmedContent,
+              isCompleted: false,
+              completedAt: null,
+            },
+          ];
         }
       }
     } else if (body.category === 'others' && Array.isArray(body.specificTags) && body.specificTags.length > 0) {
@@ -249,6 +302,15 @@ export const POST: APIRoute = async ({ request }) => {
       finalCategory = 'others';
       finalTags = body.specificTags;
       isProcessed = true;
+    } else if (isPureLink) {
+      // Pure link: instantly categorize as bookmark (100% deterministic external URL)
+      finalCategory = 'bookmark';
+      bookmarkType = bookmarkType || 'reading_other';
+      const primaryUrl = detectedUrls[0];
+      const domain = extractCleanDomain(primaryUrl);
+      const domainName = domain.split('.')[0] || 'link';
+      finalTags = [domainName];
+      isProcessed = true; // Instantly available in Bookmarks tab without waiting for AI sync
     } else {
       // General note created without specific category or tags (defaults to 'others')
       // Kept as isProcessed = false so it can be curated later by AI background batch sync
@@ -258,15 +320,7 @@ export const POST: APIRoute = async ({ request }) => {
       await incrementUnorganizedCount(user.id);
     }
 
-    let bookmarkType: BookmarkType | null = null;
-    let credentialType: CredentialType | null = null;
-
-    if (body.bookmarkType) {
-      bookmarkType = normalizeBookmarkType(body.bookmarkType);
-    }
-    if (body.credentialType) {
-      credentialType = normalizeCredentialType(body.credentialType);
-    }
+    
 
     if (finalCategory === 'bookmark' && !bookmarkType) {
       bookmarkType = 'reading_other';
@@ -297,6 +351,7 @@ export const POST: APIRoute = async ({ request }) => {
         expenses,
         income,
         debt,
+        todos,
         bookmarkType,
         credentialType,
         attachments,
@@ -306,6 +361,13 @@ export const POST: APIRoute = async ({ request }) => {
 
     await incrementUserMonthlyNotes(user.id);
     invalidateUserTagsCache(user.id);
+
+    // Otomatisasi Background: Eksekusi Link/Bookmark Enrichment secara asinkron (Fire & Forget)
+    if (finalCategory === 'bookmark' || /(https?:\/\/[^\s]+)/i.test(finalContent)) {
+      enrichNoteBookmarkAsync(newNote.id, finalContent).catch((err) => {
+        console.warn('[Background Bookmark Enrichment Error]:', err);
+      });
+    }
 
     // Otomatisasi Background: Eksekusi LLM finance extraction (deepseek-v4.1-flash) secara asinkron
     if (finalCategory === 'finance') {
@@ -340,13 +402,14 @@ export const POST: APIRoute = async ({ request }) => {
           vaultKey: newNote.vaultKey,
           isPinned: newNote.isPinned,
           isProcessed: newNote.isProcessed,
-          targetDate: newNote.targetDate ? newNote.targetDate.toISOString() : null,
+          targetDate: newNote.targetDate instanceof Date && !isNaN(newNote.targetDate.getTime()) ? newNote.targetDate.toISOString() : (typeof newNote.targetDate === 'string' ? newNote.targetDate : null),
           scheduleDates: newNote.scheduleDates,
           schedule: newNote.schedule,
           expenses: newNote.expenses,
           income: newNote.income,
           debt: newNote.debt,
           bookmarkType: newNote.bookmarkType,
+          bookmarkMeta: newNote.bookmarkMeta,
           credentialType: newNote.credentialType,
           attachments: newNote.attachments,
           createdAt: newNote.createdAt.toISOString(),

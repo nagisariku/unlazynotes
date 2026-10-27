@@ -9,6 +9,7 @@ export interface AuthSessionUser {
   email: string;
   role: string;
   preferredLocale: string;
+  timezone: string;
   image?: string | null;
 }
 
@@ -25,6 +26,7 @@ export async function getSessionUser(request: Request): Promise<AuthSessionUser 
         email: sessionData.user.email,
         role: (sessionData.user as any).role || 'user',
         preferredLocale: (sessionData.user as any).preferredLocale || 'id',
+        timezone: (sessionData.user as any).timezone || 'Asia/Jakarta',
         image: sessionData.user.image || null,
       };
     }
@@ -46,6 +48,7 @@ export async function getSessionUser(request: Request): Promise<AuthSessionUser 
         email: user.email,
         role: user.role,
         preferredLocale: user.preferredLocale,
+        timezone: user.timezone || 'Asia/Jakarta',
         image: user.image || null,
       };
     }

@@ -1,14 +1,25 @@
 import { NoteTagResultSchema, type NoteTagResult } from './ai/types';
 import { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST } from './ai/sanitizer';
 import { extractFinanceEntries } from './ai/modules/finance';
-import { parseScheduleDates, parseScheduleMetadata } from './ai/modules/schedule';
+import { extractTodoEntries } from './ai/modules/todo';
+import { extractScheduleEntries, sanitizeScheduleJson, safeExtractTargetDate } from './ai/modules/schedule';
 import { processGeneralNote, enrichDualLayerTags, normalizeBookmarkType, normalizeCredentialType, normalizeCategory } from './ai/modules/general';
 import { fetchLinkMetadata } from './link-enricher';
 
 // Export core types and schemas for backward compatibility
 export { NoteTagResultSchema, type NoteTagResult };
 export { BANNED_TAGS, normalizeTag, sanitizeTags, SHORT_TAG_WHITELIST };
-export { extractFinanceEntries, parseScheduleDates, parseScheduleMetadata, normalizeCategory, normalizeBookmarkType, normalizeCredentialType, enrichDualLayerTags };
+export {
+  extractFinanceEntries,
+  extractTodoEntries,
+  extractScheduleEntries,
+  sanitizeScheduleJson,
+  safeExtractTargetDate,
+  normalizeCategory,
+  normalizeBookmarkType,
+  normalizeCredentialType,
+  enrichDualLayerTags,
+};
 export * from './ai/taxonomy';
 
 /**
@@ -30,7 +41,11 @@ export async function generateNoteTags(
     try {
       const meta = await fetchLinkMetadata(urlMatch[1]);
       if (meta?.title) {
-        enrichedContent = `${content}\nLink Content: Title: "${meta.title}", Summary: "${meta.description || ''}"`;
+        let snippet = `Title: "${meta.title}", Summary: "${meta.description || ''}"`;
+        if (meta.caption) {
+          snippet += `, Post Caption: "${meta.caption.slice(0, 300)}"`;
+        }
+        enrichedContent = `${content}\nLink Content: ${snippet}`;
       }
     } catch {
       // Non-fatal fallback

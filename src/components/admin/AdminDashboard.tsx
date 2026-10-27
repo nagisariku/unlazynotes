@@ -171,7 +171,7 @@ function AdminChartCard({
           </div>
 
           {/* Mode View Tabs: Daily, Weekly, Monthly */}
-          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft border border-hairline shrink-0">
+          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
             {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
               <button
                 key={mode}
@@ -192,7 +192,7 @@ function AdminChartCard({
         {/* Dual Mode Switch jika ada (Tokens vs /ask times) - Posisi di kanan di bawah tabs Daily/Weekly/Monthly */}
         {isDualMode && (
           <div className="flex justify-end pt-1">
-            <div className="inline-flex items-center p-1 rounded-full bg-surface-soft border border-hairline">
+            <div className="inline-flex items-center p-1 rounded-full bg-surface-soft">
               <button
                 type="button"
                 onClick={() => setDualMode('tokens')}

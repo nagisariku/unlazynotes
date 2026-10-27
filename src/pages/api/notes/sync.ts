@@ -14,7 +14,16 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   try {
-    const result = await organizeUserNotes(user.id);
+    let targetNoteId: string | undefined = undefined;
+    if (request.headers.get('content-type')?.includes('application/json')) {
+      const body = await request.json().catch(() => ({}));
+      if (body && typeof body.noteId === 'string' && body.noteId.trim()) {
+        targetNoteId = body.noteId.trim();
+      }
+    }
+
+    const clientTimezone = request.headers.get('x-user-timezone') || user.timezone;
+    const result = await organizeUserNotes(user.id, targetNoteId, clientTimezone);
 
     const formattedNotes = result.items.map((item: any) => ({
       id: item.id,
@@ -26,12 +35,15 @@ export const POST: APIRoute = async ({ request }) => {
       vaultKey: item.vaultKey || null,
       isPinned: Boolean(item.isPinned),
       isProcessed: Boolean(item.isProcessed),
-      targetDate: item.targetDate instanceof Date ? item.targetDate.toISOString() : item.targetDate || null,
+      targetDate: item.targetDate instanceof Date && !isNaN(item.targetDate.getTime())
+        ? item.targetDate.toISOString()
+        : (typeof item.targetDate === 'string' ? item.targetDate : null),
       attachments: item.attachments || [],
       createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : String(item.createdAt),
       expenses: item.expenses || [],
       income: item.income || [],
       debt: item.debt || [],
+      todos: item.todos || [],
       schedule: item.schedule || null,
       scheduleDates: item.scheduleDates || [],
       bookmarkType: item.bookmarkType || null,
