@@ -39,6 +39,9 @@ const bookmarkNotes = await db
 const serializedBookmarks = bookmarkNotes.map((b) => ({
   id: b.id,
   content: b.content,
+  category: b.category,
+  bookmarkType: b.bookmarkType,
+  bookmarkMeta: b.bookmarkMeta,
   specificTags: b.specificTags,
   source: b.source,
   isPinned: b.isPinned,
@@ -48,7 +51,7 @@ const serializedBookmarks = bookmarkNotes.map((b) => ({
 ---
 
 <Layout title="Bookmarks – UnlazyNotes">
-  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+  <div class="flex flex-col md:flex-row h-screen h-[100dvh] bg-canvas text-ink overflow-hidden">
     <Sidebar
       client:load
       currentPath="/dashboard/bookmarks"
@@ -57,7 +60,7 @@ const serializedBookmarks = bookmarkNotes.map((b) => ({
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
       <BookmarksView
         client:load
         initialBookmarks={serializedBookmarks}

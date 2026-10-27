@@ -18,6 +18,7 @@ import {
 } from '@/lib/telegram';
 import { processTelegramAttachment } from '@/lib/media-processor';
 import type { NoteAttachment } from '@/db/schema';
+import { enrichNoteBookmarkAsync } from '@/lib/link-enricher';
 import { normalizeTag, generateNoteTags } from '@/lib/ai';
 import { answerNoteQuestion } from '@/lib/ask';
 import { buildFlexibleSearchCondition, buildSearchRelevanceOrder } from '@/lib/search';
@@ -186,6 +187,11 @@ export async function flushDebounceBuffer(chatId: string): Promise<string | null
 
     // Update cache counter catatan unorganized pengguna (unorganized_count:{userId} += 1)
     await incrementUnorganizedCount(item.activeKey.userId, 1);
+
+    // Background async link metadata enrichment (Fire & Forget, zero latency)
+    enrichNoteBookmarkAsync(noteId, mergedText).catch((err) =>
+      console.error('[Async Telegram Bookmark Enrichment Error]:', err)
+    );
 
     // SILENT CAPTURE (NO SPAM): Tetap hening tanpa respon teks chat
 
@@ -2096,8 +2102,15 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   }
 
   // 8. /ask <pertanyaan> (AI Pro Q&A)
-  if (text.startsWith('/ask')) {
-    const question = text.replace(/^\/ask\s*/, '').trim();
+  const isReplyToAiAnswer = Boolean(
+    message.reply_to_message &&
+    message.reply_to_message.from?.is_bot &&
+    (message.reply_to_message.text?.includes('Jawaban AI:') || message.reply_to_message.text?.includes('AI Answer:')) &&
+    !text.startsWith('/')
+  );
+
+  if (text.startsWith('/ask') || isReplyToAiAnswer) {
+    const question = text.startsWith('/ask') ? text.replace(/^\/ask\s*/, '').trim() : text.trim();
 
     if (!quotaInfo.isPro) {
       const gated = getTelegramProGatedMessage(process.env.BETTER_AUTH_URL, activeLocale);
@@ -2115,12 +2128,25 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
       return { ok: true, action: 'ask_missing_question' };
     }
 
+    // Build sliding context if this is a reply to previous AI message
+    let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> | undefined;
+    if (message.reply_to_message && message.reply_to_message.text) {
+      const cleanPrev = message.reply_to_message.text
+        .replace(/^.*?(Jawaban AI:|AI Answer:)\s*/i, '')
+        .trim();
+      if (cleanPrev) {
+        conversationHistory = [
+          { role: 'assistant', content: cleanPrev },
+        ];
+      }
+    }
+
     const loadingResult = await sendTelegramMessageWithId(chatId, getTelegramMsg('ask_analyzing', activeLocale));
     const loadingMsgId = loadingResult.messageId;
 
     (async () => {
       try {
-        const answer = await answerNoteQuestion(activeKey.userId, question);
+        const answer = await answerNoteQuestion(activeKey.userId, question, undefined, conversationHistory);
         await sendTelegramMessage(chatId, getTelegramMsg('ask_answer_header', activeLocale, { answer }), {
           parse_mode: 'Markdown',
         });

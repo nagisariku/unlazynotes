@@ -1,12 +1,19 @@
 import { recordAiUsage } from '@/lib/ai-usage';
 import { db } from '@/db';
 import { notes } from '@/db/schema';
-import { eq, and, gte, desc } from 'drizzle-orm';
+import { eq, and, gte, desc, or, inArray } from 'drizzle-orm';
 import { subDays } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
 import { getOrFetchUnorganizedCount } from './cache';
 import { organizeUserNotes } from './ai/batch-organizer';
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+
 
 /**
  * Formats a Date object into human-friendly Asia/Jakarta short datetime
@@ -28,6 +35,8 @@ function formatNoteDate(date: Date): string {
   return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')}`;
 }
 
+
+
 /**
  * Formats current date and time for dynamic prompt injection
  * e.g. "Jumat, 16 Oktober 2026, 14:05 WIB"
@@ -48,13 +57,17 @@ function formatCurrentTime(date: Date): string {
   return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')} WIB`;
 }
 
+
+
 /**
- * Answers a user's question strictly based on their notes from the last 180 days.
+ * Answers a user's question strictly based on their stored notes.
  * Exclusive for Pro plan subscribers.
  */
 export async function answerNoteQuestion(
   userId: string,
-  question: string
+  question: string,
+  categoryFilter?: string,
+  conversationHistory?: ConversationMessage[]
 ): Promise<string> {
   // 0. Auto-organize unorganized notes silently before answering question
   const unorganizedCount = await getOrFetchUnorganizedCount(userId);
@@ -68,29 +81,47 @@ export async function answerNoteQuestion(
 
   const now = new Date();
   const nowFormatted = formatCurrentTime(now);
-  const oneEightyDaysAgo = subDays(now, 180);
+  const oneYearAgo = subDays(now, 365);
 
-  // 1. Fetch user notes created within the last 90 days
+  // 1. Fetch user notes created within the last 180 days (optionally filtered by category)
+  const conditions = [
+    eq(notes.userId, userId),
+
+    eq(notes.isEncrypted, false),
+  ];
+
+  if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
+    conditions.push(eq(notes.category, categoryFilter as any));
+    if (!['reference', 'credential', 'draft'].includes(categoryFilter)) {
+      conditions.push(gte(notes.createdAt, oneYearAgo));
+    }
+  } else {
+    conditions.push(
+      or(
+        inArray(notes.category, ['reference', 'credential', 'draft']),
+        gte(notes.createdAt, oneYearAgo)
+      )!
+    );
+  }
+
   const userNotes = await db
     .select({
       content: notes.content,
       category: notes.category,
       specificTags: notes.specificTags,
       createdAt: notes.createdAt,
+      bookmarkMeta: notes.bookmarkMeta,
     })
     .from(notes)
-    .where(
-      and(
-        eq(notes.userId, userId),
-        gte(notes.createdAt, oneEightyDaysAgo),
-        eq(notes.isEncrypted, false)
-      )
-    )
+    .where(and(...conditions))
     .orderBy(desc(notes.createdAt))
-    .limit(300);
+    .limit(600);
 
   if (userNotes.length === 0) {
-    return 'Belum ada catatan yang tersimpan dalam 180 hari terakhir untuk dianalisis oleh AI.';
+    if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
+      return `Belum ada catatan kategori "${categoryFilter}" yang tersimpan untuk dianalisis oleh AI.`;
+    }
+    return 'Belum ada catatan yang tersimpan untuk dianalisis oleh AI.';
   }
 
   // 2. Format notes context with human-friendly localized timestamp and category
@@ -99,26 +130,31 @@ export async function answerNoteQuestion(
       const dateStr = formatNoteDate(new Date(n.createdAt));
       const tags = (n.specificTags || []).filter(Boolean).join(', ');
       const categoryTag = tags ? `${n.category} • ${tags}` : n.category;
-      return `${idx + 1}. [${dateStr}] [${categoryTag}] ${n.content}`;
+      let noteBody = n.content;
+      if (n.category === 'bookmark' && (n as any).bookmarkMeta) {
+        const bm = (n as any).bookmarkMeta;
+        const metaParts: string[] = [];
+        if (bm.title) metaParts.push(`Judul: "${bm.title}"`);
+        if (bm.caption) metaParts.push(`Caption/Post: "${bm.caption}"`);
+        if (bm.aiSummary && bm.aiSummary.length > 0) {
+          metaParts.push(`Ringkasan: ${bm.aiSummary.join('; ')}`);
+        } else if (bm.description) {
+          metaParts.push(`Deskripsi: "${bm.description}"`);
+        }
+        if (metaParts.length > 0) {
+          noteBody = `${n.content}\n   [Metadata Bookmark -> ${metaParts.join(' | ')}]`;
+        }
+      }
+      return `${idx + 1}. [${dateStr}] [${categoryTag}] ${noteBody}`;
     })
     .join('\n\n');
 
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   if (!apiKey || apiKey.startsWith('mock-')) {
-    if (/model\s+(ai|apa)|pakai\s+model\s+apa/i.test(question)) {
-      return 'Model UnlazyNotesLLM-v1';
-    }
-    // Basic heuristic search fallback if no LLM key
-    const match = userNotes.find((n) =>
-      n.content.toLowerCase().includes(question.toLowerCase())
-    );
-    if (match) {
-      return `Berdasarkan catatan Anda:\n"${match.content}"`;
-    }
-    return `Maaf, informasi mengenai "${question}" tidak ditemukan dalam catatan Anda.`;
+    throw new Error('AI Provider API key belum dikonfigurasi');
   }
 
   try {
@@ -129,6 +165,8 @@ export async function answerNoteQuestion(
         Authorization: `Bearer ${apiKey}`,
       },
     });
+
+
 
 /**
  * Strips markdown tables, converts any table row into bullet format,
@@ -183,28 +221,7 @@ function postProcessAskResponse(text: string): string {
   }
   cleaned = processedLines.join('\n');
 
-  // 3. Strip robotic conversational closing remarks
-  cleaned = cleaned.replace(/\s*(kalau|jika)\s+mau,?\s+(saya|aku)\s+bisa\s+bantu[^\n]*$/i, '');
-  cleaned = cleaned.replace(/\s*(mau|bisa)\s+(saya|aku)\s+bantu[^\n]*$/i, '');
-
-  const resultLines = cleaned.trim().split('\n');
-  while (resultLines.length > 0) {
-    const lastLine = resultLines[resultLines.length - 1]?.trim() || '';
-    if (
-      /^(mau\s+(saya|aku)|ada\s+yang|bisa\s+(saya|aku)|semoga\s+membantu|apakah\s+(ada|anda|kamu)|perlu\s+(saya|aku)|silakan\s+(tanya|beri|hubungi)|jangan\s+ragu|kalau\s+mau|jika\s+mau)/i.test(
-        lastLine
-      ) ||
-      (/\?["']?$/.test(lastLine) && /(mau|bantu|bisa|perlu|inginkan)/i.test(lastLine)) ||
-      /(saya|aku)\s+bisa\s+bantu\b/i.test(lastLine) ||
-      lastLine === ''
-    ) {
-      resultLines.pop();
-    } else {
-      break;
-    }
-  }
-
-  return resultLines.join('\n').trim();
+  return processedLines.join('\n').trim();
 }
 
     const systemPrompt = `Anda adalah asisten cerdas personal UnlazyNotes.
@@ -263,16 +280,25 @@ Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
      * Apabila pengguna bertanya mengenai model AI apa yang digunakan oleh notes/aplikasi ini (misal: "kamu pakai model apa?", "model AI apa yang digunakan notes ini?"), jawab HANYA: "Model UnlazyNotesLLM-v1".
      * DILARANG KERAS membeberkan atau memberi clue/detail teknis apapun mengenai arsitektur sistem, vendor/provider, nama model dasar (seperti Claude, Anthropic, Haiku, OpenAI, GPT, Cosmoshub, dsb.), database, server, atau sistem internal UnlazyNotes.`;
 
+    let historySection = '';
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recent = conversationHistory.slice(-6);
+      historySection = `\nRiwayat Percakapan Sebelumnya:\n` +
+        recent.map((m) => `${m.role === 'user' ? 'Pengguna' : 'Asisten'}: ${m.content}`).join('\n') +
+        '\n---\n';
+    }
+
     const userPrompt = `Waktu Saat Ini (Current Time): ${nowFormatted}
 
-Catatan pengguna yang tersimpan (hingga 180 hari terakhir):
+Catatan pengguna yang tersimpan:
 ---
 ${contextNotes}
 ---
 
-Pertanyaan pengguna: ${question}
+${historySection}Pertanyaan pengguna saat ini: ${question}
 
 PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
+- Jika pertanyaan merujuk pada percakapan sebelumnya (misal kata ganti "itu", "dia", "meetingnya", "harganya", dsb.), pahami konteks dari Riwayat Percakapan Sebelumnya.
 - Tentukan apakah pertanyaan bersifat Broad Overview (menyeluruh) atau Targeted Query (spesifik):
   * Jika Broad Overview: gunakan 3 zona (*📌 Jadwal & Tugas Terdekat (Mendatang)*, *⚠️ Sudah Lewat (Overdue / Perlu Dicek)*, *📝 To-Do Tanpa Tenggat (Backlog)*). Maksimal 5-7 item per zona.
   * Jika Targeted Query: Jawab HANYA entitas/topik yang ditanyakan secara fokus dan to-the-point. DILARANG KERAS menumpahkan agenda lain yang tidak relevan!
@@ -280,14 +306,23 @@ PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
 - Jangan gunakan tabel Markdown (|---|) atau heading besar (#, ##). Gunakan bullet list (•).
 - Langsung mulai jawaban tanpa kalimat pengantar dan tanpa basa-basi penutup robotik.`;
 
-    const { text } = await generateText({
+    const result = await generateText({
       model: openaiCompatible(modelName),
       system: systemPrompt,
       prompt: userPrompt,
       temperature: 0.1,
     });
 
-    return postProcessAskResponse(text);
+    if (result.usage) {
+      await recordAiUsage({
+        userId,
+        feature: 'ask',
+        model: modelName,
+        usage: result.usage,
+      });
+    }
+
+    return postProcessAskResponse(result.text);
   } catch (err) {
     console.error('[AI /ask] Error executing question answering:', err);
     throw err;

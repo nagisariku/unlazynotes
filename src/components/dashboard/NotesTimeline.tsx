@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   SlidersHorizontal,
   ListChecks,
@@ -15,14 +15,16 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, subMonths, startOfDay } from 'date-fns';
 import NoteCard from './NoteCard';
 import NoteDetailModal from './NoteDetailModal';
-import EditNoteModal from './EditNoteModal';
 import QuickComposerModal from './QuickComposerModal';
+import AskAiButton from './AskAiButton';
+import AskAiModal from './AskAiModal';
 import NotesFilterPopover, { type FilterState } from './NotesFilterPopover';
 import { toast } from 'sonner';
 import { Button, SearchPill, ConfirmDialog } from '../ui';
+import type { BookmarkMeta } from '../../db/schema';
 
 export interface FeatureCardItem {
   title: string;
@@ -48,6 +50,7 @@ export interface NoteItem {
   income?: any;
   debt?: any;
   bookmarkType?: string | null;
+  bookmarkMeta?: BookmarkMeta | null;
   credentialType?: string | null;
   attachments?: any;
   expiresAt?: string | Date | null;
@@ -71,11 +74,12 @@ interface NotesTimelineProps {
 }
 
 const DEFAULT_FILTERS: FilterState = {
-  dateRange: 'all',
+  dateRange: 'last_two_months',
   startDate: '',
   endDate: '',
   selectedCategories: [],
   showOnlyUncategorized: false,
+  showBookmarks: false,
 };
 
 export default function NotesTimeline({
@@ -99,6 +103,7 @@ export default function NotesTimeline({
 
   // Quick Web Note Composer Modal State (textbox now a popup)
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
 
   // Note Detail & Edit Modal States
     const [telegramConnected, setTelegramConnected] = useState(isTelegramConnected);
@@ -139,10 +144,26 @@ export default function NotesTimeline({
     };
   }, [telegramConnected]);
 
-  const [selectedNoteForDetail, setSelectedNoteForDetail] = useState<NoteItem | null>(null);
-  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
-  const openedFromDetailRef = useRef(false);
+  const [activeModalNote, setActiveModalNote] = useState<NoteItem | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
+
+  const handleOpenDetail = (note: NoteItem) => {
+    setActiveModalNote(note);
+    setModalMode('view');
+  };
+
+  const handleOpenReader = (note: NoteItem) => {
+    setActiveModalNote(note);
+    setModalMode('read');
+  };
+
+  const handleOpenEdit = (note: NoteItem) => {
+    setActiveModalNote(note);
+    setModalMode('edit');
+  };
   const [isSyncingAi, setIsSyncingAi] = useState(false);
+  const [syncingNoteIds, setSyncingNoteIds] = useState<Set<string>>(new Set());
+  const isAnySyncing = isSyncingAi || syncingNoteIds.size > 0;
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
 
   // Horizontal Carousel Ref & Handlers for Pinned Shelf
@@ -185,7 +206,7 @@ export default function NotesTimeline({
       hasDraggedRef.current = false;
       return;
     }
-    setSelectedNoteForDetail(note);
+    handleOpenDetail(note);
   };
 
   const scrollPinned = (direction: 'left' | 'right') => {
@@ -238,7 +259,7 @@ export default function NotesTimeline({
       hasDraggedUncatRef.current = false;
       return;
     }
-    setSelectedNoteForDetail(note);
+    handleOpenDetail(note);
   };
 
   const scrollUncategorized = (direction: 'left' | 'right') => {
@@ -282,8 +303,7 @@ export default function NotesTimeline({
         (e.key === 'c' || e.key === 'n' || e.key === '+') &&
         !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName) &&
         !isComposerOpen &&
-        !selectedNoteForDetail &&
-        !editingNote &&
+        !activeModalNote &&
         !isFilterOpen
       ) {
         e.preventDefault();
@@ -292,7 +312,7 @@ export default function NotesTimeline({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isComposerOpen, selectedNoteForDetail, editingNote, isFilterOpen]);
+  }, [isComposerOpen, activeModalNote, isFilterOpen]);
 
   // Initialize filters from URL search params on mount
   useEffect(() => {
@@ -301,7 +321,7 @@ export default function NotesTimeline({
     const q = params.get('q') || '';
     const cat = params.get('category') || '';
     const cats = params.get('categories') || '';
-    const range = (params.get('range') as any) || 'all';
+    const range = (params.get('range') as any) || 'last_two_months';
     const start = params.get('startDate') || '';
     const end = params.get('endDate') || '';
     const uncategorized = params.get('uncategorized') === 'true';
@@ -316,9 +336,9 @@ export default function NotesTimeline({
     }
 
     setFilters({
-      dateRange: ['all', 'today', 'this_week', 'this_month', 'custom'].includes(range)
-        ? range
-        : 'all',
+      dateRange: ['all', 'today', 'this_week', 'this_month', 'last_two_months', 'custom'].includes(range as any)
+        ? (range as FilterState['dateRange'])
+        : 'last_two_months',
       startDate: start,
       endDate: end,
       selectedCategories: parsedCategories,
@@ -337,7 +357,7 @@ export default function NotesTimeline({
     if (filters.showOnlyUncategorized) {
       params.set('uncategorized', 'true');
     }
-    if (filters.dateRange !== 'all') {
+    if (filters.dateRange !== 'last_two_months') {
       params.set('range', filters.dateRange);
     }
     if (filters.startDate) params.set('startDate', filters.startDate);
@@ -349,8 +369,8 @@ export default function NotesTimeline({
 
   const handleDeleteNote = (id: string) => {
     setNotes((prev) => prev.filter((n) => n.id !== id));
-    if (selectedNoteForDetail?.id === id) {
-      setSelectedNoteForDetail(null);
+    if (activeModalNote?.id === id) {
+      setActiveModalNote(null);
     }
     toast.success('Catatan berhasil dihapus');
   };
@@ -364,8 +384,8 @@ export default function NotesTimeline({
     setNotes((prev) =>
       prev.map((n) => (n.id === updatedNote.id ? updatedNote : n))
     );
-    if (selectedNoteForDetail?.id === updatedNote.id) {
-      setSelectedNoteForDetail(updatedNote);
+    if (activeModalNote?.id === updatedNote.id) {
+      setActiveModalNote(updatedNote);
     }
   };
 
@@ -373,8 +393,8 @@ export default function NotesTimeline({
     setNotes((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isPinned } : n))
     );
-    if (selectedNoteForDetail?.id === id) {
-      setSelectedNoteForDetail((prev) => (prev ? { ...prev, isPinned } : null));
+    if (activeModalNote?.id === id) {
+      setActiveModalNote((prev) => (prev ? { ...prev, isPinned } : null));
     }
     toast.success(isPinned ? 'Catatan dipin ke atas' : 'Pin catatan dilepas');
   };
@@ -471,16 +491,157 @@ export default function NotesTimeline({
     setNotes((prev) => prev.map((n) => (n.id === tempId ? realNote : n)));
   };
 
+  // Silent revalidation to keep workspace live and synced with server
+  const refreshNotesSilently = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notes?excludeEncrypted=true');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.notes && Array.isArray(data.notes)) {
+        setNotes(data.notes);
+      }
+    } catch {}
+  }, []);
+
+  // Live Auto-revalidation across Astro ClientRouter page transitions & window focus
+  useEffect(() => {
+    let pollInterval: any = null;
+    let pollCount = 0;
+
+    const checkAndRevalidate = () => {
+      let activeSyncRaw: string | null = null;
+      try {
+        activeSyncRaw = sessionStorage.getItem('unlazynotes_active_sync');
+      } catch {}
+
+      if (activeSyncRaw) {
+        try {
+          const activeSync = JSON.parse(activeSyncRaw);
+          // If a sync was triggered within the last 45 seconds, poll up to 6 times (every 2.5s) until done
+          if (activeSync && Date.now() - activeSync.startedAt < 45000) {
+            refreshNotesSilently();
+
+            if (!pollInterval) {
+              pollCount = 0;
+              pollInterval = setInterval(async () => {
+                pollCount++;
+                await refreshNotesSilently();
+                if (pollCount >= 6) {
+                  if (pollInterval) clearInterval(pollInterval);
+                  pollInterval = null;
+                  try {
+                    sessionStorage.removeItem('unlazynotes_active_sync');
+                  } catch {}
+                }
+              }, 2500);
+            }
+            return;
+          }
+        } catch {}
+        try {
+          sessionStorage.removeItem('unlazynotes_active_sync');
+        } catch {}
+      }
+
+      refreshNotesSilently();
+    };
+
+    const handlePageLoad = () => {
+      checkAndRevalidate();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkAndRevalidate();
+      }
+    };
+
+    document.addEventListener('astro:page-load', handlePageLoad);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', checkAndRevalidate);
+
+    checkAndRevalidate();
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+      document.removeEventListener('astro:page-load', handlePageLoad);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', checkAndRevalidate);
+    };
+  }, [refreshNotesSilently]);
+
+  // Single-note AI sync
+  const handleSyncSingleNote = async (noteId: string) => {
+    if (isAnySyncing) return;
+    setSyncingNoteIds((prev) => new Set(prev).add(noteId));
+
+    try {
+      sessionStorage.setItem(
+        'unlazynotes_active_sync',
+        JSON.stringify({ startedAt: Date.now(), noteId })
+      );
+    } catch {}
+
+    const toastId = toast.loading('Mengategorikan catatan dengan AI...');
+
+    try {
+      const res = await fetch('/api/notes/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta',
+        },
+        body: JSON.stringify({ noteId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Gagal memproses catatan dengan AI');
+      }
+
+      if (data.updatedCount > 0 && Array.isArray(data.updatedNotes) && data.updatedNotes[0]) {
+        const updated = data.updatedNotes[0];
+        setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+        toast.success(`Catatan berhasil dikategorikan sebagai "${updated.category}" oleh AI`, { id: toastId });
+      } else {
+        toast.info('Catatan telah sinkron.', { id: toastId });
+      }
+    } catch (err: any) {
+      console.error('Single Note AI Sync error:', err);
+      toast.error(err.message || 'Gagal memproses catatan dengan AI', { id: toastId });
+    } finally {
+      setSyncingNoteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(noteId);
+        return next;
+      });
+      try {
+        sessionStorage.removeItem('unlazynotes_active_sync');
+      } catch {}
+    }
+  };
+
   // Sync and auto-categorize uncategorized notes via AI pipeline
   const handleSyncWithAi = async () => {
-    if (isSyncingAi) return;
+    if (isAnySyncing) return;
     setIsSyncingAi(true);
+
+    try {
+      sessionStorage.setItem(
+        'unlazynotes_active_sync',
+        JSON.stringify({ startedAt: Date.now(), noteId: 'all' })
+      );
+    } catch {}
+
     const toastId = toast.loading('Menghubungkan ke AI untuk mengkategorikan catatan...');
 
     try {
       const res = await fetch('/api/notes/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-timezone': Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Jakarta',
+        },
       });
 
       const data = await res.json();
@@ -512,6 +673,9 @@ export default function NotesTimeline({
       toast.error(err.message || 'Gagal sinkronisasi dengan AI', { id: toastId });
     } finally {
       setIsSyncingAi(false);
+      try {
+        sessionStorage.removeItem('unlazynotes_active_sync');
+      } catch {}
     }
   };
 
@@ -544,19 +708,28 @@ export default function NotesTimeline({
         if (!isMatch) return false;
       }
 
+      // 1.5 Bookmarks Filter (hidden by default unless showBookmarks is toggled)
+      if (!filters.showBookmarks && n.category === 'bookmark') {
+        return false;
+      }
+
       // 2. Category & Archive Filter
       const isArchivedSelected = filters.selectedCategories.includes('archived');
       if (isArchivedSelected) {
         if (!n.isArchived) return false;
         const otherCats = filters.selectedCategories.filter((c) => c !== 'archived');
         if (otherCats.length > 0 && !otherCats.includes(n.category)) {
-          return false;
+          if (!(filters.showBookmarks && n.category === 'bookmark')) {
+            return false;
+          }
         }
       } else {
         if (n.isArchived) return false;
         if (filters.selectedCategories.length > 0) {
           if (!filters.selectedCategories.includes(n.category)) {
-            return false;
+            if (!(filters.showBookmarks && n.category === 'bookmark')) {
+              return false;
+            }
           }
         }
       }
@@ -576,6 +749,9 @@ export default function NotesTimeline({
             end.setHours(23, 59, 59, 999);
             if (noteDate > end) return false;
           }
+        } else if (filters.dateRange === 'last_two_months') {
+          const twoMonthsAgo = subMonths(startOfDay(now), 2);
+          if (noteDate < twoMonthsAgo) return false;
         } else {
           const diffMs = now.getTime() - noteDate.getTime();
           const diffDays = diffMs / (1000 * 60 * 60 * 24);
@@ -627,34 +803,77 @@ export default function NotesTimeline({
       );
     };
 
-    // Group unpinned notes by date (with 'Today' label for today's notes)
-    const groups: { dateKey: string; notes: NoteItem[] }[] = [];
-    const groupMap = new Map<string, NoteItem[]>();
+    // Sort pinned & uncategorized newest first
+    pinned.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    uncategorized.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    // Group unpinned notes by day timestamp to ensure deterministic newest-to-oldest descending order
+    interface DateGroupItem {
+      dateKey: string;
+      timestamp: number;
+      notes: NoteItem[];
+    }
+    const groupMap = new Map<string, DateGroupItem>();
 
     for (const note of unpinned) {
       const noteDate = new Date(note.createdAt);
-      const dateKey = isDateToday(noteDate) ? 'Today' : format(noteDate, 'EEE, d MMM');
-      if (!groupMap.has(dateKey)) {
-        groupMap.set(dateKey, []);
+      const dayStart = startOfDay(noteDate).getTime();
+      const currentYear = new Date().getFullYear();
+      const dateKey = isDateToday(noteDate)
+        ? 'Today'
+        : noteDate.getFullYear() === currentYear
+        ? format(noteDate, 'EEE, d MMM')
+        : format(noteDate, 'EEE, d MMM yyyy');
+
+      const groupKey = `${dayStart}`;
+      if (!groupMap.has(groupKey)) {
+        groupMap.set(groupKey, { dateKey, timestamp: dayStart, notes: [] });
       }
-      groupMap.get(dateKey)!.push(note);
+      groupMap.get(groupKey)!.notes.push(note);
     }
 
-    for (const [dateKey, list] of groupMap.entries()) {
-      groups.push({ dateKey, notes: list });
-    }
+    // Sort groups strictly from newest to oldest by day timestamp
+    const groups = Array.from(groupMap.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .map((g) => ({
+        dateKey: g.dateKey,
+        notes: g.notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+      }));
 
     return { pinnedNotes: pinned, uncategorizedNotes: uncategorized, dateGroups: groups };
   }, [filteredNotes]);
 
   const activeFilterCount =
     filters.selectedCategories.length +
-    (filters.dateRange !== 'all' ? 1 : 0);
+    (filters.dateRange !== 'last_two_months' ? 1 : 0) +
+    (filters.showBookmarks ? 1 : 0);
 
   const clearAllFilters = () => {
     setSearchQuery('');
     setFilters(DEFAULT_FILTERS);
   };
+
+  const collectionSubtitle = useMemo(() => {
+    if (filters.dateRange === 'last_two_months') {
+      return 'Seluruh liminasa catatan, ide, draf, dan tautan tersimpan 2 bulan terakhir.';
+    }
+    if (filters.dateRange === 'all') {
+      return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan sepanjang waktu.';
+    }
+    if (filters.dateRange === 'today') {
+      return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan hari ini.';
+    }
+    if (filters.dateRange === 'this_week') {
+      return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan minggu ini.';
+    }
+    if (filters.dateRange === 'this_month') {
+      return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan bulan ini.';
+    }
+    if (filters.dateRange === 'custom') {
+      return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan pada rentang tanggal terpilih.';
+    }
+    return 'Seluruh linimasa catatan, ide, draf, dan tautan tersimpan.';
+  }, [filters.dateRange]);
 
   // Dynamic time-based greeting: Good Morning / Afternoon / Evening
   const dynamicGreeting = useMemo(() => {
@@ -681,24 +900,8 @@ export default function NotesTimeline({
           </span>
         </h1>
 
-        {/* Right: Hubungkan Telegram / Buka Bot button */}
         <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
-          {!telegramConnected && (
-            <span className="text-body-sm text-ink font-medium">
-              Hubungkan Telegram
-            </span>
-          )}
-          <a
-            href={telegramConnectUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block"
-          >
-            <Button variant="secondary" className="gap-2 h-10 px-5 font-semibold rounded-full cursor-pointer text-body-sm">
-              <Send className="w-4 h-4" />
-              <span>{telegramConnected ? 'Buka Bot' : 'Hubungkan'}</span>
-            </Button>
-          </a>
+          <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Workspace" />
         </div>
       </div>
 
@@ -912,10 +1115,11 @@ export default function NotesTimeline({
                     onRestore={handleRestoreNote}
                     onTagClick={handleTagClick}
                     onTogglePin={handleTogglePin}
-                    onEdit={(n) => {
-                      openedFromDetailRef.current = false;
-                      setEditingNote(n as NoteItem);
-                    }}
+                    onOpenReader={(n) => handleOpenReader(n as NoteItem)}
+                    onEdit={(n) => handleOpenEdit(n as NoteItem)}
+                    onSyncAi={(n) => handleSyncSingleNote(n.id)}
+                    isSyncingAi={syncingNoteIds.has(note.id)}
+                    isSyncDisabled={isAnySyncing}
                     onClick={() => handleCardClick(note)}
                     className="mb-0 h-auto"
                   />
@@ -943,9 +1147,15 @@ export default function NotesTimeline({
               <button
                 type="button"
                 onClick={handleSyncWithAi}
-                disabled={isSyncingAi}
-                className="inline-flex items-center gap-2 px-4 h-9 rounded-full bg-surface-soft hover:bg-surface-soft/80 text-ink text-body-sm font-medium disabled:opacity-50 cursor-pointer transition-colors select-none"
-                title="Sinkronisasi dan kategorisasikan catatan secara otomatis menggunakan AI"
+                disabled={isAnySyncing}
+                className="inline-flex items-center gap-2 px-4 h-9 rounded-full bg-surface-soft hover:bg-surface-soft/80 text-ink text-body-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors select-none"
+                title={
+                  isSyncingAi
+                    ? 'Sedang melakukan sinkronisasi batch...'
+                    : isAnySyncing
+                    ? 'Sedang ada proses sinkronisasi AI yang berjalan...'
+                    : 'Sinkronisasi dan kategorisasikan catatan secara otomatis menggunakan AI'
+                }
               >
                 {isSyncingAi ? (
                   <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -1012,10 +1222,11 @@ export default function NotesTimeline({
                     onRestore={handleRestoreNote}
                     onTagClick={handleTagClick}
                     onTogglePin={handleTogglePin}
-                    onEdit={(n) => {
-                      openedFromDetailRef.current = false;
-                      setEditingNote(n as NoteItem);
-                    }}
+                    onOpenReader={(n) => handleOpenReader(n as NoteItem)}
+                    onEdit={(n) => handleOpenEdit(n as NoteItem)}
+                    onSyncAi={(n) => handleSyncSingleNote(n.id)}
+                    isSyncingAi={syncingNoteIds.has(note.id)}
+                    isSyncDisabled={isAnySyncing}
                     onClick={() => handleUncatCardClick(note)}
                     className="mb-0 h-auto"
                   />
@@ -1033,7 +1244,7 @@ export default function NotesTimeline({
             Notes Collection
           </h2>
           <p className="text-body-sm text-body mt-0.5">
-            Seluruh linimasa catatan, ide, draf, dan tautan tersimpan.
+            {collectionSubtitle}
           </p>
         </div>
 
@@ -1083,8 +1294,8 @@ export default function NotesTimeline({
                       <div className="hidden md:block absolute left-[111px] top-[16px] -bottom-[56px] w-0.5 bg-hairline pointer-events-none" />
                     )}
 
-                    {/* Timeline Axis Date Label (Rata kanan, no dot & no line on mobile, enlarged font) */}
-                    <div className="w-full md:w-28 shrink-0 flex items-center justify-end text-right text-ink pt-1 md:pr-4 relative pb-1 md:pb-0">
+                    {/* Timeline Axis Date Label (Sticky component on scroll, stays pinned while viewing notes of this date) */}
+                    <div className="sticky top-[58px] md:top-[72px] z-10 w-full md:w-28 shrink-0 flex items-center justify-end text-right text-ink pt-1 md:pr-4 relative pb-1 md:pb-0 bg-canvas md:bg-transparent">
                       {/* Bullet node on timeline (Desktop only) */}
                       <div
                         className={`hidden md:block absolute -right-[5px] top-[11px] w-2.5 h-2.5 rounded-full z-10 ${
@@ -1115,15 +1326,16 @@ export default function NotesTimeline({
                           onRestore={handleRestoreNote}
                           onTagClick={handleTagClick}
                           onTogglePin={handleTogglePin}
-                          onEdit={(n) => {
-                      openedFromDetailRef.current = false;
-                      setEditingNote(n as NoteItem);
-                    }}
+                          onOpenReader={(n) => handleOpenReader(n as NoteItem)}
+                          onEdit={(n) => handleOpenEdit(n as NoteItem)}
+                          onSyncAi={(n) => handleSyncSingleNote(n.id)}
+                          isSyncingAi={syncingNoteIds.has(note.id)}
+                          isSyncDisabled={isAnySyncing}
                           onClick={(n) => {
                             if (typeof window !== 'undefined' && window.innerWidth < 768) {
                               return; // Do not open detail modal on mobile
                             }
-                            setSelectedNoteForDetail(n as NoteItem);
+                            handleOpenDetail(n as NoteItem);
                           }}
                         />
                       ))}
@@ -1136,7 +1348,7 @@ export default function NotesTimeline({
         )}
       </div>
 
-            {/* Quick Composer Modal Popup matching wireframe 2 */}
+      {/* Quick Composer Modal Popup matching wireframe 2 */}
       <QuickComposerModal
         isOpen={isComposerOpen}
         onClose={() => setIsComposerOpen(false)}
@@ -1144,41 +1356,16 @@ export default function NotesTimeline({
         onNoteSynced={handleNoteSyncedWithReal}
       />
 
-      {/* Notes Detail Modal */}
+      {/* Unified Note Modal */}
       <NoteDetailModal
-        note={selectedNoteForDetail}
-        isOpen={Boolean(selectedNoteForDetail)}
-        onClose={() => setSelectedNoteForDetail(null)}
-        onEdit={(n) => {
-          openedFromDetailRef.current = true;
-          setSelectedNoteForDetail(null);
-          setEditingNote(n);
-        }}
+        note={activeModalNote}
+        isOpen={Boolean(activeModalNote)}
+        initialMode={modalMode}
+        onClose={() => setActiveModalNote(null)}
+        onSave={handleNoteUpdated}
         onDelete={handleDeleteNote}
         onTogglePin={handleTogglePin}
-      />
-
-      {/* Edit Note Modal */}
-      <EditNoteModal
-        note={editingNote}
-        isOpen={Boolean(editingNote)}
-        onClose={() => {
-          setEditingNote(null);
-          openedFromDetailRef.current = false;
-        }}
-        onCancel={() => {
-          const noteToRestore = editingNote;
-          const wasFromDetail = openedFromDetailRef.current;
-          setEditingNote(null);
-          openedFromDetailRef.current = false;
-          if (noteToRestore && wasFromDetail) {
-            setSelectedNoteForDetail(noteToRestore);
-          }
-        }}
-        onSave={(updatedNote) => {
-          openedFromDetailRef.current = false;
-          handleNoteUpdated(updatedNote);
-        }}
+        onBookmarkUpdated={handleNoteUpdated}
       />
 
       {/* Floating Action Button: Add Note in bottom-right corner */}
@@ -1259,6 +1446,14 @@ export default function NotesTimeline({
           </div>
         </div>
       )}
+      {/* Dedicated Ask AI Modal */}
+      <AskAiModal
+        isOpen={isAskAiOpen}
+        onClose={() => setIsAskAiOpen(false)}
+        category="workspace"
+        placeholder="Tanyakan apa saja tentang catatan Anda..."
+        contextTitle="Semua Catatan"
+      />
     </div>
   );
 }

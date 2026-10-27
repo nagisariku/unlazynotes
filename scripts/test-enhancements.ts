@@ -1,21 +1,21 @@
-import { parseScheduleDates } from '../src/lib/ai/modules/schedule';
+import { extractScheduleEntries } from '../src/lib/ai/modules/schedule';
 
 async function main() {
-  console.log('=== TESTING SCHEDULE RELATIVE DAY MAPPER ===');
+  console.log('=== TESTING PURE AI SCHEDULE EXTRACTION ===');
   // Base date: Thursday, 22 Oct 2026
   const baseDate = new Date('2026-10-22T08:00:00Z');
   const scheduleText = 'Gym sabtu, meeting client senin';
-  const scheduleDates = parseScheduleDates(scheduleText, baseDate);
-  console.log('Schedule Dates Extracted:', scheduleDates);
+  const result = await extractScheduleEntries(scheduleText, baseDate);
+  console.log('Schedule Dates Extracted by AI:', result.scheduleDates);
 
   if (
-    scheduleDates.length === 2 &&
-    scheduleDates[0] === '2026-10-24' &&
-    scheduleDates[1] === '2026-10-26'
+    result.scheduleDates.length === 2 &&
+    result.scheduleDates[0] === '2026-10-24' &&
+    result.scheduleDates[1] === '2026-10-26'
   ) {
     console.log('✅ SCHEDULE MODULE PASS');
   } else {
-    console.error('❌ SCHEDULE MODULE FAIL', scheduleDates);
+    console.error('❌ SCHEDULE MODULE FAIL', result.scheduleDates);
     process.exit(1);
   }
 

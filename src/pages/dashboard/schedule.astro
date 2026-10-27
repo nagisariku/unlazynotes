@@ -48,13 +48,20 @@ const serializedItems = scheduleNotes.map((n) => ({
   specificTags: n.specificTags,
   source: n.source,
   isPinned: n.isPinned,
+  isProcessed: n.isProcessed,
   targetDate: n.targetDate ? n.targetDate.toISOString() : null,
+  schedule: n.schedule,
+  scheduleDates: n.scheduleDates,
+  expenses: n.expenses,
+  income: n.income,
+  debt: n.debt,
+  attachments: n.attachments,
   createdAt: n.createdAt.toISOString(),
 }));
 ---
 
 <Layout title="Schedule – UnlazyNotes">
-  <div class="flex flex-col md:flex-row h-screen bg-canvas text-ink md:overflow-hidden">
+  <div class="flex flex-col md:flex-row h-screen h-[100dvh] bg-canvas text-ink overflow-hidden">
     <Sidebar
       client:load
       currentPath="/dashboard/schedule"
@@ -63,7 +70,7 @@ const serializedItems = scheduleNotes.map((n) => ({
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 h-full overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
       <ScheduleView
         client:load
         initialItems={serializedItems}

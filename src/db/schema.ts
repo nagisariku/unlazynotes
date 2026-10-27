@@ -24,6 +24,7 @@ export const users = pgTable('users', {
   image: text('image'),
   role: varchar('role', { length: 50 }).default('user').notNull(),
   preferredLocale: varchar('preferred_locale', { length: 10 }).default('id').notNull(),
+  timezone: varchar('timezone', { length: 64 }).default('Asia/Jakarta').notNull(),
   tier: varchar('tier', { length: 20 }).default('free').notNull(), // 'free' | 'pro'
   monthlyNotesCount: integer('monthly_notes_count').default(0).notNull(),
   currentBillingPeriod: varchar('current_billing_period', { length: 20 }), // e.g. '2026-10'
@@ -134,7 +135,9 @@ export const notes = pgTable('notes', {
     notes?: string;
     isSettled?: boolean;
   }>>().default([]).notNull(),
+  todos: jsonb('todos').$type<TodoEntry[]>().default([]).notNull(),
   bookmarkType: varchar('bookmark_type', { length: 50 }).$type<BookmarkType>(),
+  bookmarkMeta: jsonb('bookmark_meta').$type<BookmarkMeta>(),
   credentialType: varchar('credential_type', { length: 50 }).$type<CredentialType>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   isArchived: boolean('is_archived').default(false).notNull(),
@@ -190,6 +193,14 @@ export type DebtEntry = {
   isSettled?: boolean;
 };
 
+export type TodoEntry = {
+  id: string;
+  task: string;
+  isCompleted: boolean;
+  completedAt?: string | null;
+  priority?: 'low' | 'normal' | 'high' | null;
+};
+
 export type BookmarkType =
   | 'tech_dev'
   | 'media_social'
@@ -197,6 +208,37 @@ export type BookmarkType =
   | 'places'
   | 'shopping'
   | 'reading_other';
+
+export interface BookmarkItemMeta {
+  url: string;
+  domain: string;
+  title?: string;
+  imageUrl?: string;
+  faviconUrl?: string;
+}
+
+export interface BookmarkMeta {
+  primaryUrl: string;
+  domain: string;
+  title?: string;
+  description?: string;
+  imageUrl?: string;
+  faviconUrl?: string;
+  siteName?: string;
+  caption?: string;
+  author?: string;
+  embeddedUrls?: string[];
+  readingStatus?: 'unread' | 'reading' | 'read';
+  readingTimeMin?: number;
+  isContentExtracted?: boolean;
+  articleContent?: string;
+  aiSummary?: string[];
+  isAiSupported?: boolean;
+  unsupportedReason?: string;
+  items?: BookmarkItemMeta[];
+  fetchedAt?: string;
+  readAt?: string;
+}
 
 export type CredentialType =
   | 'account'

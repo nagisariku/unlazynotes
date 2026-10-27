@@ -14,15 +14,23 @@ import {
   ChevronUp,
   Globe,
   Loader2,
+  BookOpen,
+  Sparkles,
+  Share2,
+  Eye,
+  SlidersHorizontal,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { getUrlPlatformInfo, getLinkThumbnail, getLinkTitle } from '@/lib/platform-icons';
+import { format, isThisMonth } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Button, SearchPill } from '../ui';
 import NewBookmarkModal from './NewBookmarkModal';
-import EditNoteModal from './EditNoteModal';
+import AskAiButton from './AskAiButton';
+import AskAiModal from './AskAiModal';
 import NoteDetailModal from './NoteDetailModal';
-import type { BookmarkType } from '../../db/schema';
+import BookmarkFilterModal from './BookmarkFilterModal';
+import type { BookmarkType, BookmarkMeta } from '../../db/schema';
 
 export const BOOKMARK_MACRO_CONFIG: Array<{
   type: BookmarkType;
@@ -42,6 +50,7 @@ export interface BookmarkItem {
   content: string;
   category?: string;
   bookmarkType?: BookmarkType | string | null;
+  bookmarkMeta?: BookmarkMeta | null;
   specificTags?: string[] | null;
   source?: string | null;
   isPinned?: boolean;
@@ -61,13 +70,19 @@ interface BookmarksViewProps {
   userName?: string | null;
 }
 
-export type PlatformType = 'youtube' | 'github' | 'twitter' | 'linkedin' | 'instagram' | 'other';
+export type PlatformType = 'youtube' | 'github' | 'twitter' | 'linkedin' | 'instagram' | 'reddit' | 'other';
 
 interface ParsedBookmark {
   raw: BookmarkItem;
   url: string;
   domain: string;
   platform: PlatformType;
+  title: string;
+  favicon: string | null;
+  caption?: string | null;
+  readingStatus: 'unread' | 'reading' | 'read';
+  readingTimeMin?: number;
+  aiSummary?: string[];
   thumbnail: string | null;
   notes: string;
 }
@@ -127,6 +142,14 @@ function InstagramIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
   );
 }
 
+function RedditIcon({ className = 'w-3.5 h-3.5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.702zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.197-2.512-.73a.326.326 0 0 0-.232-.095z" />
+    </svg>
+  );
+}
+
 // Helper to parse URL, platform, thumbnail, and notes from bookmark content
 function parseBookmark(item: BookmarkItem): ParsedBookmark {
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
@@ -153,7 +176,7 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
         /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
       );
       if (m && m[1]) {
-        thumbnail = `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg`;
+        thumbnail = `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`;
       }
     }
     // 2. GitHub
@@ -190,15 +213,22 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
     }
   }
 
-  const notesText = item.content;
+  const favicon = (item.bookmarkMeta?.faviconUrl) || (domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=64` : null);
+  const title = item.bookmarkMeta?.title || (primaryUrl ? domain : 'Catatan');
 
   return {
     raw: item,
     url: primaryUrl,
     domain,
     platform,
-    thumbnail,
-    notes: item.content || 'Catatan bookmark',
+    title,
+    thumbnail: item.bookmarkMeta?.imageUrl || thumbnail,
+    favicon,
+    caption: item.bookmarkMeta?.caption || null,
+    readingStatus: item.bookmarkMeta?.readingStatus || 'unread',
+    readingTimeMin: item.bookmarkMeta?.readingTimeMin,
+    aiSummary: item.bookmarkMeta?.aiSummary,
+    notes: item.content || '',
   };
 }
 
@@ -208,6 +238,7 @@ interface BookmarkCardProps {
   onTogglePin: (item: BookmarkItem) => Promise<void> | void;
   onEdit: (item: BookmarkItem) => void;
   onClick: (item: BookmarkItem) => void;
+  onOpenReader?: (item: BookmarkItem) => void;
   onTagClick?: (tag: string) => void;
 }
 
@@ -217,6 +248,7 @@ function BookmarkCard({
   onTogglePin,
   onEdit,
   onClick,
+  onOpenReader,
   onTagClick,
 }: BookmarkCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -224,8 +256,8 @@ function BookmarkCard({
   const [isPinning, setIsPinning] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -236,12 +268,13 @@ function BookmarkCard({
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  const handleCardClick = () => {
+  const handleCardClick = (e: React.MouseEvent) => {
     const currentIsMobile = typeof window !== 'undefined' ? window.innerWidth < 768 : isMobile;
     const selection = typeof window !== 'undefined' ? window.getSelection() : null;
     if (selection && selection.toString().trim().length > 0) {
       return;
     }
+
     if (currentIsMobile) {
       setIsExpanded((prev) => !prev);
     } else {
@@ -276,23 +309,6 @@ function BookmarkCard({
     }
   };
 
-  const handleCopy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(bm.raw.content);
-      setCopied(true);
-      toast.success('Isi bookmark disalin ke clipboard');
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy', err);
-    }
-  };
-
-  const handleEditInternal = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onEdit(bm.raw);
-  };
-
   const formattedDate = useMemo(() => {
     try {
       const d = new Date(bm.raw.createdAt);
@@ -301,6 +317,14 @@ function BookmarkCard({
       return String(bm.raw.createdAt);
     }
   }, [bm.raw.createdAt]);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(bm.raw.content);
+    setCopied(true);
+    toast.success('Isi bookmark disalin');
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
   const urls = useMemo(() => {
@@ -313,348 +337,382 @@ function BookmarkCard({
 
   const hasThumbnail = Boolean(bm.thumbnail) && !imgError;
 
+  // User notes text
+  const rawUserNotes = (bm.notes || bm.raw.content || '').trim();
+  const textWithoutLinks = rawUserNotes.replace(urlRegex, '').trim();
+  const isUserNotesOnlyLink = textWithoutLinks.length === 0;
+
+  // Link caption (khusus postingan medsos seperti teks tweet X/Twitter, Reddit selftext)
+  const linkCaption = useMemo(() => {
+    // YouTube tidak memiliki postingan caption (hanya title/author)
+    const isYoutube = bm.domain.includes('youtube.com') || bm.domain.includes('youtu.be');
+    if (isYoutube) return null;
+
+    const metaCap = bm.caption || bm.raw.bookmarkMeta?.caption;
+    if (!metaCap) return null;
+    const trimmed = metaCap.trim();
+    if (!trimmed || trimmed === rawUserNotes) return null;
+    // Jangan sertakan teks sintetis seperti "Video oleh..."
+    if (/^video oleh/i.test(trimmed)) return null;
+    return trimmed;
+  }, [bm.caption, bm.raw.bookmarkMeta, bm.domain, rawUserNotes]);
+
+  // Jika user cuma share link doang:
+  // - Kalau ada caption medsos: link-nya TIDAK perlu ditampilkan (cukup caption medsos).
+  // - Kalau TIDAK ada caption medsos:
+  //   - Jika ada thumbnail: sembunyikan teks link mentah (karena thumbnail & judul sudah mewakili).
+  //   - Jika tidak ada thumbnail (pure link text): tampilkan teks link yang user share.
+  // Jika user menulis catatan sendiri: selalu tampilkan catatan user.
+  const shouldShowUserNotes = isUserNotesOnlyLink
+    ? (!linkCaption && !hasThumbnail)
+    : Boolean(rawUserNotes);
+
+  const compactUserNotes = useMemo(() => {
+    return rawUserNotes.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }, [rawUserNotes]);
+
+  const compactLinkCaption = useMemo(() => {
+    if (!linkCaption) return null;
+    return linkCaption.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }, [linkCaption]);
+
+  const isAiProcessed = Boolean(
+    (bm.aiSummary && bm.aiSummary.length > 0) ||
+    bm.raw.bookmarkMeta?.isContentExtracted
+  );
+
+  // Helper render baris attachment link (Thumbnail + Judul berdampingan kanan-kiri)
+  const renderLinkAttachmentRows = () => (
+    <div className="flex flex-col gap-2 mb-2 select-none">
+      {urls.map((linkUrl, index) => {
+        const { label, domain: linkDomain, icon: PlatformIcon } = getUrlPlatformInfo(linkUrl);
+        const thumbUrl = getLinkThumbnail(linkUrl, bm.raw.bookmarkMeta) || (urls.length === 1 ? bm.thumbnail : null);
+        const metaTitle = getLinkTitle(linkUrl, bm.raw.bookmarkMeta);
+        const linkTitle =
+          metaTitle ||
+          (urls.length === 1 && bm.title && bm.title !== bm.url
+            ? bm.title
+            : index === 0 && bm.title && bm.title !== bm.url
+            ? bm.title
+            : label);
+
+        return (
+          <a
+            key={index}
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2.5 p-2 rounded-xl bg-surface-soft hover:bg-hairline/60 active:scale-[0.98] transition-all text-left w-full !border-0 cursor-pointer"
+            title={`Buka ${label}`}
+          >
+            {thumbUrl ? (
+              <div className="relative w-16 h-12 rounded-md overflow-hidden bg-canvas shrink-0">
+                <img
+                  src={thumbUrl}
+                  alt={linkTitle}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-md bg-canvas flex items-center justify-center shrink-0 text-mute">
+                <PlatformIcon className="w-4 h-4" />
+              </div>
+            )}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <PlatformIcon className="w-3.5 h-3.5 text-mute shrink-0" />
+                <span className="text-body-sm font-medium text-ink truncate block">
+                  {linkTitle}
+                </span>
+              </div>
+              <span className="text-caption-xs text-mute font-mono truncate block mt-0.5">
+                {linkDomain || label}
+              </span>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div
       onClick={handleCardClick}
       className={`group relative text-left break-inside-avoid [break-inside:avoid-column] transition-all overflow-hidden ${
         isExpanded && isMobile
           ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-          : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-2xl border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline md:last:border-b bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none mb-0 md:mb-4'
-      }`.trim()}
+          : 'px-1 py-3.5 md:p-3.5 rounded-none md:rounded-2xl border-0 border-b border-hairline last:border-b-0 md:border md:border-hairline bg-transparent md:bg-canvas hover:border-b-hairline-strong md:hover:border-hairline-strong cursor-pointer select-none mb-0 md:mb-4 shadow-none md:shadow-2xs'
+      } flex flex-col justify-between`}
     >
-      {/* DESKTOP VIEW (md: and up) */}
-      <div className="hidden md:flex flex-col justify-between w-full h-full">
-        {/* Desktop Notes Content & Thumbnail */}
-        <div className="flex flex-col flex-1 justify-start min-w-0">
-          <p
-            className={`text-body-sm font-normal text-ink leading-relaxed break-words [overflow-wrap:anywhere] select-none ${
-              hasThumbnail ? 'line-clamp-4' : 'line-clamp-6'
-            }`}
-          >
-            {bm.notes}
-          </p>
+      <div className="flex flex-col flex-1 justify-start min-w-0">
+        {/* Date and Time displayed at top when expanded on mobile */}
+        {isExpanded && isMobile && (
+          <div className="text-[11px] text-mute font-mono mb-2.5 select-none">
+            {formattedDate}
+          </div>
+        )}
 
-          {/* Desktop Thumbnail Below Notes */}
-          {hasThumbnail && (
-            <div className="relative shrink-0 w-full aspect-video rounded-lg overflow-hidden bg-surface-soft mt-3">
+        {/* 1. Top row: icon/source on left, badge read and badge AI on right */}
+        <div className="flex items-center justify-between gap-2 mb-2 select-none">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {bm.favicon ? (
               <img
-                src={bm.thumbnail!}
-                alt={bm.notes}
-                loading="lazy"
-                className="w-full h-full object-cover"
-                onError={() => setImgError(true)}
+                src={bm.favicon}
+                alt=""
+                className="w-4 h-4 rounded-xs shrink-0 object-contain"
+                onError={(e) => ((e.target as HTMLElement).style.display = 'none')}
               />
-            </div>
-          )}
-        </div>
+            ) : (
+              <Globe className="w-4 h-4 text-mute shrink-0" />
+            )}
+            <span className="text-[11px] font-mono text-mute truncate max-w-[150px]">
+              {bm.domain}
+            </span>
+          </div>
 
-        {/* Desktop Bottom Toolbar (visible on hover) */}
-        <div
-          className={`flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none min-h-[26px] ${
-            confirmDelete
-              ? 'opacity-100'
-              : 'opacity-0 group-hover:opacity-100'
-          } transition-opacity duration-150`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Left: Category / Bookmark Badge */}
-          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-            {bm.raw.category && (
-              <span className="px-2 py-0.5 rounded-full bg-surface-soft text-ink text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]">
-                {bm.raw.category}
-              </span>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Badge Read: icon only (ONLY if read, neutral color, Check icon, w-4 h-4, hidden on mobile by default) */}
+            {bm.readingStatus === 'read' && (!isMobile || isExpanded) && (
+              <div
+                title="Sudah dibaca"
+                className="flex items-center justify-center text-mute"
+              >
+                <Check className="w-4 h-4 text-mute" />
+              </div>
+            )}
+
+            {/* Badge AI: icon only, right next to read/unread, only if transcribed/summarized, hidden on mobile by default */}
+            {isAiProcessed && (!isMobile || isExpanded) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenReader?.(bm.raw);
+                }}
+                title="Buka Mode Baca (Ringkasan AI & Transkrip)"
+                className="flex items-center justify-center text-mute hover:text-ink cursor-pointer p-0.5 rounded-full hover:bg-surface-soft !border-0"
+              >
+                <Sparkles className="w-4 h-4 text-mute hover:text-ink" />
+              </button>
             )}
           </div>
-
-          {/* Right: Actions */}
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {/* Pin Button */}
-            <button
-              type="button"
-              onClick={handleTogglePinInternal}
-              disabled={isPinning}
-              className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
-                bm.raw.isPinned
-                  ? 'text-primary bg-surface-soft !border-0'
-                  : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
-              }`}
-              title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
-              aria-label="Pin Button"
-            >
-              {isPinning ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : bm.raw.isPinned ? (
-                <PinOff className="w-3.5 h-3.5 fill-current" />
-              ) : (
-                <Pin className="w-3.5 h-3.5" />
-              )}
-            </button>
-
-            {/* Delete Button */}
-            <button
-              type="button"
-              onClick={handleDeleteInternal}
-              disabled={isDeleting}
-              className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
-                confirmDelete
-                  ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
-                  : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
-              }`}
-              title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
-              aria-label="Delete Button"
-            >
-              {isDeleting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
         </div>
-      </div>
 
-      {/* MOBILE VIEW (< md) */}
-      <div className="flex md:hidden flex-col w-full">
-        {/* If EXPANDED on Mobile */}
-        {isExpanded && isMobile ? (
-          <div className="w-full flex flex-col">
-            {/* Expanded Header: Date only */}
-            <div className="text-[11px] text-mute font-mono mb-2.5 select-none">
-              {formattedDate}
-            </div>
+        {/* 2. User Notes / Captions: dipadetin tanpa break line di card, kembalikan format asli saat expanded di mobile atau modal desktop */}
+        {shouldShowUserNotes && rawUserNotes && (
+          <p
+            onClick={(e) => {
+              if (isExpanded && isMobile) e.stopPropagation();
+            }}
+            className={`text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal ${
+              isExpanded && isMobile
+                ? 'line-clamp-none select-text cursor-text whitespace-pre-wrap'
+                : 'line-clamp-6 select-none whitespace-normal'
+            } mb-2.5`}
+          >
+            {isExpanded && isMobile ? rawUserNotes : compactUserNotes}
+          </p>
+        )}
 
-            {/* Row with text on left, small OG thumbnail on top right */}
-            <div className="flex flex-row items-start justify-between gap-3 w-full">
-              {/* Full Notes Content */}
-              <div
-                onClick={(e) => e.stopPropagation()}
-                className="flex-1 min-w-0 text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal whitespace-pre-wrap select-text cursor-text line-clamp-none"
-              >
-                {bm.notes}
-              </div>
+        {/* 3. Link Caption: dipadetin tanpa break line di card, kembalikan format asli saat expanded di mobile atau modal desktop */}
+        {linkCaption && (
+          <p
+            onClick={(e) => {
+              if (isExpanded && isMobile) e.stopPropagation();
+            }}
+            className={`text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal ${
+              isExpanded && isMobile
+                ? 'line-clamp-none select-text cursor-text whitespace-pre-wrap'
+                : 'line-clamp-6 select-none whitespace-normal'
+            } mb-2.5`}
+          >
+            {isExpanded && isMobile ? linkCaption : compactLinkCaption}
+          </p>
+        )}
 
-              {/* Small OG thumbnail on the right, positioned at the top */}
+        {/* 4. Desktop View */}
+        <div className="hidden sm:block">
+          {urls.length > 1 ? (
+            /* Link dua atau lebih: samakan dengan tampilan mobile (thumbnail, judul, thumbnail, judul) */
+            renderLinkAttachmentRows()
+          ) : (
+            /* 1 link: thumbnail aspect-video, judul, dan direct link buttons */
+            <>
               {hasThumbnail && (
-                <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden bg-surface-soft self-start">
+                <div className="relative shrink-0 w-full aspect-video rounded-lg overflow-hidden bg-surface-soft mb-2">
                   <img
                     src={bm.thumbnail!}
-                    alt={bm.notes}
+                    alt={bm.title || bm.notes}
                     loading="lazy"
                     className="w-full h-full object-cover"
                     onError={() => setImgError(true)}
                   />
                 </div>
               )}
-            </div>
 
-            {/* Embedded URL links when expanded */}
-            {urls.length > 0 && (
-              <div className="pt-3 flex flex-wrap gap-2 select-none" onClick={(e) => e.stopPropagation()}>
-                {urls.map((linkUrl) => {
-                  let domain = '';
-                  try {
-                    domain = new URL(linkUrl).hostname.replace('www.', '');
-                  } catch {
-                    domain = linkUrl;
-                  }
-                  return (
-                    <a
-                      key={linkUrl}
-                      href={linkUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-soft border border-hairline-strong hover:bg-canvas text-left max-w-full group"
-                    >
-                      <ExternalLink className="w-3 h-3 text-mute shrink-0 group-hover:text-ink" />
-                      <span className="text-[11px] font-medium text-ink group-hover:underline truncate max-w-[200px]">
-                        {domain}
-                      </span>
-                    </a>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Specific Tags / Hashtags when expanded (warna teks sama seperti date & time: text-mute) */}
-            {bm.raw.specificTags && bm.raw.specificTags.length > 0 && (
-                <div className="pt-2.5 flex flex-wrap items-center gap-2 select-none" onClick={(e) => e.stopPropagation()}>
-                  {bm.raw.specificTags.map((tag) => (
-                    <span
-                      key={tag}
-                      onClick={() => onTagClick?.(tag)}
-                      className="text-caption-sm text-mute hover:text-ink font-sans font-medium cursor-pointer transition-colors"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
+              {bm.title && bm.title !== bm.url && (
+                <h4 className="text-body-sm font-medium text-ink line-clamp-2 leading-snug mb-2">
+                  {bm.title}
+                </h4>
               )}
 
-              {/* Expanded Bottom Toolbar */}
-              <div
-                className="flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  {bm.raw.category && (
-                    <span className="px-2 py-0.5 rounded-full bg-zinc-100 border border-hairline-strong text-ink text-[10px] font-sans uppercase tracking-wider font-medium truncate max-w-[180px]">
-                      {bm.raw.category}
-                    </span>
-                  )}
+              {urls.length > 0 && (
+                <div
+                  className="flex flex-wrap gap-2 pt-0.5 mb-2 select-none"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {urls.map((linkUrl, index) => {
+                    const { label, icon: PlatformIcon } = getUrlPlatformInfo(linkUrl);
+                    return (
+                      <a
+                        key={index}
+                        href={linkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-fit inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-soft hover:bg-hairline/60 active:scale-[0.98] text-ink font-medium text-xs transition-all group/btn !border-0"
+                        title={`Buka ${label}`}
+                      >
+                        <PlatformIcon className="w-3.5 h-3.5 text-mute group-hover/btn:text-ink transition-colors shrink-0" />
+                        <span className="font-medium">{label}</span>
+                      </a>
+                    );
+                  })}
                 </div>
+              )}
+            </>
+          )}
+        </div>
 
-                <div className="flex items-center gap-1 shrink-0 ml-auto">
-                  {/* Pin Button */}
-                  <button
-                    type="button"
-                    onClick={handleTogglePinInternal}
-                    disabled={isPinning}
-                    className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
-                      bm.raw.isPinned
-                        ? 'text-primary bg-surface-soft !border-0'
-                        : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
-                    }`}
-                    title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
-                    aria-label="Pin Button"
-                  >
-                    {isPinning ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : bm.raw.isPinned ? (
-                      <PinOff className="w-3.5 h-3.5 fill-current" />
-                    ) : (
-                      <Pin className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-
-                  {/* Copy Button */}
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-                    title="Salin isi bookmark"
-                    aria-label="Salin bookmark"
-                  >
-                    {copied ? <Check className="w-3.5 h-3.5 text-terminal-green" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
-
-                  {/* Edit Button (Opens Edit Modal) */}
-                  <button
-                    type="button"
-                    onClick={handleEditInternal}
-                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-                    title="Edit bookmark"
-                    aria-label="Edit bookmark"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-
-                  {/* Delete Button */}
-                  <button
-                    type="button"
-                    onClick={handleDeleteInternal}
-                    disabled={isDeleting}
-                    className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
-                      confirmDelete
-                        ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
-                        : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
-                    }`}
-                    title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
-                    aria-label="Delete Button"
-                  >
-                    {isDeleting ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-
-                  {/* Collapse Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsExpanded(false);
-                    }}
-                    className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-                    title="Ciutkan bookmark"
-                    aria-label="Ciutkan bookmark"
-                  >
-                    <ChevronUp className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* 5. Mobile View: Attachment Row Mode (Thumbnail dan Title kanan-kiri) */}
+        <div className="sm:hidden">
+          {urls.length > 0 ? (
+            renderLinkAttachmentRows()
           ) : (
-          /* If COLLAPSED on Mobile */
-          <div className="flex flex-row items-start justify-between gap-3 w-full">
-            {/* Left Column: notes text clamped + toolbar */}
-            <div className="flex-1 min-w-0 flex flex-col justify-between self-stretch">
-              <p className="text-body-sm font-normal text-ink leading-relaxed break-words [overflow-wrap:anywhere] select-none line-clamp-3">
-                {bm.notes}
-              </p>
+            bm.title && bm.title !== bm.url && (
+              <h4 className="text-body-sm font-medium text-ink line-clamp-2 leading-snug mb-2">
+                {bm.title}
+              </h4>
+            )
+          )}
+        </div>
+      </div>
 
-              {/* Mobile Toolbar */}
-              <div
-                className="flex items-center gap-1 mt-2.5 -ml-1 select-none shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Pin Button */}
-                <button
-                  type="button"
-                  onClick={handleTogglePinInternal}
-                  disabled={isPinning}
-                  className={`p-1.5 rounded-full cursor-pointer transition-all ${
-                    bm.raw.isPinned
-                      ? 'text-primary bg-surface-soft !border-0'
-                      : 'text-mute hover:text-ink hover:bg-surface-soft !border-0'
-                  }`}
-                  title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
-                  aria-label="Pin Button"
-                >
-                  {isPinning ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : bm.raw.isPinned ? (
-                    <PinOff className="w-3.5 h-3.5 fill-current" />
-                  ) : (
-                    <Pin className="w-3.5 h-3.5" />
-                  )}
-                </button>
+      {/* 6. Bottom toolbar: reveal on hover on desktop, or when expanded on mobile */}
+      <div
+        className={`flex items-center justify-end gap-1 mt-1 pt-0.5 select-none min-h-[26px] transition-opacity duration-150 ${
+          (isExpanded && isMobile) || confirmDelete || isPinning
+            ? 'opacity-100 pointer-events-auto'
+            : 'opacity-0 pointer-events-none md:pointer-events-auto md:group-hover:opacity-100'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Mode Baca Button */}
+        {((isExpanded && isMobile) || !isMobile) && (isAiProcessed || urls.length > 0) && onOpenReader && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenReader(bm.raw);
+            }}
+            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+            title="Buka Mode Baca (Ringkasan AI & Transkrip)"
+            aria-label="Mode Baca"
+          >
+            <BookOpen className="w-4 h-4" />
+          </button>
+        )}
 
-                {/* Delete Button */}
-                <button
-                  type="button"
-                  onClick={handleDeleteInternal}
-                  disabled={isDeleting}
-                  className={`p-1.5 rounded-full cursor-pointer transition-all ${
-                    confirmDelete
-                      ? 'bg-terminal-red text-white hover:bg-terminal-red/90 !border-0'
-                      : 'text-mute hover:text-terminal-red hover:bg-surface-soft !border-0'
-                  }`}
-                  title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
-                  aria-label="Delete Button"
-                >
-                  {isDeleting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-            </div>
+        {/* Copy Button */}
+        {((isExpanded && isMobile) || !isMobile) && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+            title="Salin isi bookmark"
+            aria-label="Salin bookmark"
+          >
+            {copied ? <Check className="w-4 h-4 text-terminal-green" /> : <Copy className="w-4 h-4" />}
+          </button>
+        )}
 
-            {/* Small OG image thumbnail on top right */}
-            {hasThumbnail && (
-              <div className="relative shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden bg-surface-soft self-start">
-                <img
-                  src={bm.thumbnail!}
-                  alt={bm.notes}
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                  onError={() => setImgError(true)}
-                />
-              </div>
-            )}
-          </div>
+        {/* Edit Button */}
+        {((isExpanded && isMobile) || !isMobile) && onEdit && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(bm.raw);
+            }}
+            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+            title="Edit bookmark"
+            aria-label="Edit bookmark"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Pin Button */}
+        <button
+          type="button"
+          onClick={handleTogglePinInternal}
+          disabled={isPinning}
+          className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+            bm.raw.isPinned
+              ? 'text-primary bg-surface-soft'
+              : 'text-mute hover:text-ink hover:bg-surface-soft'
+          }`}
+          title={bm.raw.isPinned ? 'Lepas Pin' : 'Pin Bookmark'}
+          aria-label="Pin Button"
+        >
+          {isPinning ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : bm.raw.isPinned ? (
+            <PinOff className="w-4 h-4 fill-current" />
+          ) : (
+            <Pin className="w-4 h-4" />
+          )}
+        </button>
+
+        {/* Delete Button */}
+        <button
+          type="button"
+          onClick={handleDeleteInternal}
+          disabled={isDeleting}
+          className={`p-1.5 rounded-full cursor-pointer transition-colors !border-0 ${
+            confirmDelete
+              ? 'bg-terminal-red text-white hover:bg-terminal-red/90'
+              : 'text-mute hover:text-terminal-red hover:bg-surface-soft'
+          }`}
+          title={confirmDelete ? 'Klik sekali lagi untuk hapus' : 'Hapus bookmark'}
+          aria-label="Delete Button"
+        >
+          {isDeleting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Trash2 className="w-4 h-4" />
+          )}
+        </button>
+
+        {/* Collapse Button - visible when expanded on mobile */}
+        {isExpanded && isMobile && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(false);
+            }}
+            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+            title="Ciutkan catatan"
+            aria-label="Ciutkan catatan"
+          >
+            <ChevronUp className="w-4 h-4" />
+          </button>
         )}
       </div>
     </div>
@@ -663,6 +721,7 @@ function BookmarkCard({
 
 export default function BookmarksView({ initialBookmarks, userName }: BookmarksViewProps) {
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>(initialBookmarks);
+  const [dateFilter, setDateFilter] = useState<'this_month' | 'all'>('this_month');
   const [activeTocKey, setActiveTocKey] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -670,8 +729,28 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
   const topContentRef = useRef<HTMLDivElement>(null);
   const isUserClickingRef = useRef(false);
 
-  const [selectedBookmarkForDetail, setSelectedBookmarkForDetail] = useState<BookmarkItem | null>(null);
-  const openedFromDetailRef = useRef(false);
+  const [activeBookmarkModal, setActiveBookmarkModal] = useState<BookmarkItem | null>(null);
+  const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
+  const [defaultNewBookmarkContent, setDefaultNewBookmarkContent] = useState<string>('');
+  const [readingStatusFilter, setReadingStatusFilter] = useState<'all' | 'unread'>('all');
+  const [platformFilter, setPlatformFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+
+  const handleOpenDetail = (item: BookmarkItem) => {
+    setActiveBookmarkModal(item);
+    setModalMode('view');
+  };
+
+  const handleOpenReader = (item: BookmarkItem) => {
+    setActiveBookmarkModal(item);
+    setModalMode('read');
+  };
+
+  const handleOpenEdit = (item: BookmarkItem) => {
+    setActiveBookmarkModal(item);
+    setModalMode('edit');
+  };
 
   const userLastName = useMemo(() => {
     if (!userName || !userName.trim()) return 'User';
@@ -681,7 +760,29 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
 
   // Modals state
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<BookmarkItem | null>(null);
+  const [isAskAiOpen, setIsAskAiOpen] = useState(false);
+
+  // Auto-open new modal if launched via Share Target or Bookmarklet (?new_url=... or ?url=...)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const incomingUrl = params.get('url') || params.get('new_url');
+      const incomingText = params.get('text') || params.get('title');
+      if (incomingUrl) {
+        const combined = incomingText ? `${incomingUrl}\n\n${incomingText}` : incomingUrl;
+        setDefaultNewBookmarkContent(combined);
+        setIsNewModalOpen(true);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, []);
+
+  const handleCopyBookmarklet = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://unlazynotes.com';
+    const code = `javascript:(function(){const u=encodeURIComponent(window.location.href);const t=encodeURIComponent(document.title);window.open('${origin}/dashboard/bookmarks?url='+u+'&text='+t,'_blank');})();`;
+    navigator.clipboard.writeText(code);
+    toast.success('Bookmarklet disalin! Tambahkan bookmarklet ini ke browser bar kamu.');
+  };
 
   // Expanded platform sections
   const [expandedPlatforms, setExpandedPlatforms] = useState<Record<string, boolean>>({});
@@ -691,9 +792,40 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
     return bookmarks.map(parseBookmark);
   }, [bookmarks]);
 
-  // Filtered bookmarks based on search query
+  // Filtered bookmarks based on date filter & search query
   const filteredList = useMemo(() => {
     return parsedList.filter((b) => {
+      // 1. Date filter (Bulan Ini vs Semua Waktu)
+      if (dateFilter === 'this_month') {
+        const itemDate = new Date(b.raw.createdAt);
+        if (!isThisMonth(itemDate)) return false;
+      }
+
+      // 2. Reading Status filter
+      if (readingStatusFilter === 'unread' && b.readingStatus === 'read') {
+        return false;
+      }
+
+      // 3. Platform filter
+      if (platformFilter !== 'all') {
+        if (platformFilter === 'youtube' && b.platform !== 'youtube') return false;
+        if (platformFilter === 'twitter' && b.platform !== 'twitter') return false;
+        if (platformFilter === 'github' && b.platform !== 'github') return false;
+        if (platformFilter === 'reddit' && !b.domain.includes('reddit.com')) return false;
+        if (platformFilter === 'other') {
+          if (b.platform === 'youtube' || b.platform === 'twitter' || b.platform === 'github' || b.domain.includes('reddit.com')) {
+            return false;
+          }
+        }
+      }
+
+      // 4. Category filter
+      if (categoryFilter !== 'all') {
+        const itemType = b.raw.bookmarkType || 'reading_other';
+        if (itemType !== categoryFilter) return false;
+      }
+
+      // 5. Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesContent = b.raw.content.toLowerCase().includes(q);
@@ -705,7 +837,17 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
       }
       return true;
     });
-  }, [parsedList, searchQuery]);
+  }, [parsedList, dateFilter, readingStatusFilter, platformFilter, categoryFilter, searchQuery]);
+
+  // Active filter count for mobile filter badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (dateFilter === 'all') count++;
+    if (readingStatusFilter === 'unread') count++;
+    if (platformFilter !== 'all') count++;
+    if (categoryFilter !== 'all') count++;
+    return count;
+  }, [dateFilter, readingStatusFilter, platformFilter, categoryFilter]);
 
   // Pinned Bookmarks
   const pinnedBookmarks = useMemo(() => {
@@ -772,6 +914,62 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
 
     return items;
   }, [filteredList.length, pinnedBookmarks.length, curatedSections]);
+
+  // Platform TOC Items (Synchronized with platform filter)
+  const platformTocItems = useMemo(() => {
+    const baseList = parsedList.filter((b) => {
+      if (dateFilter === 'this_month') {
+        const itemDate = new Date(b.raw.createdAt);
+        if (!isThisMonth(itemDate)) return false;
+      }
+      if (readingStatusFilter === 'unread' && b.readingStatus === 'read') return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesContent = b.raw.content.toLowerCase().includes(q);
+        const matchesDomain = b.domain.toLowerCase().includes(q);
+        const matchesTags = b.raw.specificTags?.some((t) => t.toLowerCase().includes(q));
+        if (!matchesContent && !matchesDomain && !matchesTags) return false;
+      }
+      return true;
+    });
+
+    const isPlatformMatch = (b: ParsedBookmark, pf: string) => {
+      if (pf === 'all') return true;
+      if (pf === 'youtube') return b.platform === 'youtube';
+      if (pf === 'twitter') return b.platform === 'twitter';
+      if (pf === 'github') return b.platform === 'github';
+      if (pf === 'reddit') return b.domain.includes('reddit.com');
+      if (pf === 'other') {
+        return (
+          b.platform !== 'youtube' &&
+          b.platform !== 'twitter' &&
+          b.platform !== 'github' &&
+          !b.domain.includes('reddit.com')
+        );
+      }
+      return true;
+    };
+
+    const platforms: Array<{
+      key: string;
+      label: string;
+      Icon: React.ComponentType<{ className?: string }> | null;
+    }> = [
+      { key: 'all', label: 'Semua Platform', Icon: null },
+      { key: 'youtube', label: 'YouTube', Icon: YoutubeIcon },
+      { key: 'twitter', label: 'X (Twitter)', Icon: TwitterIcon },
+      { key: 'github', label: 'GitHub', Icon: GithubIcon },
+      { key: 'reddit', label: 'Reddit', Icon: RedditIcon },
+      { key: 'other', label: 'Web & Artikel', Icon: Globe },
+    ];
+
+    return platforms.map((p) => ({
+      key: p.key,
+      label: p.label,
+      count: baseList.filter((b) => isPlatformMatch(b, p.key)).length,
+      Icon: p.Icon,
+    }));
+  }, [parsedList, dateFilter, readingStatusFilter, searchQuery]);
 
   // TOC click handler with smooth scrolling
   const handleTocClick = (itemKey: string, targetId: string) => {
@@ -926,13 +1124,9 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
               onDelete={handleDelete}
               onTogglePin={handleTogglePin}
               onTagClick={(tag) => setSearchQuery(tag)}
-              onEdit={(item) => {
-                openedFromDetailRef.current = false;
-                setEditingItem(item);
-              }}
-              onClick={(item) => {
-                setSelectedBookmarkForDetail(item);
-              }}
+              onOpenReader={handleOpenReader}
+              onEdit={handleOpenEdit}
+              onClick={handleOpenDetail}
             />
           ))}
         </div>
@@ -943,43 +1137,136 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
   return (
     <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
       {/* 1. Header: Title, Export Button, and Subtitle */}
-      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
-            <span>{userLastName}</span>
-            <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
-              Bookmarks
-            </span>
-          </h1>
+      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
+              <span>{userLastName}</span>
+              <span className="font-tangerine tangerine-bold text-[1.15em] leading-none inline-block">
+                Bookmarks
+              </span>
+            </h1>
 
-          {bookmarks.length > 0 && (
-            <a
-              href="/api/bookmarks/export"
-              download="unlazynotes-bookmarks.html"
-              className="ml-2 hidden sm:inline-flex"
-            >
-              <Button
-                variant="secondary"
-                className="rounded-full text-caption-sm gap-1.5 h-8 px-3"
+            {bookmarks.length > 0 && (
+              <div className="inline-flex items-center gap-2">
+                <a
+                  href="/api/bookmarks/export"
+                download="unlazynotes-bookmarks.html"
+                className="ml-2 hidden sm:inline-flex"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Export HTML</span>
-              </Button>
-            </a>
-          )}
+                <Button
+                  variant="secondary"
+                  className="rounded-full text-caption-sm gap-1.5 h-8 px-3"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export HTML</span>
+                </Button>
+              </a>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCopyBookmarklet}
+                  className="hidden sm:inline-flex rounded-full text-caption-sm gap-1.5 h-8 px-3 cursor-pointer"
+                  title="Salin 1-Click Bookmarklet untuk Browser"
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Bookmarklet</span>
+                </Button>
+              </div>
+            )}
+          </div>
+          <p className="text-body-sm text-body mt-0.5">
+            Koleksi tautan penting, repositori, artikel, dan referensi multimedia tersimpan.
+          </p>
         </div>
-        <p className="text-body-sm text-body mt-0.5">
-          Koleksi tautan penting, repositori, artikel, dan referensi multimedia tersimpan.
-        </p>
+
+        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+          <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Bookmark" />
+        </div>
       </div>
 
-      {/* 2. Controls Row: Searchbox (Sticky on Mobile & Desktop, solid white background flush at top) */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2">
-        <SearchPill
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Cari bookmark & tautan..."
-        />
+      {/* 2. Controls Row: Searchbox + Mobile Filter Button + Desktop Filter Tabs */}
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex flex-col gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+          <SearchPill
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari bookmark & tautan..."
+            wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
+          />
+
+          {/* Mobile Filter Button -> Opens Mobile Filter Pop-up Modal */}
+          <button
+            type="button"
+            onClick={() => setIsFilterModalOpen(true)}
+            className={`sm:hidden w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 relative transition-colors ${
+              isFilterModalOpen || activeFilterCount > 0
+                ? 'bg-primary text-on-primary'
+                : 'bg-surface-soft text-ink hover:bg-canvas'
+            }`}
+            title="Filter bookmark"
+            aria-label="Filter bookmark"
+          >
+            <SlidersHorizontal className="w-4.5 h-4.5" />
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-terminal-yellow text-primary font-bold text-[9px] flex items-center justify-center font-sans">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {/* Option Tabs: Bulan Ini vs Semua Waktu (Desktop Only) */}
+          <div className="hidden sm:inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
+            <button
+              type="button"
+              onClick={() => setDateFilter('this_month')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                dateFilter === 'this_month'
+                  ? 'bg-canvas text-ink shadow-xs font-semibold'
+                  : 'text-body hover:text-ink'
+              }`}
+            >
+              Bulan Ini
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('all')}
+              className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                dateFilter === 'all'
+                  ? 'bg-canvas text-ink shadow-xs font-semibold'
+                  : 'text-body hover:text-ink'
+              }`}
+            >
+              Semua Waktu
+            </button>
+          </div>
+
+          {/* Reading Status Filter Tabs (Desktop Only: Semua vs Belum Dibaca) */}
+          <div className="hidden sm:inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
+            <button
+              type="button"
+              onClick={() => setReadingStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                readingStatusFilter === 'all'
+                  ? 'bg-canvas text-ink shadow-xs font-semibold'
+                  : 'text-body hover:text-ink'
+              }`}
+            >
+              Semua
+            </button>
+            <button
+              type="button"
+              onClick={() => setReadingStatusFilter('unread')}
+              className={`px-3 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                readingStatusFilter === 'unread'
+                  ? 'bg-canvas text-ink shadow-xs font-semibold'
+                  : 'text-body hover:text-ink'
+              }`}
+            >
+              Belum Dibaca
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Main Layout: Left Filter Sidebar + Right Content Area */}
@@ -998,32 +1285,65 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
         </div>
       ) : (
         <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-start w-full">
-          {/* Left Column: TOC (Sticky on Mobile & Desktop below sticky searchbox) */}
-          <div className="w-[calc(100%+2rem)] sm:w-48 shrink-0 sticky top-14 sm:top-16 z-10 sm:z-auto bg-canvas sm:bg-transparent -mx-4 px-4 sm:mx-0 sm:px-0 py-1.5 sm:py-0 self-start">
-            <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 items-start sm:items-end no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-4 sm:pr-0">
-              {tocItems.map((item) => {
-                const IconComponent = item.Icon;
-                const isActive = activeTocKey === item.key;
+          {/* Left Column: TOC (Desktop only, hidden on mobile) */}
+          <div className="hidden sm:block sm:w-48 shrink-0 sticky top-14 sm:top-16 z-10 self-start space-y-3 sm:space-y-5">
+            {/* 1. Platform ToC (di atas ToC Kategori) */}
+            <div className="space-y-1">
+              <div className="hidden sm:block text-[11px] font-semibold text-body uppercase tracking-wider text-right pr-3 select-none">
+                Platform
+              </div>
+              <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 items-start sm:items-end no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-4 sm:pr-0">
+                {platformTocItems.map((item) => {
+                  const IconComponent = item.Icon;
+                  const isActive = platformFilter === item.key;
 
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => handleTocClick(item.key, item.id)}
-                    className={`py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-                      isActive
-                        ? 'bg-primary text-on-primary'
-                        : 'text-body hover:text-ink hover:bg-surface-soft'
-                    }`}
-                  >
-                    {IconComponent && <IconComponent className="w-3.5 h-3.5 shrink-0" />}
-                    <span>{item.label}</span>
-                    <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
-                      {item.count}
-                    </span>
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setPlatformFilter(item.key)}
+                      className={`py-1.5 px-2.5 sm:px-3 text-body-sm cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors border-b-2 ${
+                        isActive
+                          ? 'border-ink text-ink font-semibold'
+                          : 'border-transparent text-body hover:text-ink font-medium'
+                      }`}
+                    >
+                      {IconComponent && <IconComponent className="w-3.5 h-3.5 shrink-0" />}
+                      <span>{item.label}</span>
+                      <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
+                        {item.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Category ToC (di bawah ToC Platform, tanpa penanda background hitam) */}
+            <div className="space-y-1 sm:pt-3">
+              <div className="hidden sm:block text-[11px] font-semibold text-body uppercase tracking-wider text-right pr-3 select-none">
+                Kategori
+              </div>
+              <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 items-start sm:items-end no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-4 sm:pr-0">
+                {tocItems.map((item) => {
+                  const IconComponent = item.Icon;
+
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => handleTocClick(item.key, item.id)}
+                      className="py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors text-body hover:text-ink hover:bg-surface-soft !border-0"
+                    >
+                      {IconComponent && <IconComponent className="w-3.5 h-3.5 shrink-0" />}
+                      <span>{item.label}</span>
+                      <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
+                        {item.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -1044,13 +1364,9 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
                       onDelete={handleDelete}
                       onTogglePin={handleTogglePin}
                       onTagClick={(tag) => setSearchQuery(tag)}
-                      onEdit={(item) => {
-                        openedFromDetailRef.current = false;
-                        setEditingItem(item);
-                      }}
-                      onClick={(item) => {
-                        setSelectedBookmarkForDetail(item);
-                      }}
+                      onOpenReader={handleOpenReader}
+                      onEdit={handleOpenEdit}
+                      onClick={handleOpenDetail}
                     />
                   ))}
                 </div>
@@ -1074,8 +1390,19 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
                 <p className="text-body-sm text-body max-w-sm leading-relaxed">
                   {searchQuery
                     ? `Tidak ada bookmark yang cocok dengan kata kunci "${searchQuery}".`
+                    : dateFilter === 'this_month'
+                    ? 'Tidak ada bookmark tersimpan pada bulan ini.'
                     : 'Tidak ada bookmark tersimpan.'}
                 </p>
+                {dateFilter === 'this_month' && !searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter('all')}
+                    className="mt-4 px-4 py-2 rounded-full bg-surface-soft hover:bg-canvas text-ink text-body-sm font-medium transition-colors cursor-pointer !border-0"
+                  >
+                    Tampilkan Semua Waktu
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1094,71 +1421,53 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
         />
       )}
 
-      {/* Note Detail Modal (Desktop View) */}
-      {selectedBookmarkForDetail && (
+      {/* Unified Note Modal */}
+      {activeBookmarkModal && (
         <NoteDetailModal
-          isOpen={Boolean(selectedBookmarkForDetail)}
+          isOpen={Boolean(activeBookmarkModal)}
+          initialMode={modalMode}
           note={{
-            id: selectedBookmarkForDetail.id,
-            content: selectedBookmarkForDetail.content,
-            category: selectedBookmarkForDetail.category || 'bookmark',
-            specificTags: selectedBookmarkForDetail.specificTags,
-            source: selectedBookmarkForDetail.source,
-            isPinned: selectedBookmarkForDetail.isPinned,
-            attachments: selectedBookmarkForDetail.attachments,
-            createdAt: selectedBookmarkForDetail.createdAt,
+            id: activeBookmarkModal.id,
+            content: activeBookmarkModal.content,
+            category: activeBookmarkModal.category || 'bookmark',
+            bookmarkType: activeBookmarkModal.bookmarkType,
+            bookmarkMeta: activeBookmarkModal.bookmarkMeta,
+            specificTags: activeBookmarkModal.specificTags,
+            source: activeBookmarkModal.source,
+            isPinned: activeBookmarkModal.isPinned,
+            attachments: activeBookmarkModal.attachments,
+            createdAt: activeBookmarkModal.createdAt,
           }}
-          onClose={() => setSelectedBookmarkForDetail(null)}
-          onEdit={() => {
-            openedFromDetailRef.current = true;
-            const target = selectedBookmarkForDetail;
-            setSelectedBookmarkForDetail(null);
-            setEditingItem(target);
+          onClose={() => {
+            setActiveBookmarkModal(null);
           }}
           onDelete={(id) => {
             handleDelete(id);
-            setSelectedBookmarkForDetail(null);
+            setActiveBookmarkModal(null);
           }}
           onTogglePin={(id, isPinned) => {
             setBookmarks((prev) =>
               prev.map((b) => (b.id === id ? { ...b, isPinned } : b))
             );
-            setSelectedBookmarkForDetail((prev) =>
+            setActiveBookmarkModal((prev) =>
               prev && prev.id === id ? { ...prev, isPinned } : prev
             );
-          }}
-        />
-      )}
-
-      {/* Edit Note Modal */}
-      {editingItem && (
-        <EditNoteModal
-          isOpen={Boolean(editingItem)}
-          note={{
-            id: editingItem.id,
-            content: editingItem.content,
-            category: 'bookmark',
-            specificTags: editingItem.specificTags,
-          }}
-          onClose={() => {
-            openedFromDetailRef.current = false;
-            setEditingItem(null);
-          }}
-          onCancel={() => {
-            const prev = editingItem;
-            setEditingItem(null);
-            if (openedFromDetailRef.current && prev) {
-              setSelectedBookmarkForDetail(prev);
-            }
-            openedFromDetailRef.current = false;
           }}
           onSave={(updated) => {
             setBookmarks((prev) =>
               prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b))
             );
-            setEditingItem(null);
-            openedFromDetailRef.current = false;
-            toast.success('Bookmark berhasil diperbarui');
+            setActiveBookmarkModal((prev) =>
+              prev && prev.id === updated.id ? { ...prev, ...updated } : prev
+            );
+          }}
+          onBookmarkUpdated={(updated) => {
+            setBookmarks((prev) =>
+              prev.map((b) => (b.id === updated.id ? { ...b, bookmarkMeta: updated.bookmarkMeta } : b))
+            );
+            setActiveBookmarkModal((prev) =>
+              prev && prev.id === updated.id ? { ...prev, bookmarkMeta: updated.bookmarkMeta } : prev
+            );
           }}
         />
       )}
@@ -1174,6 +1483,38 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
         <span className="hidden sm:inline text-body-sm font-medium">Add Bookmark</span>
         <Plus className="w-7 h-7 sm:w-4.5 sm:h-4.5 text-ink" />
       </button>
+      {/* Dedicated Ask AI Modal */}
+      <AskAiModal
+        isOpen={isAskAiOpen}
+        onClose={() => setIsAskAiOpen(false)}
+        category="bookmark"
+        placeholder="Tanya tautan penting, artikel, repositori, atau bacaan..."
+        contextTitle="Bookmark & Tautan"
+      />
+
+      {/* Mobile Filter Modal Pop-up */}
+      <BookmarkFilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        currentFilters={{
+          dateRange: dateFilter,
+          readingStatus: readingStatusFilter,
+          platform: platformFilter,
+          category: categoryFilter,
+        }}
+        onApply={(newFilters) => {
+          setDateFilter(newFilters.dateRange);
+          setReadingStatusFilter(newFilters.readingStatus);
+          setPlatformFilter(newFilters.platform);
+          setCategoryFilter(newFilters.category);
+        }}
+        onReset={() => {
+          setDateFilter('this_month');
+          setReadingStatusFilter('all');
+          setPlatformFilter('all');
+          setCategoryFilter('all');
+        }}
+      />
     </div>
   );
 }

@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 
 export interface RecordAiUsageParams {
   userId?: string | null;
-  feature: 'ask' | 'enhance' | 'tagging' | 'batch_sync' | 'finance';
+  feature: 'ask' | 'enhance' | 'tagging' | 'batch_sync' | 'finance' | 'todo' | 'schedule';
   model?: string;
   usage?: {
     promptTokens?: number;
@@ -20,7 +20,7 @@ export interface RecordAiUsageParams {
 export async function recordAiUsage({
   userId,
   feature,
-  model = process.env.AI_MODEL_NAME || 'claude-haiku-5.5',
+  model = process.env.AI_MODEL_NAME || 'gemini-3.8-flash',
   usage,
 }: RecordAiUsageParams): Promise<void> {
   try {
@@ -35,10 +35,11 @@ export async function recordAiUsage({
       model,
       promptTokens,
       completionTokens,
-      totalTokens: totalTokens > 0 ? totalTokens : 250, // Baseline estimate if provider omits token stats
+      totalTokens,
       createdAt: new Date(),
     });
   } catch (err) {
-    console.warn('[AI Usage Tracker] Non-fatal error recording token usage:', err);
+    // Fail-safe: do not disrupt primary flow for telemetry
+    console.warn('[AI Usage Telemetry Error]:', err);
   }
 }

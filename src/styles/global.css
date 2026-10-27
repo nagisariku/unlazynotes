@@ -356,3 +356,21 @@ html, body {
   font-weight: 400 !important;
   letter-spacing: normal !important;
 }
+
+/* Shimmer Animation Utilities for AI Thinking State */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer-sweep {
+  animation: shimmer-sweep 1.5s infinite ease-in-out;
+}
+
+@utility animate-shimmer-sweep {
+  animation: shimmer-sweep 1.5s infinite ease-in-out;
+}

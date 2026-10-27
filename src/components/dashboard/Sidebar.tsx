@@ -128,7 +128,7 @@ export default function Sidebar({
       {/* =========================================================================
           1. MOBILE TOP HEADER (< md)
           ========================================================================= */}
-      <header className="md:hidden sticky top-0 z-40 bg-canvas px-4 py-2 flex items-center justify-between text-ink">
+      <header className="md:hidden shrink-0 z-40 bg-canvas px-4 py-2 flex items-center justify-between text-ink">
         <a href="/dashboard" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center font-bold text-sm select-none">
             U
@@ -154,7 +154,7 @@ export default function Sidebar({
           style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         >
           <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm select-none"
+            className="fixed inset-0 bg-black/75 select-none"
             style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             onClick={() => setMobileMenuOpen(false)}
             aria-hidden="true"
@@ -413,7 +413,7 @@ export default function Sidebar({
         <>
           {/* Full-screen Backdrop covering 100% viewport */}
           <div
-            className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+            className="fixed inset-0 z-[9998] bg-black/75 select-none"
             style={{ top: 0, left: 0, right: 0, bottom: 0 }}
             aria-hidden="true"
           />

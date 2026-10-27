@@ -96,6 +96,10 @@ export function resetUnorganizedCount(userId: string): void {
   setUnorganizedCountCache(userId, 0);
 }
 
+export function invalidateUnorganizedCountCache(userId: string): void {
+  unorganizedCountCache.delete(userId);
+}
+
 export async function getOrFetchUnorganizedCount(userId: string): Promise<number> {
   const cached = getUnorganizedCountCache(userId);
   if (cached !== null) return cached;

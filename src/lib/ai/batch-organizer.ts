@@ -1,15 +1,16 @@
 import { recordAiUsage } from '../ai-usage';
 import { db } from '../../db';
-import { notes, type NoteCategory, type BookmarkType, type CredentialType } from '../../db/schema';
+import { notes, users, type NoteCategory, type BookmarkType, type CredentialType, type TodoEntry } from '../../db/schema';
 import { eq, and, asc, or } from 'drizzle-orm';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
+import crypto from 'node:crypto';
 import { sanitizeTags } from './sanitizer';
-import { getOrFetchUserTags, invalidateUserTagsCache, resetUnorganizedCount } from '../cache';
-import { extractEarliestScheduleDate } from '../date-extractor';
-import { parseScheduleMetadata } from './modules/schedule';
+import { getOrFetchUserTags, invalidateUserTagsCache, resetUnorganizedCount, invalidateUnorganizedCountCache } from '../cache';
+import { sanitizeScheduleJson, type ScheduleMetadata } from './modules/schedule';
 import { normalizeBookmarkType, normalizeCredentialType } from './modules/general';
 import { fetchLinkMetadata } from '../link-enricher';
+import { formatInUserTz, resolveUserTimezone } from '../timezone';
 
 export interface OrganizedNoteItem {
   id: string;
@@ -27,6 +28,7 @@ export interface OrganizedNoteItem {
   expenses?: any;
   income?: any;
   debt?: any;
+  todos?: TodoEntry[] | null;
   attachments?: any;
   bookmarkType?: BookmarkType | null;
   credentialType?: CredentialType | null;
@@ -183,19 +185,41 @@ export function normalizeCategory(raw: string | undefined, _content?: string): N
   return 'todo';
 }
 
-export async function organizeUserNotes(userId: string): Promise<OrganizedBatchResult> {
-  // 1. Ambil seluruh catatan unorganized user terurut kronologis (isProcessed false atau category others)
+export async function organizeUserNotes(
+  userId: string,
+  targetNoteId?: string,
+  overrideTimezone?: string
+): Promise<OrganizedBatchResult> {
+  const [userRow] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const userTimezone = resolveUserTimezone(overrideTimezone || userRow?.timezone);
+  const nowUserTz = formatInUserTz(new Date(), userTimezone);
+
+  // 1. Ambil catatan unorganized user (atau catatan tunggal jika targetNoteId disediakan)
+  const whereCondition = targetNoteId
+    ? and(
+        eq(notes.userId, userId),
+        eq(notes.id, targetNoteId)
+      )
+    : and(
+        eq(notes.userId, userId),
+        eq(notes.isArchived, false),
+        or(eq(notes.isProcessed, false), eq(notes.category, 'others'))
+      );
+
   const unorganizedNotes = await db.query.notes.findMany({
-    where: and(
-      eq(notes.userId, userId),
-      eq(notes.isArchived, false),
-      or(eq(notes.isProcessed, false), eq(notes.category, 'others'))
-    ),
+    where: whereCondition,
     orderBy: [asc(notes.createdAt)],
   });
 
   if (!unorganizedNotes || unorganizedNotes.length === 0) {
-    resetUnorganizedCount(userId);
+    if (!targetNoteId) {
+      resetUnorganizedCount(userId);
+    }
     return {
       total: 0,
       categorized: {},
@@ -205,7 +229,7 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
 
   const existingUserTags = await getOrFetchUserTags(userId);
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   // Strict Fail-Fast: API key wajib ada dan valid
@@ -227,6 +251,8 @@ export async function organizeUserNotes(userId: string): Promise<OrganizedBatchR
       : '';
 
   const systemPrompt = `You are the core semantic intelligence engine for UnlazyNotes.
+User Timezone: ${userTimezone} (${nowUserTz.offsetStr}). Current Reference Date: ${nowUserTz.dateStr} (${nowUserTz.dayName}), ${nowUserTz.timeStr}.
+When resolving relative date/time terms (e.g. "hari ini", "besok", "lusa", "nanti malam", "minggu depan"), evaluate strictly relative to note's creation date/time in user timezone (${userTimezone}).
 Analyze the array of raw notes and return a strict JSON array:
 [
   {
@@ -236,10 +262,11 @@ Analyze the array of raw notes and return a strict JSON array:
     "source": string | null, // platform domain (maps, github, youtube, drive, etc.) or null
     "bookmarkType": "tech_dev" | "media_social" | "work_docs" | "places" | "shopping" | "reading_other" | null,
     "credentialType": "account" | "network" | "identity_finance" | "license" | "other" | null,
-    "schedule": { "dates": string[], "isRecurring": boolean, "recurrenceRule"?: object } | null,
+    "schedule": { "dates": string[], "isRecurring": boolean, "recurrenceRule"?: { "frequency": "daily" | "weekly" | "monthly" | "custom_interval", "daysOfWeek"?: number[], "intervalDays"?: number, "dayOfMonth"?: number, "timeString"?: string } } | null,
     "expenses": Array<{ "item": string, "amount": number, "currency": string }> | null,
     "income": Array<{ "source": string, "amount": number, "currency": string }> | null,
-    "debt": Array<{ "type": "payable" | "receivable", "person": string, "amount": number, "notes"?: string }> | null
+    "debt": Array<{ "type": "payable" | "receivable", "person": string, "amount": number, "notes"?: string }> | null,
+    "todos": Array<{ "task": string, "isCompleted": boolean }> | null
   }
 ]
 
@@ -258,14 +285,15 @@ DISAMBIGUATION HEURISTICS:
 - URL is primary subject -> bookmark
 - Monetary transaction/debt -> finance
 - Action/task to execute -> todo
-- Time/date execution -> schedule
+- Time/date execution -> schedule (dates must be YYYY-MM-DD only without time; put time in recurrenceRule.timeString and weekday in recurrenceRule.daysOfWeek)
 - Shopping lists with estimated prices (not yet spent) -> todo
 - Casual food/snack purchases (cimin, cilok, nasgor, martabak, kopi, etc.) -> finance expenses with [food] tag, NOT debt
 - Money borrowed/lent with person names (minjem, pinjam, utang, talangin) -> finance debt with person name
 
 TAGGING RULES:
-- Exactly 2 to 4 tags: [1 specific entity/topic] + [1 high-level domain umbrella (tech, food, health, etc.)].
-- Use lowercase-with-hyphens, max 20 chars per tag. Never repeat the category name.${userTagContext}`;
+- Exactly 2 to 4 tags: [1-2 specific entities/topics in note's language] + [1 high-level domain umbrella in standard English (e.g., tech, food, health, transport, work, education, personal, travel, home, shopping, entertainment, social, legal, creative, science, or any real-world domain)].
+- NEVER output generic meta-tags (e.g. "ideas", "brainstorming", "notes", "yap", "random", "misc").
+- Use lowercase-with-hyphens, max 20 chars per tag. Never repeat the category name (e.g. never tag as "finance", "todo", "schedule", "bookmark").${userTagContext}`;
 
   // FASE 1: Proses seluruh chunk di memori (Strict Fail-Fast)
   // Jika salah satu chunk gagal (AI error / parse error), proses langsung berhenti dan lempar exception
@@ -279,6 +307,7 @@ TAGGING RULES:
     expenses?: any[];
     income?: any[];
     debt?: any[];
+    todos?: TodoEntry[];
     schedule?: any;
     scheduleDates?: string[];
     bookmarkType?: BookmarkType | null;
@@ -306,10 +335,11 @@ TAGGING RULES:
         if (hasAttachments) {
           contentText = `[Catatan ini memiliki lampiran gambar/file]\n${contentText}`;
         }
+        const localCreated = formatInUserTz(n.createdAt || new Date(), userTimezone);
         return {
           id: n.id,
           content: contentText,
-          created_at: n.createdAt ? n.createdAt.toISOString() : new Date().toISOString(),
+          created_at: `${localCreated.dateStr}T${localCreated.timeStr}:00${localCreated.offsetStr} (${localCreated.dayName})`,
         };
       })
     );
@@ -440,24 +470,46 @@ TAGGING RULES:
         }
       }
 
-      // Extract schedule structures
-      let cleanSchedule = aiItem.schedule;
+      // Extract schedule structures (100% Pure LLM - Zero regex on note content)
+      let cleanSchedule: ScheduleMetadata | undefined = undefined;
       let cleanScheduleDates: string[] | undefined = undefined;
+      let targetDate: Date | null = null;
+
       if (cat === 'schedule') {
-        if (!cleanSchedule || !cleanSchedule.dates || cleanSchedule.dates.length === 0) {
-          cleanSchedule = parseScheduleMetadata(note.content, note.createdAt || new Date());
-        }
-        if (cleanSchedule && Array.isArray(cleanSchedule.dates)) {
-          cleanScheduleDates = cleanSchedule.dates;
+        if (aiItem.schedule && typeof aiItem.schedule === 'object') {
+          const sanitized = sanitizeScheduleJson(aiItem.schedule, note.createdAt || new Date(), userTimezone);
+          cleanSchedule = sanitized.schedule;
+          cleanScheduleDates = sanitized.scheduleDates;
+          targetDate = sanitized.targetDate;
         }
       }
 
-      const targetDate =
-        cat === 'schedule'
-          ? (cleanScheduleDates && cleanScheduleDates.length > 0
-              ? new Date(`${cleanScheduleDates[0]}T00:00:00Z`)
-              : extractEarliestScheduleDate(note.content, note.createdAt || new Date()))
-          : null;
+      // Extract todo structures
+      let cleanTodos: TodoEntry[] | undefined = undefined;
+      if (cat === 'todo') {
+        if (Array.isArray(aiItem.todos) && aiItem.todos.length > 0) {
+          cleanTodos = aiItem.todos
+            .filter((t: any) => t && (t.task || t.item || t.title))
+            .map((t: any) => ({
+              id: crypto.randomUUID(),
+              task: String(t.task || t.item || t.title || '').trim(),
+              isCompleted: Boolean(t.isCompleted),
+              completedAt: t.isCompleted ? new Date().toISOString() : null,
+            }))
+            .filter((t: any) => t.task.length > 0);
+        }
+
+        if (!cleanTodos || cleanTodos.length === 0) {
+          cleanTodos = [
+            {
+              id: crypto.randomUUID(),
+              task: note.content.trim(),
+              isCompleted: false,
+              completedAt: null,
+            },
+          ];
+        }
+      }
 
       // Extract source
       let cleanSource = aiItem.source ? String(aiItem.source).trim() : null;
@@ -481,6 +533,7 @@ TAGGING RULES:
         expenses: cleanExpenses,
         income: cleanIncome,
         debt: cleanDebt,
+        todos: cleanTodos,
         schedule: cleanSchedule,
         scheduleDates: cleanScheduleDates,
         bookmarkType,
@@ -500,10 +553,11 @@ TAGGING RULES:
         category: item.category,
         specificTags: item.specificTags,
         source: item.source || undefined,
-        targetDate: item.targetDate || undefined,
+        targetDate: item.targetDate && !isNaN(item.targetDate.getTime()) ? item.targetDate : null,
         expenses: item.expenses && item.expenses.length > 0 ? item.expenses : [],
         income: item.income && item.income.length > 0 ? item.income : [],
         debt: item.debt && item.debt.length > 0 ? item.debt : [],
+        todos: item.todos && item.todos.length > 0 ? item.todos : [],
         schedule: item.schedule || undefined,
         scheduleDates: item.scheduleDates && item.scheduleDates.length > 0 ? item.scheduleDates : undefined,
         bookmarkType: item.bookmarkType || undefined,
@@ -517,9 +571,13 @@ TAGGING RULES:
     }
   }
 
-  // 5. Invalidasi cache tag user dan reset unorganized counter ke 0
+  // 5. Invalidasi cache tag user dan update unorganized counter
   invalidateUserTagsCache(userId);
-  resetUnorganizedCount(userId);
+  if (targetNoteId) {
+    invalidateUnorganizedCountCache(userId);
+  } else {
+    resetUnorganizedCount(userId);
+  }
 
   // 6. Kelompokkan per kategori untuk ringkasan
   const categorized: Record<string, OrganizedNoteItem[]> = {};

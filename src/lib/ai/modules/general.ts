@@ -1,7 +1,7 @@
 import { recordAiUsage } from '@/lib/ai-usage';
 import { generateText } from 'ai';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { format } from 'date-fns';
+import { formatInUserTz, resolveUserTimezone } from '@/lib/timezone';
 import { VALID_SOURCES, CATEGORIES, type Source } from '../../constants';
 import { sanitizeTags, normalizeTag, BANNED_TAGS } from '../sanitizer';
 import { type NoteTagResult } from '../types';
@@ -155,10 +155,11 @@ export function enrichDualLayerTags(
 export async function processGeneralNote(
   content: string,
   existingUserTags?: string[],
-  noteCreatedAt?: Date | string
+  noteCreatedAt?: Date | string,
+  userTimezone?: string
 ): Promise<NoteTagResult> {
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
 
   if (!apiKey || apiKey === 'sk-xxxx' || apiKey.startsWith('mock-')) {
     throw new Error('[AI] AI Provider API key is not configured');
@@ -174,7 +175,9 @@ export async function processGeneralNote(
     });
 
     const refDate = noteCreatedAt ? new Date(noteCreatedAt) : new Date();
-    const formattedRefDate = format(refDate, 'yyyy-MM-dd (EEEE)');
+    const safeTz = resolveUserTimezone(userTimezone);
+    const localRef = formatInUserTz(refDate, safeTz);
+    const formattedRefDate = `${localRef.dateStr} (${localRef.dayName}), ${localRef.timeStr}`;
 
     const userTagContext =
       existingUserTags && existingUserTags.length > 0
@@ -185,7 +188,8 @@ export async function processGeneralNote(
       model: openaiCompatible(modelName),
       temperature: 0,
       system: `You are the core semantic intelligence engine for UnlazyNotes.
-Anchor Date for relative times: ${formattedRefDate}.
+Anchor Date for relative times (User Timezone: ${safeTz}, ${localRef.offsetStr}): ${formattedRefDate}.
+All relative terms like "hari ini", "besok", "lusa", "minggu depan" MUST be resolved strictly relative to this anchor date in ${safeTz}.
 Analyze the user's raw note and return a strict JSON object:
 {
 "category": "bookmark" | "schedule" | "finance" | "credential" | "todo" | "draft" | "reference" | "random-yap" | "others",
@@ -220,8 +224,9 @@ DISAMBIGUATION HEURISTICS:
 - Money borrowed/lent with person names (minjem, pinjam, utang, talangin) -> finance debt with person name
 
 TAGGING RULES:
-- Exactly 2 to 4 tags: [1 specific entity/topic] + [1 high-level domain umbrella (tech, food, health, etc.)].
-- Use lowercase-with-hyphens, max 20 chars per tag. Never repeat the category name.${userTagContext}`,
+- Exactly 2 to 4 tags: [1-2 specific entities/topics in note's language] + [1 high-level domain umbrella in standard English (e.g., tech, food, health, transport, work, education, personal, travel, home, shopping, entertainment, social, legal, creative, science, or any real-world domain)].
+- NEVER output generic meta-tags (e.g. "ideas", "brainstorming", "notes", "yap", "random", "misc").
+- Use lowercase-with-hyphens, max 20 chars per tag. Never repeat the category name (e.g. never tag as "finance", "todo", "schedule", "bookmark").${userTagContext}`,
       prompt: `Note text:\n"""${content}"""`,
     });
 

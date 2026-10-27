@@ -223,9 +223,18 @@ export default function NewTodoModal({
     if (!text || isSubmitting) return;
 
     setIsSubmitting(true);
-    const contentToSave = !/^\[[ xX]\]/.test(text) ? `[ ] ${text}` : text;
+    const contentToSave = text;
     const tempId = `temp-todo-${Date.now()}`;
     const now = new Date();
+    const todoId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `todo-${Date.now()}`;
+    const initialTodos = [
+      {
+        id: todoId,
+        task: text,
+        isCompleted: false,
+        completedAt: null,
+      },
+    ];
 
     const optimisticItem: TodoItem = {
       id: tempId,
@@ -234,7 +243,8 @@ export default function NewTodoModal({
       specificTags: tags,
       source: 'web',
       isPinned: false,
-      isProcessed: false,
+      isProcessed: true,
+      todos: initialTodos,
       attachments: attachments.length > 0 ? attachments : undefined,
       createdAt: now.toISOString(),
     };
@@ -250,6 +260,7 @@ export default function NewTodoModal({
           content: contentToSave,
           category: 'todo',
           specificTags: tags,
+          todos: initialTodos,
           attachments: attachments.length > 0 ? attachments : undefined,
         }),
       });
@@ -276,7 +287,7 @@ export default function NewTodoModal({
     <>
       {/* Full-screen Backdrop covering 100% viewport */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm select-none"
+        className="fixed inset-0 z-[9998] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
         aria-hidden="true"
       />

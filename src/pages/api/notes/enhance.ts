@@ -4,6 +4,7 @@ import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
 import { format } from 'date-fns';
 import { normalizeCategory, normalizeBookmarkType, normalizeCredentialType } from '@/lib/ai/modules/general';
+import { sanitizeScheduleJson } from '@/lib/ai';
 import { sanitizeTags } from '@/lib/ai/sanitizer';
 import { normalizeNominal } from '@/lib/ai/batch-organizer';
 import { recordAiUsage } from '@/lib/ai-usage';
@@ -39,7 +40,7 @@ export const POST: APIRoute = async ({ request }) => {
   }
 
   const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'claude-haiku-5.5';
+  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
   const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
 
   if (!apiKey || apiKey.startsWith('mock-')) {
@@ -80,9 +81,9 @@ Analyze the user's note and return a strict JSON object:
 }
 
 Enhance Text Rules:
-1. Perbaiki dan rapihkan format penulisan, struktur markdown/bullets/checkboxes, tanda baca, huruf kapital, dan tata bahasa alami (bahasa Indonesia atau Inggris sesuai bahasa input).
-2. Ringkas dan buat lebih enak dibaca TANPA kehilangan satu pun ide, nama, nomor, tautan, atau informasi detail penting.
-3. Jika catatan memuat daftar tugas atau rencana aksi, gunakan format checklist Markdown (- [ ] Tugas).
+1. Perbaiki dan rapihkan tulisan, tata bahasa (grammar), tanda baca, huruf kapital, dan alur teks agar bersih, rapi, dan mudah dibaca (bahasa Indonesia atau Inggris sesuai bahasa input).
+2. Ringkas atau perjelas agar nyaman dipahami TANPA kehilangan satu pun ide, nama, nomor, tautan, atau detail penting.
+3. DILARANG KERAS menambahkan format tanda kurung siku checkbox seperti '[]', '[ ]', '[x]', '- [ ]', atau simbol kotak centang tiruan apa pun. Jangan membuat format seolah-olah komponen checklist/checkbox. Jika catatan memuat daftar tugas atau rencana aksi, gunakan bullet point biasa ('- ' atau '• ') atau penomoran biasa (1., 2.).
 4. Dilarang menambahkan basa-basi, salam, pengantar, atau komentar tambahan. "enhanced_text" harus murni teks catatan pengguna yang sudah dipoles.
 
 Classification & Tagging Rules:
@@ -140,18 +141,9 @@ Input Note:
     let schedule: ScheduleMetadata | undefined = undefined;
     let scheduleDates: string[] | undefined = undefined;
     if (category === 'schedule') {
-      const dates = Array.isArray(parsed.schedule?.dates)
-        ? parsed.schedule.dates.map(String).filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
-        : Array.isArray(parsed.schedule_dates)
-        ? parsed.schedule_dates.map(String).filter((d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d))
-        : [];
-
-      schedule = {
-        dates,
-        isRecurring: Boolean(parsed.schedule?.isRecurring),
-        recurrenceRule: parsed.schedule?.recurrenceRule,
-      };
-      scheduleDates = dates;
+      const sanitized = sanitizeScheduleJson(parsed.schedule, now);
+      schedule = sanitized.schedule;
+      scheduleDates = sanitized.scheduleDates;
     }
 
     // Extract finance

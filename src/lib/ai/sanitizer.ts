@@ -18,6 +18,18 @@ export const BANNED_TAGS = new Set([
   'bill-payment',
   'note',
   'notes',
+
+  'catatan',
+  'idea',
+  'ideas',
+  'ide',
+  'brainstorming',
+  'yap',
+  'random',
+  'misc',
+  'draft',
+  'reference',
+
   'date',
   'time',
   'datetime',
@@ -196,7 +208,7 @@ export function normalizeTag(tag: string): string {
   }
 
   // 2. Universal High-Level Root Domain Umbrella Mappings
-  if (t === 'ide' || t === 'ideas') t = 'idea';
+
   if (
     t === 'makanan' ||
     t === 'jajan' ||
@@ -418,7 +430,7 @@ export function sanitizeTags(
           ['food', 'makanan'],
           ['drink', 'minuman'],
           ['health', 'kesehatan'],
-          ['idea', 'ide'],
+
           ['meeting', 'rapat'],
           ['work', 'kerja'],
           ['client', 'klien'],
