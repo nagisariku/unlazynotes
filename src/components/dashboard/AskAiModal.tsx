@@ -5,7 +5,12 @@ import {
   Sparkles,
   Send,
   RotateCcw,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import NoteDetailModal from './NoteDetailModal';
+import type { NoteItem } from './NotesTimeline';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -41,6 +46,115 @@ const DEFAULT_PLACEHOLDERS: Record<string, string> = {
   credential: 'Tanya akun login, Wi-Fi, atau kredensial tersimpan...',
 };
 
+/**
+ * Helper to render bold markdown segments (**text** or *text*)
+ */
+function renderFormattedText(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={i} className="font-semibold text-ink">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('*') && part.endsWith('*')) {
+      return (
+        <strong key={i} className="font-semibold text-ink">
+          {part.slice(1, -1)}
+        </strong>
+      );
+    }
+    return part;
+  });
+}
+
+/**
+ * Parses markdown message content and converts `[Label](note://<note_id>)` into
+ * interactive, clickable deep-link buttons that trigger NoteDetailModal.
+ */
+function renderMessageWithNoteLinks(
+  content: string,
+  onOpenNote: (noteId: string) => void,
+  isFetchingNoteId: string | null
+): React.ReactNode {
+  const noteLinkRegex = /\[([^\]]+)\]\(note:\/\/([a-zA-Z0-9_\-]+)\)/g;
+  const lines = content.split('\n');
+
+  return lines.map((line, lineIdx) => {
+    if (!line.includes('note://')) {
+      return (
+        <span key={lineIdx} className="block min-h-[1.25rem]">
+          {renderFormattedText(line)}
+        </span>
+      );
+    }
+
+    const elements: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    noteLinkRegex.lastIndex = 0;
+
+    while ((match = noteLinkRegex.exec(line)) !== null) {
+      const matchIndex = match.index;
+      const fullMatch = match[0];
+      const linkLabel = match[1];
+      const noteId = match[2];
+
+      if (matchIndex > lastIndex) {
+        elements.push(
+          <span key={`text-${lineIdx}-${lastIndex}`}>
+            {renderFormattedText(line.slice(lastIndex, matchIndex))}
+          </span>
+        );
+      }
+
+      const isLoadingThisNote = isFetchingNoteId === noteId;
+
+      elements.push(
+        <button
+          key={`note-btn-${lineIdx}-${matchIndex}`}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenNote(noteId);
+          }}
+          disabled={Boolean(isFetchingNoteId)}
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 mx-1 my-0.5 rounded-lg bg-surface-soft hover:bg-hairline active:scale-95 text-ink font-mono text-[11px] font-semibold transition-all cursor-pointer !border-0 select-none align-baseline shadow-2xs group"
+          title={`Buka catatan #${noteId}`}
+        >
+          {isLoadingThisNote ? (
+            <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+          ) : (
+            <FileText className="w-3 h-3 text-body group-hover:text-ink transition-colors shrink-0" />
+          )}
+          <span className="underline decoration-hairline group-hover:decoration-ink transition-colors">
+            {linkLabel}
+          </span>
+          <ExternalLink className="w-2.5 h-2.5 text-mute group-hover:text-ink opacity-70 shrink-0" />
+        </button>
+      );
+
+      lastIndex = matchIndex + fullMatch.length;
+    }
+
+    if (lastIndex < line.length) {
+      elements.push(
+        <span key={`text-end-${lineIdx}-${lastIndex}`}>
+          {renderFormattedText(line.slice(lastIndex))}
+        </span>
+      );
+    }
+
+    return (
+      <span key={lineIdx} className="block min-h-[1.25rem]">
+        {elements}
+      </span>
+    );
+  });
+}
+
 export default function AskAiModal({
   isOpen,
   onClose,
@@ -53,6 +167,11 @@ export default function AskAiModal({
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Referenced Note Detail Modal states
+  const [referencedNote, setReferencedNote] = useState<NoteItem | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [fetchingNoteId, setFetchingNoteId] = useState<string | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -98,19 +217,22 @@ export default function AskAiModal({
       setPrompt('');
       setError(null);
       setIsLoading(false);
+      setReferencedNote(null);
+      setIsDetailOpen(false);
+      setFetchingNoteId(null);
     }
   }, [isOpen, adjustTextareaHeight, scrollToBottom]);
 
-  // Handle ESC key to close modal
+  // Handle ESC key to close modal (only if referenced note modal is not open)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isLoading) {
+      if (e.key === 'Escape' && isOpen && !isLoading && !isDetailOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isLoading, onClose]);
+  }, [isOpen, isLoading, isDetailOpen, onClose]);
 
   // Lock body scroll when open
   useEffect(() => {
@@ -122,6 +244,28 @@ export default function AskAiModal({
       };
     }
   }, [isOpen]);
+
+  const handleOpenNoteLink = async (noteId: string) => {
+    if (fetchingNoteId) return;
+    setFetchingNoteId(noteId);
+    try {
+      const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`);
+      if (!res.ok) {
+        throw new Error('Catatan tidak ditemukan atau telah dihapus');
+      }
+      const data = await res.json();
+      if (data?.note) {
+        setReferencedNote(data.note);
+        setIsDetailOpen(true);
+      } else {
+        throw new Error('Data catatan kosong');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Gagal memuat catatan');
+    } finally {
+      setFetchingNoteId(null);
+    }
+  };
 
   const handleSubmit = async () => {
     const trimmed = prompt.trim();
@@ -199,17 +343,17 @@ export default function AskAiModal({
 
   return createPortal(
     <>
-      {/* Full-screen Backdrop */}
+      {/* Full-screen Backdrop: z-[9990] below NoteDetailModal (z-[9998]) */}
       <div
-        className="fixed inset-0 z-[9998] bg-black/75 select-none"
+        className="fixed inset-0 z-[9990] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-        onClick={!isLoading ? onClose : undefined}
+        onClick={!isLoading && !isDetailOpen ? onClose : undefined}
         aria-hidden="true"
       />
 
-      {/* Modal Dialog Container */}
+      {/* Modal Dialog Container: z-[9991] */}
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-8 sm:py-8 sm:px-6 pointer-events-none select-none"
+        className="fixed inset-0 z-[9991] flex items-center justify-center px-4 py-8 sm:py-8 sm:px-6 pointer-events-none select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0, height: '100dvh' }}
       >
         <div className="w-full max-w-2xl sm:max-w-3xl h-[min(640px,85dvh)] flex flex-col rounded-2xl bg-canvas text-ink pointer-events-auto overflow-hidden my-auto shadow-2xl relative !border-0">
@@ -292,8 +436,8 @@ export default function AskAiModal({
                       Jawaban AI
                     </span>
                   </div>
-                  <div className="text-body-md text-ink leading-relaxed font-sans whitespace-pre-wrap pl-6">
-                    {m.content}
+                  <div className="text-body-md text-ink leading-relaxed font-sans whitespace-pre-wrap pl-6 space-y-1">
+                    {renderMessageWithNoteLinks(m.content, handleOpenNoteLink, fetchingNoteId)}
                   </div>
                 </div>
               )
@@ -318,55 +462,45 @@ export default function AskAiModal({
                   }
                   .shimmer-beam {
                     position: absolute;
-                    inset: 0;
-                    transform: translateX(-100%);
+                    top: 0;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
                     background: linear-gradient(
                       90deg,
-                      rgba(255, 255, 255, 0) 0%,
-                      rgba(255, 255, 255, 0.9) 50%,
-                      rgba(255, 255, 255, 0) 100%
+                      rgba(229, 229, 229, 0) 0%,
+                      rgba(255, 255, 255, 0.7) 50%,
+                      rgba(229, 229, 229, 0) 100%
                     );
-                    animation: unlazy-shimmer-sweep 1.4s infinite cubic-bezier(0.4, 0, 0.2, 1);
+                    animation: unlazy-shimmer-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
                   }
-                  .shimmer-beam-d1 { animation-delay: 0s; }
-                  .shimmer-beam-d2 { animation-delay: 0.15s; }
-                  .shimmer-beam-d3 { animation-delay: 0.3s; }
-                  .shimmer-beam-d4 { animation-delay: 0.45s; }
                 `}</style>
 
-                <div className="flex items-center gap-2 text-ink">
-                  <Sparkles className="w-4 h-4 text-ink animate-spin shrink-0" />
-                  <span className="text-body-sm font-semibold tracking-tight text-ink animate-pulse font-sans">
-                    Thinking... AI sedang menelusuri catatan Anda
-                  </span>
+                {/* Shimmer Line 1 */}
+                <div className="h-4.5 rounded-full shimmer-track w-[82%]">
+                  <div className="shimmer-beam" />
                 </div>
 
-                {/* Animated Shimmer Skeleton bars with sweeping light beam */}
-                <div className="space-y-2.5 pt-1 pl-6">
-                  <div className="h-3.5 rounded-md shimmer-track w-3/4">
-                    <div className="shimmer-beam shimmer-beam-d1" />
-                  </div>
-                  <div className="h-3.5 rounded-md shimmer-track w-full">
-                    <div className="shimmer-beam shimmer-beam-d2" />
-                  </div>
-                  <div className="h-3.5 rounded-md shimmer-track w-5/6">
-                    <div className="shimmer-beam shimmer-beam-d3" />
-                  </div>
-                  <div className="h-3.5 rounded-md shimmer-track w-1/2">
-                    <div className="shimmer-beam shimmer-beam-d4" />
-                  </div>
+                {/* Shimmer Line 2 */}
+                <div className="h-4.5 rounded-full shimmer-track w-[94%]">
+                  <div className="shimmer-beam" />
+                </div>
+
+                {/* Shimmer Line 3 */}
+                <div className="h-4.5 rounded-full shimmer-track w-[64%]">
+                  <div className="shimmer-beam" />
                 </div>
               </div>
             )}
 
-            {/* State: Error */}
-            {!isLoading && error && (
-              <div className="space-y-2 select-text text-terminal-red text-body-sm font-medium pl-6">
-                <p>{error}</p>
+            {/* Error Message */}
+            {error && (
+              <div className="p-3.5 rounded-xl bg-danger/10 text-danger text-body-sm select-text flex items-center justify-between gap-3">
+                <span>{error}</span>
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="text-caption-sm text-ink underline font-medium hover:opacity-80 cursor-pointer !border-0 bg-transparent p-0"
+                  className="px-2.5 py-1 rounded-lg bg-surface-soft hover:bg-hairline text-ink text-caption font-medium transition-colors cursor-pointer !border-0 select-none shrink-0"
                 >
                   Coba lagi
                 </button>
@@ -409,6 +543,27 @@ export default function AskAiModal({
           </div>
         </div>
       </div>
+
+      {/* Referenced Note Detail Modal on top of Ask AI */}
+      {referencedNote && (
+        <NoteDetailModal
+          note={referencedNote}
+          isOpen={isDetailOpen}
+          onClose={() => {
+            setIsDetailOpen(false);
+            setReferencedNote(null);
+          }}
+          onDelete={() => {
+            setIsDetailOpen(false);
+            setReferencedNote(null);
+            toast.success('Catatan berhasil dihapus');
+          }}
+          onTogglePin={() => {}}
+          onSave={(updated) => {
+            setReferencedNote(updated);
+          }}
+        />
+      )}
     </>,
     document.body
   );

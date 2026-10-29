@@ -5,6 +5,7 @@ import {
   SlidersHorizontal,
   Check,
   ExternalLink,
+  Link2,
   ListChecks,
   LayoutGrid,
   GripVertical,
@@ -80,6 +81,30 @@ function TodoItemCard({
   onOpenDetail,
   onGripPointerDown,
 }: TodoItemCardProps) {
+  // Extract external web link if present in task or source note
+  const extractedUrl = useMemo(() => {
+    const urlRegex = /(https?:\/\/[^\s]+)/i;
+    const matchTask = todo.task.match(urlRegex);
+    if (matchTask) return matchTask[0];
+    const matchRaw = todo.rawNote?.content?.match(urlRegex);
+    if (matchRaw) return matchRaw[0];
+    return null;
+  }, [todo.task, todo.rawNote]);
+
+  // Context chip: tag or parent note topic if multi-item note
+  const parentContext = useMemo(() => {
+    if (todo.tags && todo.tags.length > 0) {
+      return `#${todo.tags[0]}`;
+    }
+    if (todo.rawNote?.todos && todo.rawNote.todos.length > 1) {
+      const firstLine = todo.rawNote.content.trim().split('\n')[0].replace(/^#+\s*/, '').trim();
+      if (firstLine && firstLine !== todo.task && firstLine.length < 25) {
+        return firstLine;
+      }
+    }
+    return null;
+  }, [todo.tags, todo.rawNote, todo.task]);
+
   return (
     <div
       data-todo-card
@@ -118,7 +143,7 @@ function TodoItemCard({
         {todo.isCompleted && <Check className="w-3.5 h-3.5 stroke-[3]" />}
       </button>
 
-      {/* 3. Task Content, External Link Icon, and Date (Date hidden on mobile) */}
+      {/* 3. Task Content, External Web Link, Source Modal Link, and Context Chip */}
       <div className="flex items-center gap-1.5 flex-wrap min-w-0 flex-1">
         <span
           className={`text-body-sm leading-relaxed break-words [overflow-wrap:anywhere] select-text font-sans ${
@@ -130,6 +155,21 @@ function TodoItemCard({
           {todo.task}
         </span>
 
+        {/* Direct Mini Link Icon to Web URL (if URL present in task/note) */}
+        {extractedUrl && (
+          <a
+            href={extractedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center justify-center text-mute hover:text-ink cursor-pointer transition-colors shrink-0 !border-0 bg-transparent p-0.5"
+            title={`Buka web: ${extractedUrl}`}
+            aria-label="Buka web eksternal"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+          </a>
+        )}
+
         {/* Reverse Link Action: Pure icon directly next to task */}
         <button
           type="button"
@@ -140,6 +180,16 @@ function TodoItemCard({
         >
           <ExternalLink className="w-3.5 h-3.5" />
         </button>
+
+        {/* Parent Context Chip (Tag or Parent Note Topic) */}
+        {parentContext && (
+          <span
+            className="text-[10px] text-mute/80 bg-surface-soft px-1.5 py-0.5 rounded-md font-mono shrink-0 select-none"
+            title={`Konteks: ${parentContext}`}
+          >
+            {parentContext}
+          </span>
+        )}
 
         {/* Date adjacent to task title (hidden on mobile breakpoint) */}
         <span className="hidden md:inline text-[11px] text-mute font-mono shrink-0 select-none">
@@ -184,6 +234,65 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
   const [modalMode, setModalMode] = useState<'view' | 'read' | 'edit'>('view');
   const [isNewTaskOpen, setIsNewTaskOpen] = useState(false);
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
+
+  // Quick In-Place Task Input state
+  const [quickTaskText, setQuickTaskText] = useState('');
+  const [isAddingQuickTask, setIsAddingQuickTask] = useState(false);
+
+  const handleQuickAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const text = quickTaskText.trim();
+    if (!text || isAddingQuickTask) return;
+
+    setIsAddingQuickTask(true);
+    const tempId = `temp-todo-${Date.now()}`;
+    const todoId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `todo-${Date.now()}`;
+    const initialTodos = [
+      {
+        id: todoId,
+        task: text,
+        isCompleted: false,
+        completedAt: null,
+        priority: null,
+      },
+    ];
+
+    const optimisticItem: TodoItem = {
+      id: tempId,
+      content: text,
+      category: 'todo',
+      specificTags: [],
+      source: 'web',
+      isPinned: false,
+      isProcessed: true,
+      todos: initialTodos,
+      createdAt: new Date().toISOString(),
+    };
+
+    handleTaskCreated(optimisticItem);
+    setQuickTaskText('');
+
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: text,
+          category: 'todo',
+          todos: initialTodos,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Gagal menyimpan tugas');
+      }
+      toast.success('Tugas ditambahkan ke Inbox');
+    } catch {
+      toast.error('Gagal menambahkan tugas cepat');
+    } finally {
+      setIsAddingQuickTask(false);
+    }
+  };
 
   const handleOpenDetail = (item: TodoItem) => {
     setActiveTodoModal(item);
@@ -549,14 +658,14 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
       if (!res.ok) throw new Error('Gagal update priority');
 
       const priorityLabels: Record<string, string> = {
-        low: 'Low',
-        normal: 'Normal',
-        high: 'High',
+        low: 'Later',
+        normal: 'Soon',
+        high: 'Now',
       };
       if (targetPriority) {
-        toast.success(`Prioritas diubah ke ${priorityLabels[targetPriority]}`);
+        toast.success(`Dipindahkan ke ${priorityLabels[targetPriority]}`);
       } else {
-        toast.success('Prioritas dikembalikan ke checklist');
+        toast.success('Dipindahkan ke Inbox');
       }
     } catch {
       // Rollback
@@ -570,12 +679,118 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
   const handlePriorityChangeRef = useRef(handlePriorityChange);
   handlePriorityChangeRef.current = handlePriorityChange;
 
+  // Geometry-Aware Drop Zone Resolver (Generous Hit-Testing Coverage)
+  const getZoneUnderPoint = (
+    clientX: number,
+    clientY: number,
+    cardRect: DOMRect | null,
+    offset: { x: number; y: number }
+  ): 'low' | 'normal' | 'high' | 'unassigned' | null => {
+    // 1. Calculate center coordinates of the dragged card
+    const cardWidth = cardRect ? cardRect.width : 160;
+    const cardHeight = cardRect ? cardRect.height : 40;
+    const cardCenterX = clientX - offset.x + cardWidth / 2;
+    const cardCenterY = clientY - offset.y + cardHeight / 2;
+
+    // 2. Fast exact element check under pointer & card center
+    const points = [
+      { x: clientX, y: clientY },
+      { x: cardCenterX, y: cardCenterY },
+    ];
+    for (const pt of points) {
+      const el = document.elementFromPoint(pt.x, pt.y);
+      const zoneEl = el?.closest('[data-priority-zone]');
+      if (zoneEl) {
+        const p = zoneEl.getAttribute('data-priority-zone') as any;
+        if (p) return p;
+      }
+    }
+
+    // 3. Geometry-based coverage for desktop columns & mobile rows
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    if (!isMobile) {
+      // Desktop: side-by-side columns
+      const desktopCols = Array.from(document.querySelectorAll<HTMLElement>('[data-desktop-column]'));
+      if (desktopCols.length > 0) {
+        const testX = clientX;
+        const testY = clientY;
+        for (let i = 0; i < desktopCols.length; i++) {
+          const col = desktopCols[i];
+          const rect = col.getBoundingClientRect();
+          if (testY >= rect.top - 60 && testY <= rect.bottom + 60) {
+            const prevBoundary = i === 0 ? rect.left - 40 : (desktopCols[i - 1].getBoundingClientRect().right + rect.left) / 2;
+            const nextBoundary = i === desktopCols.length - 1 ? rect.right + 40 : (rect.right + desktopCols[i + 1].getBoundingClientRect().left) / 2;
+            if (testX >= prevBoundary && testX <= nextBoundary) {
+              return col.getAttribute('data-priority-zone') as any;
+            }
+          }
+        }
+        // Fallback test with card center coordinates
+        for (let i = 0; i < desktopCols.length; i++) {
+          const col = desktopCols[i];
+          const rect = col.getBoundingClientRect();
+          if (cardCenterY >= rect.top - 60 && cardCenterY <= rect.bottom + 60) {
+            const prevBoundary = i === 0 ? rect.left - 40 : (desktopCols[i - 1].getBoundingClientRect().right + rect.left) / 2;
+            const nextBoundary = i === desktopCols.length - 1 ? rect.right + 40 : (rect.right + desktopCols[i + 1].getBoundingClientRect().left) / 2;
+            if (cardCenterX >= prevBoundary && cardCenterX <= nextBoundary) {
+              return col.getAttribute('data-priority-zone') as any;
+            }
+          }
+        }
+      }
+    } else {
+      // Mobile: stacked rows
+      const mobileRows = Array.from(document.querySelectorAll<HTMLElement>('[data-mobile-row]'));
+      if (mobileRows.length > 0) {
+        const testY = clientY;
+        for (let i = 0; i < mobileRows.length; i++) {
+          const row = mobileRows[i];
+          const rect = row.getBoundingClientRect();
+          const prevTop = i === 0 ? rect.top - 40 : (mobileRows[i - 1].getBoundingClientRect().bottom + rect.top) / 2;
+          const nextBottom = i === mobileRows.length - 1 ? rect.bottom + 40 : (rect.bottom + mobileRows[i + 1].getBoundingClientRect().top) / 2;
+          if (testY >= prevTop && testY <= nextBottom) {
+            return row.getAttribute('data-priority-zone') as any;
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
+  // Unified Pointer Drag-and-Drop Auto-Scroll Engine
+  const autoScrollRef = useRef<{
+    speed: number;
+    rafId: number | null;
+    pointerX: number;
+    pointerY: number;
+  }>({
+    speed: 0,
+    rafId: null,
+    pointerX: 0,
+    pointerY: 0,
+  });
+
+  const performAutoScroll = (deltaY: number) => {
+    const mainEl = document.querySelector('main');
+    if (mainEl && mainEl.scrollHeight > mainEl.clientHeight) {
+      mainEl.scrollTop += deltaY;
+      return;
+    }
+    if (document.documentElement && document.documentElement.scrollHeight > document.documentElement.clientHeight) {
+      document.documentElement.scrollTop += deltaY;
+      return;
+    }
+    window.scrollBy(0, deltaY);
+  };
+
   // Unified Pointer Drag-and-Drop Engine (Desktop & Mobile)
   const dragRef = useRef<{
     todo: FlatTodoItem;
     pointerId: number;
     startX: number;
     startY: number;
+    offset: { x: number; y: number };
     cardRect: DOMRect;
     isDragging: boolean;
   } | null>(null);
@@ -586,18 +801,64 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
 
     const cardEl = (e.currentTarget as HTMLElement).closest('[data-todo-card]') as HTMLElement;
     const rect = cardEl ? cardEl.getBoundingClientRect() : (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const offsetX = e.clientX - rect.left;
+    const offsetY = e.clientY - rect.top;
 
     dragRef.current = {
       todo,
       pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
+      offset: { x: offsetX, y: offsetY },
       cardRect: rect,
       isDragging: false,
     };
   };
 
   useEffect(() => {
+    const stopAutoScroll = () => {
+      autoScrollRef.current.speed = 0;
+      if (autoScrollRef.current.rafId !== null) {
+        cancelAnimationFrame(autoScrollRef.current.rafId);
+        autoScrollRef.current.rafId = null;
+      }
+    };
+
+    const startAutoScroll = () => {
+      if (autoScrollRef.current.rafId !== null) return;
+
+      const step = () => {
+        if (!dragRef.current?.isDragging) {
+          stopAutoScroll();
+          return;
+        }
+
+        const { speed, pointerX, pointerY } = autoScrollRef.current;
+        if (speed !== 0) {
+          performAutoScroll(speed);
+
+          // As page scrolls under the stationary finger/cursor, dynamically update drop zone highlight
+          if (dragRef.current) {
+            const priority = getZoneUnderPoint(
+              pointerX,
+              pointerY,
+              dragRef.current.cardRect,
+              dragRef.current.offset
+            );
+            setDragOverColumn(priority);
+          }
+        }
+
+        if (dragRef.current?.isDragging && autoScrollRef.current.speed !== 0) {
+          autoScrollRef.current.rafId = requestAnimationFrame(step);
+        } else {
+          autoScrollRef.current.rafId = null;
+        }
+      };
+
+      autoScrollRef.current.rafId = requestAnimationFrame(step);
+    };
+
     const handleWindowPointerMove = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
 
@@ -609,34 +870,43 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
         dragRef.current.isDragging = true;
         setDraggedTodo(dragRef.current.todo);
         setHiddenTodoId(dragRef.current.todo.id);
-        setDragOffset({
-          x: dragRef.current.startX - dragRef.current.cardRect.left,
-          y: dragRef.current.startY - dragRef.current.cardRect.top,
-        });
+        setDragOffset(dragRef.current.offset);
       }
 
       if (dragRef.current.isDragging) {
         setDragCoords({ x: e.clientX, y: e.clientY });
+        autoScrollRef.current.pointerX = e.clientX;
+        autoScrollRef.current.pointerY = e.clientY;
 
-        // Highlight drop zone under cursor
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const zoneEl = el?.closest('[data-priority-zone]');
-        const priority = zoneEl?.getAttribute('data-priority-zone') as
-          | 'low'
-          | 'normal'
-          | 'high'
-          | 'unassigned'
-          | null;
-        setDragOverColumn(priority || null);
+        // Highlight drop zone under cursor with geometry awareness
+        const priority = getZoneUnderPoint(
+          e.clientX,
+          e.clientY,
+          dragRef.current.cardRect,
+          dragRef.current.offset
+        );
+        setDragOverColumn(priority);
 
-        // Auto-scroll near top and bottom viewport edges
-        const scrollZone = 80;
-        if (e.clientY < scrollZone) {
-          const speed = Math.max(3, Math.min(18, (scrollZone - e.clientY) / 3));
-          window.scrollBy(0, -speed);
-        } else if (window.innerHeight - e.clientY < scrollZone) {
-          const speed = Math.max(3, Math.min(18, (scrollZone - (window.innerHeight - e.clientY)) / 3));
-          window.scrollBy(0, speed);
+        // Continuous Auto-scroll near top and bottom viewport edges
+        const topScrollZone = 110;
+        const bottomScrollZone = 120;
+        let nextSpeed = 0;
+
+        if (e.clientY < topScrollZone) {
+          const dist = topScrollZone - e.clientY;
+          const ratio = Math.min(1, Math.max(0, dist / topScrollZone));
+          nextSpeed = -Math.round(4 + ratio * 16);
+        } else if (window.innerHeight - e.clientY < bottomScrollZone) {
+          const dist = bottomScrollZone - (window.innerHeight - e.clientY);
+          const ratio = Math.min(1, Math.max(0, dist / bottomScrollZone));
+          nextSpeed = Math.round(4 + ratio * 16);
+        }
+
+        autoScrollRef.current.speed = nextSpeed;
+        if (nextSpeed !== 0) {
+          startAutoScroll();
+        } else {
+          stopAutoScroll();
         }
       }
     };
@@ -644,15 +914,15 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
     const handleWindowPointerUp = (e: PointerEvent) => {
       if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
 
+      stopAutoScroll();
+
       if (dragRef.current.isDragging) {
-        const el = document.elementFromPoint(e.clientX, e.clientY);
-        const zoneEl = el?.closest('[data-priority-zone]');
-        const targetPriority = zoneEl?.getAttribute('data-priority-zone') as
-          | 'low'
-          | 'normal'
-          | 'high'
-          | 'unassigned'
-          | null;
+        const targetPriority = getZoneUnderPoint(
+          e.clientX,
+          e.clientY,
+          dragRef.current.cardRect,
+          dragRef.current.offset
+        );
 
         const todoToMove = dragRef.current.todo;
         if (targetPriority) {
@@ -673,6 +943,7 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
     window.addEventListener('pointercancel', handleWindowPointerUp);
 
     return () => {
+      stopAutoScroll();
       window.removeEventListener('pointermove', handleWindowPointerMove);
       window.removeEventListener('pointerup', handleWindowPointerUp);
       window.removeEventListener('pointercancel', handleWindowPointerUp);
@@ -682,7 +953,7 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
   const isFilterActive = isFilterOpen || dateFilter !== 'this_month' || statusFilter !== 'all';
 
   return (
-    <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-36 sm:pb-8 md:pb-12 bg-canvas text-ink relative">
+    <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-36 sm:pb-8 md:pb-0 bg-canvas text-ink relative min-h-full flex flex-col flex-1">
       {/* 1. Top Header (Title and Subtitle) */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -699,17 +970,18 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+        <div className="hidden sm:flex items-center gap-3 self-start sm:self-center shrink-0">
           <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Todo" />
         </div>
       </div>
 
       {/* 2. Controls Row: Searchbox + View Toggle + Filter button */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 min-w-0">
         <SearchPill
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Cari tugas & checklist..."
+          wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
         />
 
         {/* View Mode Toggle: List vs Grid (Icons only) */}
@@ -759,11 +1031,19 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
             <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-terminal-yellow border border-canvas" />
           )}
         </button>
+
+        {/* Mobile Ask AI Button (Circle box next to searchbox) */}
+        <AskAiButton
+          onClick={() => setIsAskAiOpen(true)}
+          label="Ask Todo"
+          variant="circle"
+          className="sm:hidden"
+        />
       </div>
 
       {/* 3. Main Area */}
-      <div className="w-full space-y-4 mt-4 sm:mt-6">
-        <div className="flex items-center justify-between gap-3">
+      <div className="w-full space-y-4 mt-4 sm:mt-6 flex-1 flex flex-col">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-xl sm:text-2xl font-normal text-ink tracking-tight font-sans">
               {viewMode === 'checklist' ? 'Checklist Tugas & Prioritas' : 'Daftar Catatan ToDo'}
@@ -778,27 +1058,47 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                 : 'Menampilkan seluruh tugas sepanjang waktu.'}
             </p>
           </div>
+
+          {/* Quick In-Place Task Input (Desktop & Mobile, Fast task creation into Inbox) */}
+          {viewMode === 'checklist' && (
+            <form
+              onSubmit={handleQuickAddTask}
+              className="relative flex items-center w-full sm:w-80 md:w-96 group min-w-0"
+            >
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-mute group-focus-within:text-ink pointer-events-none transition-colors">
+                <Plus className="w-4.5 h-4.5" />
+              </div>
+              <input
+                type="text"
+                value={quickTaskText}
+                onChange={(e) => setQuickTaskText(e.target.value)}
+                disabled={isAddingQuickTask}
+                placeholder="Tambah tugas cepat..."
+                className="w-full min-w-0 h-10 pl-10 pr-4 rounded-full border-0 bg-surface-soft text-ink placeholder:text-mute text-body-sm focus:outline-none focus:ring-0 focus:bg-surface-soft transition-colors"
+              />
+            </form>
+          )}
         </div>
 
         {/* View Mode 1: Actionable Kanban Checklist with Priority Columns (Desktop) & Priority List (Mobile) */}
         {viewMode === 'checklist' ? (
           filteredTodos.length > 0 ? (
             <>
-              {/* Mobile View (< md): 3 Priority Rows (High, Normal, Low) with Vertical Drag & Drop */}
+              {/* Mobile View (< md): 3 Priority Rows (Now, Soon, Later) with Vertical Drag & Drop */}
               <div className="block md:hidden space-y-6 pb-8">
-                {/* Row 1: High Priority */}
+                {/* Row 1: Now Priority */}
                 <div
                   data-priority-zone="high"
+                  data-mobile-row
                   className={`p-3 min-h-[120px] transition-all duration-150 rounded-xl border-2 ${
                     dragOverColumn === 'high'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                       : 'border-transparent'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  <div className="mb-3">
                     <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
-                      High
+                      Now
                     </span>
                   </div>
 
@@ -822,25 +1122,25 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                           dragOverColumn === 'high' ? 'text-ink font-medium' : 'text-mute/80'
                         }`}
                       >
-                        Tarik tugas ke sini untuk prioritas High
+                        Tarik tugas ke sini untuk Now
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Row 2: Normal Priority */}
+                {/* Row 2: Soon Priority */}
                 <div
                   data-priority-zone="normal"
+                  data-mobile-row
                   className={`p-3 min-h-[120px] transition-all duration-150 rounded-xl border-2 ${
                     dragOverColumn === 'normal'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                       : 'border-transparent'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-sky-500" />
+                  <div className="mb-3">
                     <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
-                      Normal
+                      Soon
                     </span>
                   </div>
 
@@ -864,25 +1164,25 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                           dragOverColumn === 'normal' ? 'text-ink font-medium' : 'text-mute/80'
                         }`}
                       >
-                        Tarik tugas ke sini untuk prioritas Normal
+                        Tarik tugas ke sini untuk Soon
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Row 3: Low Priority */}
+                {/* Row 3: Later Priority */}
                 <div
                   data-priority-zone="low"
+                  data-mobile-row
                   className={`p-3 min-h-[120px] transition-all duration-150 rounded-xl border-2 ${
                     dragOverColumn === 'low'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                       : 'border-transparent'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <div className="mb-3">
                     <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
-                      Low
+                      Later
                     </span>
                   </div>
 
@@ -906,26 +1206,26 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                           dragOverColumn === 'low' ? 'text-ink font-medium' : 'text-mute/80'
                         }`}
                       >
-                        Tarik tugas ke sini untuk prioritas Low
+                        Tarik tugas ke sini untuk Later
                       </p>
                     </div>
                   )}
                 </div>
 
-                {/* Optional Row 4: Unassigned tasks (if any exist) */}
+                {/* Optional Row 4: Inbox (Unassigned tasks if any exist) */}
                 {unassignedTodos.length > 0 && (
                   <div
                     data-priority-zone="unassigned"
+                    data-mobile-row
                     className={`p-3 min-h-[120px] transition-all duration-150 rounded-xl border-2 ${
                       dragOverColumn === 'unassigned'
-                        ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                        ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                         : 'border-transparent'
                     }`}
                   >
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="w-2 h-2 rounded-full bg-hairline-strong" />
+                    <div className="mb-3">
                       <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
-                        Belum Dipetakan
+                        Inbox
                       </span>
                     </div>
 
@@ -946,17 +1246,25 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
               </div>
 
               {/* Desktop View (>= md): 4-Column Kanban with Drag and Drop */}
-              <div className="hidden md:block w-full overflow-x-auto pb-8 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
-                <div className="min-w-[960px] xl:min-w-full flex items-stretch gap-1 sm:gap-2">
-                {/* Column 0: Checklist Tugas (Unassigned / Belum Dipetakan) */}
+              <div className="hidden md:flex flex-1 flex-col w-full overflow-x-auto pb-4 md:pb-0 -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
+                <div className="min-w-[960px] w-full flex-1 flex items-stretch gap-1 sm:gap-2">
+                {/* Column 0: Inbox (Unassigned / Belum Dipetakan) */}
                 <div
                   data-priority-zone="unassigned"
-                  className={`flex-1 p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
+                  data-desktop-column
+                  className={`flex-1 flex flex-col p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
                     dragOverColumn === 'unassigned'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                       : 'border-transparent'
                   }`}
                 >
+                  {/* Column Header */}
+                  <div className="mb-3">
+                    <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
+                      Inbox
+                    </span>
+                  </div>
+
                   {/* Column Content: Grouped by Note with Gap Space */}
                   {unassignedGroupedByNote.length > 0 ? (
                     <div className="space-y-6">
@@ -982,123 +1290,29 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                           dragOverColumn === 'unassigned' ? 'text-ink font-medium' : 'text-mute/80'
                         }`}
                       >
-                        Semua tugas telah dipetakan ke prioritas
+                        Semua tugas telah dipetakan
                       </p>
                     </div>
                   )}
                 </div>
 
                 {/* Vertical Divider 1 */}
-                <div className="w-px bg-hairline shrink-0 my-1 self-stretch" />
+                <div className="w-px bg-hairline shrink-0 self-stretch" />
 
-                {/* Column 1: Low Priority */}
-                <div
-                  data-priority-zone="low"
-                  className={`flex-1 p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
-                    dragOverColumn === 'low'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
-                      : 'border-transparent'
-                  }`}
-                >
-                  {/* Column Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-caption-sm font-semibold text-ink uppercase tracking-wider font-sans">
-                      Low
-                    </span>
-                  </div>
-
-                  {/* Column Content */}
-                  {lowTodos.length > 0 ? (
-                    <div className="space-y-2">
-                      {lowTodos.map((todo) => (
-                        <TodoItemCard
-                          key={todo.id}
-                          todo={todo}
-                          isHidden={hiddenTodoId === todo.id}
-                          onToggle={() => handleToggleTodo(todo)}
-                          onOpenDetail={() => handleOpenDetail(todo.rawNote)}
-                          onGripPointerDown={(e) => handleGripPointerDown(e, todo)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-10 text-center px-2">
-                      <p
-                        className={`text-body-sm select-none transition-colors ${
-                          dragOverColumn === 'low' ? 'text-ink font-medium' : 'text-mute/80'
-                        }`}
-                      >
-                        Tarik tugas ke sini untuk prioritas Low
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Vertical Divider 2 */}
-                <div className="w-px bg-hairline shrink-0 my-1 self-stretch" />
-
-                {/* Column 2: Normal Priority */}
-                <div
-                  data-priority-zone="normal"
-                  className={`flex-1 p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
-                    dragOverColumn === 'normal'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
-                      : 'border-transparent'
-                  }`}
-                >
-                  {/* Column Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-sky-500" />
-                    <span className="text-caption-sm font-semibold text-ink uppercase tracking-wider font-sans">
-                      Normal
-                    </span>
-                  </div>
-
-                  {/* Column Content */}
-                  {normalTodos.length > 0 ? (
-                    <div className="space-y-2">
-                      {normalTodos.map((todo) => (
-                        <TodoItemCard
-                          key={todo.id}
-                          todo={todo}
-                          isHidden={hiddenTodoId === todo.id}
-                          onToggle={() => handleToggleTodo(todo)}
-                          onOpenDetail={() => handleOpenDetail(todo.rawNote)}
-                          onGripPointerDown={(e) => handleGripPointerDown(e, todo)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-10 text-center px-2">
-                      <p
-                        className={`text-body-sm select-none transition-colors ${
-                          dragOverColumn === 'normal' ? 'text-ink font-medium' : 'text-mute/80'
-                        }`}
-                      >
-                        Tarik tugas ke sini untuk prioritas Normal
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Vertical Divider 3 */}
-                <div className="w-px bg-hairline shrink-0 my-1 self-stretch" />
-
-                {/* Column 3: High Priority */}
+                {/* Column 1: Now Priority */}
                 <div
                   data-priority-zone="high"
-                  className={`flex-1 p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
+                  data-desktop-column
+                  className={`flex-1 flex flex-col p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
                     dragOverColumn === 'high'
-                      ? 'bg-ink/10 border-dashed border-ink/40 shadow-xs'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
                       : 'border-transparent'
                   }`}
                 >
                   {/* Column Header */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="w-2 h-2 rounded-full bg-rose-500" />
-                    <span className="text-caption-sm font-semibold text-ink uppercase tracking-wider font-sans">
-                      High
+                  <div className="mb-3">
+                    <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
+                      Now
                     </span>
                   </div>
 
@@ -1123,7 +1337,101 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
                           dragOverColumn === 'high' ? 'text-ink font-medium' : 'text-mute/80'
                         }`}
                       >
-                        Tarik tugas ke sini untuk prioritas High
+                        Tarik tugas ke sini untuk Now
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Vertical Divider 2 */}
+                <div className="w-px bg-hairline shrink-0 self-stretch" />
+
+                {/* Column 2: Soon Priority */}
+                <div
+                  data-priority-zone="normal"
+                  data-desktop-column
+                  className={`flex-1 flex flex-col p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
+                    dragOverColumn === 'normal'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
+                      : 'border-transparent'
+                  }`}
+                >
+                  {/* Column Header */}
+                  <div className="mb-3">
+                    <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
+                      Soon
+                    </span>
+                  </div>
+
+                  {/* Column Content */}
+                  {normalTodos.length > 0 ? (
+                    <div className="space-y-2">
+                      {normalTodos.map((todo) => (
+                        <TodoItemCard
+                          key={todo.id}
+                          todo={todo}
+                          isHidden={hiddenTodoId === todo.id}
+                          onToggle={() => handleToggleTodo(todo)}
+                          onOpenDetail={() => handleOpenDetail(todo.rawNote)}
+                          onGripPointerDown={(e) => handleGripPointerDown(e, todo)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center px-2">
+                      <p
+                        className={`text-body-sm select-none transition-colors ${
+                          dragOverColumn === 'normal' ? 'text-ink font-medium' : 'text-mute/80'
+                        }`}
+                      >
+                        Tarik tugas ke sini untuk Soon
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Vertical Divider 3 */}
+                <div className="w-px bg-hairline shrink-0 self-stretch" />
+
+                {/* Column 3: Later Priority */}
+                <div
+                  data-priority-zone="low"
+                  data-desktop-column
+                  className={`flex-1 flex flex-col p-3 sm:p-4 min-h-[580px] sm:min-h-[660px] transition-all duration-150 rounded-xl border-2 ${
+                    dragOverColumn === 'low'
+                      ? 'bg-ink/[0.04] border-dashed border-ink/20 shadow-none'
+                      : 'border-transparent'
+                  }`}
+                >
+                  {/* Column Header */}
+                  <div className="mb-3">
+                    <span className="text-xl md:text-body-md font-semibold whitespace-nowrap tracking-tight text-body font-mono">
+                      Later
+                    </span>
+                  </div>
+
+                  {/* Column Content */}
+                  {lowTodos.length > 0 ? (
+                    <div className="space-y-2">
+                      {lowTodos.map((todo) => (
+                        <TodoItemCard
+                          key={todo.id}
+                          todo={todo}
+                          isHidden={hiddenTodoId === todo.id}
+                          onToggle={() => handleToggleTodo(todo)}
+                          onOpenDetail={() => handleOpenDetail(todo.rawNote)}
+                          onGripPointerDown={(e) => handleGripPointerDown(e, todo)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="py-10 text-center px-2">
+                      <p
+                        className={`text-body-sm select-none transition-colors ${
+                          dragOverColumn === 'low' ? 'text-ink font-medium' : 'text-mute/80'
+                        }`}
+                      >
+                        Tarik tugas ke sini untuk Later
                       </p>
                     </div>
                   )}
@@ -1241,7 +1549,7 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
         />
       )}
 
-      {/* Floating Action Button: New Task (Hidden when mobile dock is active) */}
+      {/* Floating Action Button: New Task (Hidden during mobile drag) */}
       <button
         type="button"
         onClick={() => setIsNewTaskOpen(true)}
@@ -1263,61 +1571,6 @@ export default function TodoView({ initialItems, userName }: TodoViewProps) {
         placeholder="Tanya tugas, rencana aksi, atau checklist Anda..."
         contextTitle="Tugas & ToDo"
       />
-
-      {/* Mobile Floating Priority Drop Dock (Opsi A: Quick Drop Targets within thumb reach - Zero Border) */}
-      {draggedTodo && (
-        <div className="md:hidden fixed bottom-6 left-4 right-4 z-[99990] flex items-center justify-between gap-2 p-2 rounded-2xl bg-canvas/95 backdrop-blur-md !border-0 shadow-2xl select-none animate-in fade-in slide-in-from-bottom-4 duration-150">
-          <div
-            data-priority-zone="high"
-            className={`flex-1 py-3 px-1 rounded-xl !border-0 flex flex-col items-center justify-center gap-1.5 transition-all ${
-              dragOverColumn === 'high'
-                ? 'bg-rose-500/20 scale-102 text-rose-600 dark:text-rose-400 font-semibold shadow-xs'
-                : 'bg-surface-soft/80 text-body'
-            }`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
-            <span className="text-[11px] font-mono uppercase tracking-wider font-semibold">High</span>
-          </div>
-
-          <div
-            data-priority-zone="normal"
-            className={`flex-1 py-3 px-1 rounded-xl !border-0 flex flex-col items-center justify-center gap-1.5 transition-all ${
-              dragOverColumn === 'normal'
-                ? 'bg-sky-500/20 scale-102 text-sky-600 dark:text-sky-400 font-semibold shadow-xs'
-                : 'bg-surface-soft/80 text-body'
-            }`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
-            <span className="text-[11px] font-mono uppercase tracking-wider font-semibold">Normal</span>
-          </div>
-
-          <div
-            data-priority-zone="low"
-            className={`flex-1 py-3 px-1 rounded-xl !border-0 flex flex-col items-center justify-center gap-1.5 transition-all ${
-              dragOverColumn === 'low'
-                ? 'bg-emerald-500/20 scale-102 text-emerald-600 dark:text-emerald-400 font-semibold shadow-xs'
-                : 'bg-surface-soft/80 text-body'
-            }`}
-          >
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-            <span className="text-[11px] font-mono uppercase tracking-wider font-semibold">Low</span>
-          </div>
-
-          {draggedTodo.priority !== null && (
-            <div
-              data-priority-zone="unassigned"
-              className={`flex-1 py-3 px-1 rounded-xl !border-0 flex flex-col items-center justify-center gap-1.5 transition-all ${
-                dragOverColumn === 'unassigned'
-                  ? 'bg-ink/15 scale-102 text-ink font-semibold shadow-xs'
-                  : 'bg-surface-soft/80 text-body'
-              }`}
-            >
-              <span className="w-2.5 h-2.5 rounded-full bg-hairline-strong" />
-              <span className="text-[11px] font-mono uppercase tracking-wider font-semibold">Lepas</span>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 100% Solid Custom Drag Follower (Zero transparency, moves with cursor, component fully intact) */}
       {draggedTodo && dragCoords && (

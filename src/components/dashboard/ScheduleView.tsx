@@ -9,6 +9,7 @@ import {
   CalendarDays,
   Pin,
   X,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   format,
@@ -28,6 +29,7 @@ import AskAiButton from './AskAiButton';
 import AskAiModal from './AskAiModal';
 import NoteDetailModal from './NoteDetailModal';
 import NewScheduleModal from './NewScheduleModal';
+import NotesFilterPopover, { type ScheduleDateFilter } from './NotesFilterPopover';
 
 export interface ScheduleItem {
   id: string;
@@ -163,6 +165,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isAskAiOpen, setIsAskAiOpen] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeScheduleModal, setActiveScheduleModal] = useState<ScheduleItem | null>(null);
@@ -399,7 +402,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
         body: JSON.stringify({
           content: text,
           category: 'schedule',
-          specificTags: ['schedule'],
+          specificTags: [],
         }),
       });
 
@@ -480,15 +483,15 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+        <div className="hidden sm:flex items-center gap-3 self-start sm:self-center shrink-0">
           <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Schedule" />
         </div>
       </div>
 
       {/* =========================================================================
-          2. CONTROLS ROW: Searchbox + Tabs (Sticky on Mobile & Desktop across whole page, solid white background flush at top)
+          2. CONTROLS ROW: Searchbox + Filter Button + Mobile Ask AI (Sticky on Mobile & Desktop across whole page, solid white background flush at top)
           ========================================================================= */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 min-w-0">
         <SearchPill
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -496,52 +499,48 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
           wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
         />
 
-        {/* Option Tabs: Terdekat, Terlewat, Semua Waktu (Style matching Credential/Vault) */}
-        <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              setTabFilter('this_month');
-              setSelectedDate(null);
-            }}
-            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
-              tabFilter === 'this_month' && !selectedDate
-                ? 'bg-canvas text-ink shadow-xs font-semibold'
-                : 'text-body hover:text-ink'
-            }`}
-          >
-            Terdekat
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setTabFilter('past');
-              setSelectedDate(null);
-            }}
-            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
-              tabFilter === 'past' && !selectedDate
-                ? 'bg-canvas text-ink shadow-xs font-semibold'
-                : 'text-body hover:text-ink'
-            }`}
-          >
-            Terlewat
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setTabFilter('all');
-              setSelectedDate(null);
-            }}
-            className={`px-3 sm:px-4 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
-              tabFilter === 'all' && !selectedDate
-                ? 'bg-canvas text-ink shadow-xs font-semibold'
-                : 'text-body hover:text-ink'
-            }`}
-          >
-            Semua Waktu
-          </button>
-        </div>
+        {/* Filter button -> toggle filter popup modal */}
+        <button
+          type="button"
+          onClick={() => setIsFilterOpen(!isFilterOpen)}
+          className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 relative transition-colors !border-0 ${
+            isFilterOpen || tabFilter !== 'this_month' || selectedDate
+              ? 'bg-primary text-on-primary'
+              : 'bg-surface-soft text-ink hover:bg-canvas'
+          }`}
+          aria-label="Toggle filter menu"
+          title="Filter jadwal"
+        >
+          <SlidersHorizontal className="w-4.5 h-4.5" />
+          {(tabFilter !== 'this_month' || selectedDate) && (
+            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-terminal-yellow border border-canvas" />
+          )}
+        </button>
+
+        {/* Mobile Ask AI Button (Circle Box next to searchbox) */}
+        <AskAiButton
+          onClick={() => setIsAskAiOpen(true)}
+          label="Ask Schedule"
+          variant="circle"
+          className="sm:hidden"
+        />
       </div>
+
+      {/* Schedule Filter Popover Modal */}
+      <NotesFilterPopover
+        isOpen={isFilterOpen}
+        onClose={() => setIsFilterOpen(false)}
+        variant="schedule"
+        currentScheduleFilter={tabFilter}
+        onApplyScheduleFilter={(newFilter: ScheduleDateFilter) => {
+          setTabFilter(newFilter);
+          setSelectedDate(null);
+        }}
+        onReset={() => {
+          setTabFilter('this_month');
+          setSelectedDate(null);
+        }}
+      />
 
       {/* =========================================================================
           3. SCHEDULE MAIN CONTENT: 2-COLUMN ON XL SCREENS (STICKY CALENDAR LEFT, NOTES RIGHT)
@@ -625,7 +624,7 @@ export default function ScheduleView({ initialItems, userName }: ScheduleViewPro
 
           {/* Schedule Notes List (Row view with horizontal line divider) */}
           {filteredItems.length > 0 ? (
-            <div className="w-full flex flex-col">
+            <div className="w-fit max-w-full sm:max-w-3xl xl:max-w-4xl min-w-[280px] sm:min-w-[320px] flex flex-col">
               {filteredItems.map((item) => (
                 <NoteCard
                   key={item.id}

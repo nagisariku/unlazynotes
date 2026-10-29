@@ -33,9 +33,12 @@ async function main() {
     try {
       await bot.api.setMyCommands([
         { command: 'help', description: '💡 Panduan bot lengkap' },
+        { command: 'schedule', description: '🗓️ Jadwal mendatang & terlewat' },
         { command: 'read', description: '📖 Baca catatan terbaru' },
         { command: 'pin', description: '⭐️ Catatan tersemat' },
-        { command: 'sync_all', description: '🔄 Sync all catatan' },
+        { command: 'finance', description: '💰 Ringkasan laporan keuangan' },
+        { command: 'sync', description: '⚡ Sync 1 catatan terbaru' },
+        { command: 'sync_all', description: '🔄 Batch sync semua catatan' },
       ]);
       console.log('✅ Bot commands menu successfully registered.');
     } catch (cmdErr) {

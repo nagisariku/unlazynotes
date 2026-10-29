@@ -5,7 +5,7 @@ import VaultView from '../../components/dashboard/VaultView';
 import { getSessionUser } from '../../lib/session';
 import { db } from '../../db';
 import { notes, users, apiKeys } from '../../db/schema';
-import { eq, and, or, desc } from 'drizzle-orm';
+import { eq, and, or, desc, isNotNull } from 'drizzle-orm';
 import { decryptSecret } from '../../lib/crypto';
 
 export const prerender = false;
@@ -36,7 +36,11 @@ const vaultNotes = await db
   .where(
     and(
       eq(notes.userId, user.id),
-      or(eq(notes.category, 'credential'), eq(notes.isEncrypted, true))
+      or(
+        eq(notes.category, 'credential'),
+        eq(notes.isEncrypted, true),
+        isNotNull(notes.vaultKey)
+      )
     )
   )
   .orderBy(desc(notes.isPinned), desc(notes.createdAt))
@@ -60,6 +64,7 @@ const serializedVaultNotes = vaultNotes.map((n) => {
     source: n.source,
     isEncrypted: n.isEncrypted,
     vaultKey: n.vaultKey,
+    credentialType: n.credentialType,
     isPinned: n.isPinned,
     isProcessed: n.isProcessed,
     attachments: n.attachments,
@@ -78,7 +83,7 @@ const serializedVaultNotes = vaultNotes.map((n) => {
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 min-h-0 overflow-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-x-clip overflow-y-hidden [touch-action:pan-y]">
       <VaultView
         client:load
         initialVaultNotes={serializedVaultNotes}

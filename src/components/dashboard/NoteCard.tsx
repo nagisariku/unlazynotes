@@ -25,6 +25,7 @@ import {
   getLinkThumbnail,
   getLinkTitle,
 } from '../../lib/platform-icons';
+import { getCategoryTheme } from '../../lib/category-theme';
 
 export interface NoteCardItem {
   id: string;
@@ -120,6 +121,8 @@ export default function NoteCard({
       return String(note.createdAt);
     }
   })();
+
+  const theme = useMemo(() => getCategoryTheme(note.category), [note.category]);
 
   const urlRegex = /(https?:\/\/[^\s]+)/gi;
   const urls = useMemo(() => Array.from(new Set(note.content.match(urlRegex) || [])), [note.content]);
@@ -347,77 +350,80 @@ export default function NoteCard({
 
     return (
       <div className="flex items-center gap-1 shrink-0 ml-auto">
-        {/* 0. Sync AI Single-Note (Kondisional: catatan belum dikategorikan) */}
-        {isUncategorized && onSyncAi && canShowAction && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isSyncButtonDisabled) return;
-              onSyncAi(note);
-            }}
-            disabled={isSyncButtonDisabled}
-            className="p-1.5 rounded-full text-mute hover:text-primary hover:bg-surface-soft cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-mute disabled:hover:bg-transparent transition-colors !border-0"
-            title={
-              isSyncingAi
-                ? 'Sedang memproses catatan ini dengan AI...'
-                : isSyncButtonDisabled
-                ? 'Sedang ada proses sinkronisasi AI yang berjalan...'
-                : 'Kategorisasikan catatan ini dengan AI'
-            }
-            aria-label="Kategorisasi AI"
-          >
-            {isSyncingAi ? (
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-            ) : (
-              <Sparkles className="w-4 h-4 text-primary" />
-            )}
-          </button>
-        )}
+        {/* Secondary tools (Sync, Reader, Copy, Edit): reveal on desktop hover, always visible when toolbar is shown on mobile */}
+        <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-150">
+          {/* 0. Sync AI Single-Note (Kondisional: catatan belum dikategorikan) */}
+          {isUncategorized && onSyncAi && canShowAction && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isSyncButtonDisabled) return;
+                onSyncAi(note);
+              }}
+              disabled={isSyncButtonDisabled}
+              className="p-1.5 rounded-full text-mute hover:text-primary hover:bg-surface-soft cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-mute disabled:hover:bg-transparent transition-colors !border-0"
+              title={
+                isSyncingAi
+                  ? 'Sedang memproses catatan ini dengan AI...'
+                  : isSyncButtonDisabled
+                  ? 'Sedang ada proses sinkronisasi AI yang berjalan...'
+                  : 'Kategorisasikan catatan ini dengan AI'
+              }
+              aria-label="Kategorisasi AI"
+            >
+              {isSyncingAi ? (
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              ) : (
+                <Sparkles className="w-4 h-4 text-primary" />
+              )}
+            </button>
+          )}
 
-        {/* 1. Mode Baca (Kondisional: jika catatan memiliki URL/link) */}
-        {canShowReader && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenReader(note);
-            }}
-            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-            title="Buka Mode Baca (Ringkasan AI & Transkrip)"
-            aria-label="Mode Baca"
-          >
-            <BookOpen className="w-4 h-4" />
-          </button>
-        )}
+          {/* 1. Mode Baca (Kondisional: jika catatan memiliki URL/link) */}
+          {canShowReader && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenReader(note);
+              }}
+              className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+              title="Buka Mode Baca (Ringkasan AI & Transkrip)"
+              aria-label="Mode Baca"
+            >
+              <BookOpen className="w-4 h-4" />
+            </button>
+          )}
 
-        {/* 2. Salin (Universal di semua catatan) */}
-        {canShowAction && (
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-            title="Salin isi catatan"
-            aria-label="Salin catatan"
-          >
-            {copied ? <Check className="w-4 h-4 text-terminal-green" /> : <Copy className="w-4 h-4" />}
-          </button>
-        )}
+          {/* 2. Salin (Universal di semua catatan) */}
+          {canShowAction && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+              title="Salin isi catatan"
+              aria-label="Salin catatan"
+            >
+              {copied ? <Check className="w-4 h-4 text-terminal-green" /> : <Copy className="w-4 h-4" />}
+            </button>
+          )}
 
-        {/* 3. Edit (Universal di semua catatan jika onEdit tersedia) */}
-        {canShowAction && onEdit && (
-          <button
-            type="button"
-            onClick={handleEdit}
-            className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
-            title="Edit catatan"
-            aria-label="Edit catatan"
-          >
-            <Pencil className="w-4 h-4" />
-          </button>
-        )}
+          {/* 3. Edit (Universal di semua catatan jika onEdit tersedia) */}
+          {canShowAction && onEdit && (
+            <button
+              type="button"
+              onClick={handleEdit}
+              className="p-1.5 rounded-full text-mute hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors !border-0"
+              title="Edit catatan"
+              aria-label="Edit catatan"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
-        {/* 4. Pin (Universal di semua catatan) */}
+        {/* 4. Pin (Universal di semua catatan - Always visible by default on desktop) */}
         <button
           type="button"
           onClick={handleTogglePinInternal}
@@ -439,7 +445,7 @@ export default function NoteCard({
           )}
         </button>
 
-        {/* 5. Hapus (Universal di semua catatan) */}
+        {/* 5. Hapus (Universal di semua catatan - Always visible by default on desktop) */}
         <button
           type="button"
           onClick={handleDelete}
@@ -488,8 +494,8 @@ export default function NoteCard({
             } ${
               isExpanded && isMobile
                 ? '!bg-zinc-100 !border !border-hairline-strong !p-3.5 !rounded-lg my-2 shadow-xs cursor-default select-text'
-                : 'px-1 sm:px-2 py-3.5 rounded-none border-0 border-b border-hairline last:border-b-0 bg-transparent hover:bg-surface-soft/40 cursor-pointer select-none mb-0'
-            } text-left break-inside-avoid w-full overflow-hidden transition-all ${className}`.trim()
+                : 'px-1 sm:px-2 py-3.5 rounded-none border-b border-hairline bg-transparent hover:bg-surface-soft/40 cursor-pointer select-none mb-0'
+            } text-left break-inside-avoid w-full max-w-full overflow-hidden transition-all ${className}`.trim()
           : isTimeline
           ? `group relative flex flex-col justify-between ${
               isSelected ? '!ring-2 !ring-primary !border-primary bg-primary/5' : ''
@@ -539,6 +545,11 @@ export default function NoteCard({
             {/* 1. Top row: Favicon + domain on left, Badge read & Badge AI on right */}
             <div className="flex items-center justify-between gap-2 mb-2 select-none">
               <div className="flex items-center gap-1.5 min-w-0">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${theme.dot}`}
+                  title={note.category || 'bookmark'}
+                  aria-hidden="true"
+                />
                 {favicon ? (
                   <img
                     src={favicon}
@@ -706,7 +717,7 @@ export default function NoteCard({
             className={`flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none min-h-[26px] ${
               (isExpanded && isMobile) || confirmDelete
                 ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100'
+                : 'opacity-0 md:opacity-100'
             } transition-opacity duration-150`}
           >
             {/* Left: Category badge & Temp badge */}
@@ -769,25 +780,32 @@ export default function NoteCard({
             )}
 
             {/* Notes Content: fully revealed without max height when expanded on mobile, selectable */}
-            <div
-              onClick={(e) => {
-                if (isExpanded && isMobile) {
-                  e.stopPropagation();
-                }
-              }}
-              className={`text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal ${
-                isExpanded && isMobile
-                  ? 'select-text cursor-text whitespace-pre-wrap line-clamp-none'
-                  : 'select-none whitespace-normal'
-              } ${
-                isExpanded && isMobile
-                  ? 'line-clamp-none'
-                  : effectiveMaxHeight
-                  ? `overflow-hidden ${effectiveMaxHeight}`
-                  : 'line-clamp-none'
-              }`}
-            >
-              {isExpanded && isMobile ? note.content : compactContent}
+            <div className="flex items-start gap-2">
+              <span
+                className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${theme.dot}`}
+                title={note.category || 'others'}
+                aria-hidden="true"
+              />
+              <div
+                onClick={(e) => {
+                  if (isExpanded && isMobile) {
+                    e.stopPropagation();
+                  }
+                }}
+                className={`flex-1 min-w-0 text-body-sm text-ink leading-relaxed break-words [overflow-wrap:anywhere] font-normal ${
+                  isExpanded && isMobile
+                    ? 'select-text cursor-text whitespace-pre-wrap line-clamp-none'
+                    : 'select-none whitespace-normal'
+                } ${
+                  isExpanded && isMobile
+                    ? 'line-clamp-none'
+                    : effectiveMaxHeight
+                    ? `overflow-hidden ${effectiveMaxHeight}`
+                    : 'line-clamp-none'
+                }`}
+              >
+                {isExpanded && isMobile ? note.content : compactContent}
+              </div>
             </div>
 
             {/* Embedded URL Link Cards when expanded on mobile */}
@@ -879,7 +897,7 @@ export default function NoteCard({
             className={`flex items-center justify-between gap-1.5 mt-2.5 pt-0.5 select-none min-h-[26px] ${
               (isExpanded && isMobile) || confirmDelete
                 ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100'
+                : 'opacity-0 md:opacity-100'
             } transition-opacity duration-150`}
           >
             {/* Left: Category badge & Temp badge */}
@@ -913,6 +931,15 @@ export default function NoteCard({
           </div>
         </div>
       )}
+
+      {/* Category Colored Bottom Accent Line (matching GitHub repository card preview) */}
+      {/* Hidden on unexpanded mobile view; only visible on desktop or when expanded on mobile */}
+      <div
+        className={`absolute bottom-0 left-0 right-0 pointer-events-none transition-all h-1 ${
+          isExpanded && isMobile ? 'block' : 'hidden md:block'
+        } ${theme.line}`}
+        aria-hidden="true"
+      />
     </div>
   );
 }

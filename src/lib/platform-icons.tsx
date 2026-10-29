@@ -88,6 +88,38 @@ export function TiktokIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+export function SpotifyIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z" />
+    </svg>
+  );
+}
+
+export function FigmaIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M5.5 0C4.12 0 3 1.12 3 2.5v4C3 7.88 4.12 9 5.5 9H9V0H5.5zm7 0H9v9h3.5C13.88 9 15 7.88 15 6.5V2.5C15 1.12 13.88 0 12.5 0zM3 11.5c0-1.38 1.12-2.5 2.5-2.5H9v9H5.5C4.12 18 3 16.88 3 15.5v-4zm9-2.5H9v9h3.5c1.38 0 2.5-1.12 2.5-2.5v-4c0-1.38-1.12-2.5-2.5-2.5zM5.5 18C4.12 18 3 19.12 3 20.5S4.12 23 5.5 23 8 21.88 8 20.5V18H5.5z" />
+    </svg>
+  );
+}
+
+export function GoogleMapsIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+    </svg>
+  );
+}
+
+export function GoogleDocsIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2zm1 14h-7v-2h7v2zm0-4h-7v-2h7v2zm-2-5V3.5L18.5 7H13.5z" />
+    </svg>
+  );
+}
+
 export interface PlatformInfo {
   domain: string;
   label: string;
@@ -128,6 +160,18 @@ export function getUrlPlatformInfo(url: string): PlatformInfo {
   }
   if (domain.includes('tiktok.com')) {
     return { domain, label: 'TikTok', icon: TiktokIcon };
+  }
+  if (domain.includes('spotify.com')) {
+    return { domain, label: 'Spotify', icon: SpotifyIcon };
+  }
+  if (domain.includes('figma.com')) {
+    return { domain, label: 'Figma', icon: FigmaIcon };
+  }
+  if (domain.includes('maps.google.') || domain.includes('maps.app.goo.gl') || url.includes('google.com/maps')) {
+    return { domain, label: 'Google Maps', icon: GoogleMapsIcon };
+  }
+  if (domain.includes('docs.google.com') || domain.includes('drive.google.com')) {
+    return { domain, label: 'Google Docs', icon: GoogleDocsIcon };
   }
 
   return { domain, label: domain || 'Link', icon: Globe };
@@ -219,4 +263,164 @@ export function isDomainUnsupportedForAi(url: string): { unsupported: boolean; r
     }
   } catch {}
   return { unsupported: false };
+}
+
+export type CanonicalPlatformKey =
+  | 'youtube'
+  | 'github'
+  | 'twitter'
+  | 'instagram'
+  | 'tiktok'
+  | 'spotify'
+  | 'figma'
+  | 'reddit'
+  | 'medium'
+  | 'linkedin'
+  | 'threads'
+  | 'maps'
+  | 'google_docs'
+  | 'other';
+
+export function resolveBookmarkPlatform(
+  url?: string | null,
+  source?: string | null,
+  tags?: string[] | null
+): {
+  key: CanonicalPlatformKey | string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+} {
+  const cleanSource = (source || '').toLowerCase().trim();
+  const cleanTags = (tags || []).map((t) => t.toLowerCase().trim());
+  const cleanUrl = (url || '').trim();
+
+  // 1. YouTube
+  if (
+    cleanSource === 'youtube' ||
+    cleanTags.includes('youtube') ||
+    cleanUrl.includes('youtube.com') ||
+    cleanUrl.includes('youtu.be')
+  ) {
+    return { key: 'youtube', label: 'YouTube', icon: YoutubeIcon };
+  }
+
+  // 2. GitHub
+  if (
+    cleanSource === 'github' ||
+    cleanTags.includes('github') ||
+    cleanUrl.includes('github.com')
+  ) {
+    return { key: 'github', label: 'GitHub', icon: GithubIcon };
+  }
+
+  // 3. Twitter / X
+  if (
+    cleanSource === 'twitter' ||
+    cleanSource === 'x' ||
+    cleanTags.includes('twitter') ||
+    cleanTags.includes('x') ||
+    cleanUrl.includes('twitter.com') ||
+    cleanUrl.includes('x.com')
+  ) {
+    return { key: 'twitter', label: 'X (Twitter)', icon: TwitterIcon };
+  }
+
+  // 4. Instagram
+  if (
+    cleanSource === 'instagram' ||
+    cleanTags.includes('instagram') ||
+    cleanUrl.includes('instagram.com')
+  ) {
+    return { key: 'instagram', label: 'Instagram', icon: InstagramIcon };
+  }
+
+  // 5. TikTok
+  if (
+    cleanSource === 'tiktok' ||
+    cleanTags.includes('tiktok') ||
+    cleanUrl.includes('tiktok.com')
+  ) {
+    return { key: 'tiktok', label: 'TikTok', icon: TiktokIcon };
+  }
+
+  // 6. Spotify
+  if (
+    cleanSource === 'spotify' ||
+    cleanTags.includes('spotify') ||
+    cleanUrl.includes('spotify.com')
+  ) {
+    return { key: 'spotify', label: 'Spotify', icon: SpotifyIcon };
+  }
+
+  // 7. Figma
+  if (
+    cleanSource === 'figma' ||
+    cleanTags.includes('figma') ||
+    cleanUrl.includes('figma.com')
+  ) {
+    return { key: 'figma', label: 'Figma', icon: FigmaIcon };
+  }
+
+  // 8. Reddit
+  if (
+    cleanSource === 'reddit' ||
+    cleanTags.includes('reddit') ||
+    cleanUrl.includes('reddit.com')
+  ) {
+    return { key: 'reddit', label: 'Reddit', icon: RedditIcon };
+  }
+
+  // 9. Medium
+  if (
+    cleanSource === 'medium' ||
+    cleanTags.includes('medium') ||
+    cleanUrl.includes('medium.com')
+  ) {
+    return { key: 'medium', label: 'Medium', icon: MediumIcon };
+  }
+
+  // 10. LinkedIn
+  if (
+    cleanSource === 'linkedin' ||
+    cleanTags.includes('linkedin') ||
+    cleanUrl.includes('linkedin.com')
+  ) {
+    return { key: 'linkedin', label: 'LinkedIn', icon: LinkedinIcon };
+  }
+
+  // 11. Threads
+  if (
+    cleanSource === 'threads' ||
+    cleanTags.includes('threads') ||
+    cleanUrl.includes('threads.net')
+  ) {
+    return { key: 'threads', label: 'Threads', icon: ThreadsIcon };
+  }
+
+  // 12. Google Maps
+  if (
+    cleanSource === 'maps' ||
+    cleanTags.includes('maps') ||
+    cleanUrl.includes('maps.google.') ||
+    cleanUrl.includes('maps.app.goo.gl') ||
+    cleanUrl.includes('google.com/maps')
+  ) {
+    return { key: 'maps', label: 'Google Maps', icon: GoogleMapsIcon };
+  }
+
+  // 13. Google Docs / Drive
+  if (
+    cleanSource === 'google-docs' ||
+    cleanSource === 'google-drive' ||
+    cleanSource === 'drive' ||
+    cleanTags.includes('drive') ||
+    cleanTags.includes('google-docs') ||
+    cleanUrl.includes('docs.google.com') ||
+    cleanUrl.includes('drive.google.com')
+  ) {
+    return { key: 'google_docs', label: 'Google Docs', icon: GoogleDocsIcon };
+  }
+
+  // Fallback: Web & Artikel
+  return { key: 'other', label: 'Web & Artikel', icon: Globe };
 }

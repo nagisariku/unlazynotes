@@ -18,7 +18,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
-import { format, isThisMonth, subMonths } from 'date-fns';
+import { format, isThisMonth, isThisWeek, subMonths, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { SearchPill } from '../ui';
@@ -26,7 +26,7 @@ import NoteDetailModal from './NoteDetailModal';
 import QuickComposerModal from './QuickComposerModal';
 import AskAiButton from './AskAiButton';
 import AskAiModal from './AskAiModal';
-import NotesFilterPopover, { type FinanceDateFilter } from './NotesFilterPopover';
+import NotesFilterPopover, { type FinanceDateFilter, type FinanceFilterState } from './NotesFilterPopover';
 import type { NoteItem } from './NotesTimeline';
 import type { ExpenseEntry, IncomeEntry, DebtEntry } from '@/db/schema';
 
@@ -106,13 +106,13 @@ function FinanceChartCard({
   }, [currentPoints]);
 
   return (
-    <div className="p-4 sm:p-5 rounded-xl border border-hairline bg-canvas flex flex-col justify-between space-y-3 hover:border-hairline-strong transition-all">
+    <div className="p-4 sm:p-5 rounded-xl border border-hairline bg-canvas flex flex-col justify-between space-y-3.5 hover:border-hairline-strong transition-all">
       {/* Header Grafik & Interval Toggle Buttons */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {Icon && <Icon className="w-4.5 h-4.5 text-mute shrink-0" />}
-            <h3 className="text-body-strong font-medium text-ink truncate font-sans">{title}</h3>
+          <div className="flex items-center gap-2.5 min-w-0">
+            {Icon && <Icon className="w-5 h-5 text-mute shrink-0" />}
+            <h3 className="text-heading-sm font-semibold text-ink truncate font-sans">{title}</h3>
           </div>
 
           {/* Mode View Tabs: Daily, Weekly, Monthly */}
@@ -122,9 +122,9 @@ function FinanceChartCard({
                 key={mode}
                 type="button"
                 onClick={() => setInterval(mode)}
-                className={`px-2.5 py-0.5 rounded-full text-caption-xs font-sans capitalize cursor-pointer transition-colors ${
+                className={`px-3 py-1 rounded-full text-caption-sm font-sans capitalize cursor-pointer transition-colors ${
                   interval === mode
-                    ? 'bg-primary text-on-primary font-medium'
+                    ? 'bg-primary text-on-primary font-semibold'
                     : 'text-body hover:text-ink'
                 }`}
               >
@@ -136,15 +136,15 @@ function FinanceChartCard({
       </div>
 
       {/* Rangkuman Total Periode Terpilih */}
-      <div className="flex items-baseline justify-between pt-0.5 text-caption-xs text-body font-sans">
+      <div className="flex items-baseline justify-between pt-1 text-caption-sm text-body font-sans">
         <span className="capitalize">Total ({interval})</span>
-        <span className="font-semibold text-ink tabular-nums text-caption-sm font-sans">
+        <span className="font-semibold text-ink tabular-nums text-body-sm font-sans">
           Rp {totalSum.toLocaleString('id-ID')}
         </span>
       </div>
 
       {/* Responsive Recharts Container */}
-      <div className="w-full h-48 select-none pt-1">
+      <div className="w-full h-56 select-none pt-1">
         {isMounted ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={currentPoints} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
@@ -171,9 +171,9 @@ function FinanceChartCard({
                   if (active && payload && payload.length) {
                     const data = payload[0].payload as ProcessedChartItem;
                     return (
-                      <div className="rounded-lg border border-hairline bg-canvas p-2 shadow-sm text-caption-xs font-sans">
+                      <div className="rounded-lg border border-hairline bg-canvas p-2.5 shadow-sm text-caption-sm font-sans">
                         <p className="font-semibold text-ink">{data.label}</p>
-                        <p className="text-body font-sans text-caption-xs mt-0.5 tabular-nums">
+                        <p className="text-body font-sans text-caption-sm mt-0.5 tabular-nums">
                           Rp {Number(data.value).toLocaleString('id-ID')}
                         </p>
                       </div>
@@ -198,7 +198,11 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
   const [notesList, setNotesList] = useState<FinanceNoteItem[]>(initialNotes);
   const [searchQuery, setSearchQuery] = useState('');
   // Data default yang ditampilkan: data bulan aktif (this_month)
-  const [dateFilter, setDateFilter] = useState<FinanceDateFilter>('this_month');
+  const [dateFilter, setDateFilter] = useState<FinanceFilterState>({
+    dateRange: 'this_month',
+    startDate: '',
+    endDate: '',
+  });
   const [isFilterOpen, setIsFilterOpen] = useState(false);
 
   // Modals
@@ -297,17 +301,33 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
     return list.sort((a, b) => b.date.getTime() - a.date.getTime());
   }, [notesList]);
 
-  // Filter helper: check date by this_month, last_month, or all
+  // Filter helper: check date by this_week, this_month, last_month, all, or custom date range
   const matchesDateFilter = (itemDate: Date) => {
-    if (dateFilter === 'this_month') {
+    if (dateFilter.dateRange === 'this_week') {
+      return isThisWeek(itemDate, { weekStartsOn: 1 });
+    }
+    if (dateFilter.dateRange === 'this_month') {
       return isThisMonth(itemDate);
     }
-    if (dateFilter === 'last_month') {
+    if (dateFilter.dateRange === 'last_month') {
       const lastMonth = subMonths(new Date(), 1);
       return (
         itemDate.getFullYear() === lastMonth.getFullYear() &&
         itemDate.getMonth() === lastMonth.getMonth()
       );
+    }
+    if (dateFilter.dateRange === 'custom') {
+      if (dateFilter.startDate) {
+        const start = parseISO(dateFilter.startDate);
+        start.setHours(0, 0, 0, 0);
+        if (itemDate < start) return false;
+      }
+      if (dateFilter.endDate) {
+        const end = parseISO(dateFilter.endDate);
+        end.setHours(23, 59, 59, 999);
+        if (itemDate > end) return false;
+      }
+      return true;
     }
     return true; // 'all'
   };
@@ -525,7 +545,7 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
   };
 
   return (
-    <div className="w-full max-w-[1680px] 2xl:max-w-[1760px] px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
+    <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
       {/* 1. Header (Matching Todo, Workspace & Admin Style) */}
       <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -542,16 +562,16 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+        <div className="hidden sm:flex items-center gap-3 self-start sm:self-center shrink-0">
           <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Finance" />
         </div>
       </div>
 
       {/* 2. Controls Row: Searchbox + Filter button (Sticky on Mobile & Desktop, solid white background flush at top) */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 !mt-0 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 !mt-0 flex items-center justify-between gap-3 min-w-0">
+        <div className="flex items-center gap-2 w-full min-w-0 sm:w-auto">
           <SearchPill
-            wrapperClassName="flex-1 sm:w-72 md:w-80"
+            wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Cari transaksi, item, nama..."
@@ -561,18 +581,26 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
             type="button"
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 relative transition-colors ${
-              isFilterOpen || dateFilter !== 'this_month'
+              isFilterOpen || dateFilter.dateRange !== 'this_month' || Boolean(dateFilter.startDate)
                 ? 'bg-primary text-on-primary'
                 : 'bg-surface-soft text-ink hover:bg-canvas'
             }`}
-            title="Filter periode transaksi (Bulan Ini, Bulan Lalu, Semua Waktu)"
+            title="Filter periode transaksi keuangan"
             aria-label="Toggle filter menu"
           >
             <SlidersHorizontal className="w-4.5 h-4.5" />
-            {dateFilter !== 'this_month' && (
-              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-terminal-yellow border-2 border-canvas" />
+            {(dateFilter.dateRange !== 'this_month' || Boolean(dateFilter.startDate)) && (
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-terminal-yellow border border-canvas" />
             )}
           </button>
+
+          {/* Mobile Ask AI Button (Circle box next to searchbox) */}
+          <AskAiButton
+            onClick={() => setIsAskAiOpen(true)}
+            label="Ask Finance"
+            variant="circle"
+            className="sm:hidden"
+          />
         </div>
       </div>
 
@@ -584,69 +612,84 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
 
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Card 1: Pengeluaran */}
-          <div className="p-4 sm:p-4.5 min-h-[105px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
+          <div className="p-4 sm:p-5 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
               <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
                 Pengeluaran
               </span>
-              <TrendingDown className="w-4 h-4 text-mute" />
+              <TrendingDown className="w-4.5 h-4.5 text-mute" />
             </div>
-            <div className="mt-3">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate">
-                Rp {totalExpenses.toLocaleString('id-ID')}
+            <div className="mt-2 sm:mt-3 flex flex-col">
+              <span className="text-caption-xs sm:text-caption-sm font-medium text-mute uppercase tracking-wider">
+                Rp
+              </span>
+              <span className="text-heading-sm sm:text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate leading-tight mt-0.5">
+                {totalExpenses.toLocaleString('id-ID')}
               </span>
             </div>
           </div>
 
           {/* Card 2: Pemasukan */}
-          <div className="p-4 sm:p-4.5 min-h-[105px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
+          <div className="p-4 sm:p-5 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
               <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
                 Pemasukan
               </span>
-              <TrendingUp className="w-4 h-4 text-mute" />
+              <TrendingUp className="w-4.5 h-4.5 text-mute" />
             </div>
-            <div className="mt-3">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate">
-                Rp {totalIncome.toLocaleString('id-ID')}
+            <div className="mt-2 sm:mt-3 flex flex-col">
+              <span className="text-caption-xs sm:text-caption-sm font-medium text-mute uppercase tracking-wider">
+                Rp
+              </span>
+              <span className="text-heading-sm sm:text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate leading-tight mt-0.5">
+                {totalIncome.toLocaleString('id-ID')}
               </span>
             </div>
           </div>
 
           {/* Card 3: Net Cashflow */}
-          <div className="p-4 sm:p-4.5 min-h-[105px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
+          <div className="p-4 sm:p-5 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
               <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
                 Net Cashflow
               </span>
-              <Scale className="w-4 h-4 text-mute" />
+              <Scale className="w-4.5 h-4.5 text-mute" />
             </div>
-            <div className="mt-3">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate">
-                {netCashflow >= 0 ? '+' : ''}Rp {netCashflow.toLocaleString('id-ID')}
+            <div className="mt-2 sm:mt-3 flex flex-col">
+              <span className="text-caption-xs sm:text-caption-sm font-medium text-mute uppercase tracking-wider">
+                Rp
+              </span>
+              <span className="text-heading-sm sm:text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate leading-tight mt-0.5">
+                {netCashflow > 0 ? `+${netCashflow.toLocaleString('id-ID')}` : netCashflow.toLocaleString('id-ID')}
               </span>
             </div>
           </div>
 
           {/* Card 4: Buku Pinjaman (Hanya menghitung yang belum lunas) */}
-          <div className="p-4 sm:p-4.5 min-h-[105px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
+          <div className="p-4 sm:p-5 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
               <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
                 Buku Pinjaman
               </span>
-              <HandCoins className="w-4 h-4 text-mute" />
+              <HandCoins className="w-4.5 h-4.5 text-mute" />
             </div>
-            <div className="mt-2 text-caption-xs text-body space-y-1 font-sans">
-              <div className="flex justify-between items-center">
-                <span>Piutang (Tagih):</span>
-                <span className="font-semibold text-terminal-green font-sans tabular-nums">
-                  Rp {totalReceivable.toLocaleString('id-ID')}
+            <div className="mt-2 text-body-sm text-body space-y-1.5 font-sans">
+              <div className="flex flex-col">
+                <span className="text-mute text-caption-xs font-medium">
+                  Piutang (Tagih):
+                </span>
+                <span className="font-semibold text-terminal-green font-sans tabular-nums text-body-sm sm:text-body-strong truncate">
+                  <span className="text-caption-xs font-medium text-mute mr-1">Rp</span>
+                  {totalReceivable.toLocaleString('id-ID')}
                 </span>
               </div>
-              <div className="flex justify-between items-center">
-                <span>Utang (Bayar):</span>
-                <span className="font-semibold text-terminal-red font-sans tabular-nums">
-                  Rp {totalPayable.toLocaleString('id-ID')}
+              <div className="flex flex-col">
+                <span className="text-mute text-caption-xs font-medium">
+                  Utang (Bayar):
+                </span>
+                <span className="font-semibold text-terminal-red font-sans tabular-nums text-body-sm sm:text-body-strong truncate">
+                  <span className="text-caption-xs font-medium text-mute mr-1">Rp</span>
+                  {totalPayable.toLocaleString('id-ID')}
                 </span>
               </div>
             </div>
@@ -680,127 +723,125 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           {/* Tabel 1: Pengeluaran (Expenses) */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-0.5">
-              <TrendingDown className="w-4 h-4 text-mute shrink-0" />
-              <h3 className="text-caption-sm font-semibold text-ink font-sans">
+              <TrendingDown className="w-4.5 h-4.5 text-mute shrink-0" />
+              <h3 className="text-body-sm font-semibold text-ink font-sans">
                 Pengeluaran
               </h3>
             </div>
 
-            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-
-            <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
-              <table className="w-full text-left text-caption-sm relative font-sans">
-                <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-xs font-sans font-medium border-b border-hairline">
-                  <tr>
-                    <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
-                    <th className="py-2.5 px-3 font-semibold">Deskripsi</th>
-                    <th className="py-2.5 px-3 font-semibold text-right w-32 whitespace-nowrap">Nominal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredExpenses.length === 0 ? (
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col min-h-[300px] sm:min-h-[340px]">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto flex-1">
+                <table className="w-full text-left text-body-sm relative font-sans">
+                  <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-sm font-sans font-medium">
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-mute text-caption-sm">
-                        Tidak ada pengeluaran pada periode ini.
-                      </td>
+                      <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
+                      <th className="py-2.5 px-3 font-semibold">Deskripsi</th>
+                      <th className="py-2.5 px-3 font-semibold text-right w-36 whitespace-nowrap">Nominal</th>
                     </tr>
-                  ) : (
-                    filteredExpenses.map((tx) => (
-                      <tr
-                        key={tx.id}
-                        className="hover:bg-surface-soft/60 transition-colors"
-                      >
-                        <td className="py-2.5 px-3 text-caption-sm text-body font-sans tabular-nums whitespace-nowrap align-top">
-                          {format(tx.date, 'd MMM yyyy', { locale: localeId })}
-                        </td>
-                        <td className="py-2.5 px-3 text-caption-sm font-medium text-ink align-top">
-                          <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
-                            <span>{tx.title}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(tx.rawNote)}
-                              className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
-                              title="Lihat catatan asli"
-                              aria-label="Lihat catatan asli"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-sans text-caption-sm font-medium tabular-nums whitespace-nowrap text-ink align-top">
-                          Rp {tx.amount.toLocaleString('id-ID')}
+                  </thead>
+                  <tbody>
+                    {filteredExpenses.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="h-60 sm:h-72 text-center text-mute text-body-sm align-middle">
+                          Tidak ada pengeluaran pada periode ini.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredExpenses.map((tx) => (
+                        <tr
+                          key={tx.id}
+                          className="hover:bg-surface-soft/60 transition-colors"
+                        >
+                          <td className="py-2.5 px-3 text-body-sm text-body font-sans tabular-nums whitespace-nowrap align-top">
+                            {format(tx.date, 'd MMM yyyy', { locale: localeId })}
+                          </td>
+                          <td className="py-2.5 px-3 text-body-sm font-medium text-ink align-top">
+                            <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
+                              <span>{tx.title}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(tx.rawNote)}
+                                className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
+                                title="Lihat catatan asli"
+                                aria-label="Lihat catatan asli"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-sans text-body-sm font-medium tabular-nums whitespace-nowrap text-ink align-top">
+                            Rp {tx.amount.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
           </div>
 
           {/* Tabel 2: Pemasukan (Income) */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-0.5">
-              <TrendingUp className="w-4 h-4 text-mute shrink-0" />
-              <h3 className="text-caption-sm font-semibold text-ink font-sans">
+              <TrendingUp className="w-4.5 h-4.5 text-mute shrink-0" />
+              <h3 className="text-body-sm font-semibold text-ink font-sans">
                 Pemasukan
               </h3>
             </div>
 
-            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-
-            <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
-              <table className="w-full text-left text-caption-sm relative font-sans">
-                <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-xs font-sans font-medium border-b border-hairline">
-                  <tr>
-                    <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
-                    <th className="py-2.5 px-3 font-semibold">Deskripsi</th>
-                    <th className="py-2.5 px-3 font-semibold text-right w-32 whitespace-nowrap">Nominal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredIncome.length === 0 ? (
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col min-h-[300px] sm:min-h-[340px]">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto flex-1">
+                <table className="w-full text-left text-body-sm relative font-sans">
+                  <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-sm font-sans font-medium">
                     <tr>
-                      <td colSpan={3} className="py-8 text-center text-mute text-caption-sm">
-                        Tidak ada pemasukan pada periode ini.
-                      </td>
+                      <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
+                      <th className="py-2.5 px-3 font-semibold">Deskripsi</th>
+                      <th className="py-2.5 px-3 font-semibold text-right w-36 whitespace-nowrap">Nominal</th>
                     </tr>
-                  ) : (
-                    filteredIncome.map((tx) => (
-                      <tr
-                        key={tx.id}
-                        className="hover:bg-surface-soft/60 transition-colors"
-                      >
-                        <td className="py-2.5 px-3 text-caption-sm text-body font-sans tabular-nums whitespace-nowrap align-top">
-                          {format(tx.date, 'd MMM yyyy', { locale: localeId })}
-                        </td>
-                        <td className="py-2.5 px-3 text-caption-sm font-medium text-ink align-top">
-                          <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
-                            <span>{tx.title}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(tx.rawNote)}
-                              className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
-                              title="Lihat catatan asli"
-                              aria-label="Lihat catatan asli"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-sans text-caption-sm font-medium tabular-nums whitespace-nowrap text-terminal-green align-top">
-                          +Rp {tx.amount.toLocaleString('id-ID')}
+                  </thead>
+                  <tbody>
+                    {filteredIncome.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="h-60 sm:h-72 text-center text-mute text-body-sm align-middle">
+                          Tidak ada pemasukan pada periode ini.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredIncome.map((tx) => (
+                        <tr
+                          key={tx.id}
+                          className="hover:bg-surface-soft/60 transition-colors"
+                        >
+                          <td className="py-2.5 px-3 text-body-sm text-body font-sans tabular-nums whitespace-nowrap align-top">
+                            {format(tx.date, 'd MMM yyyy', { locale: localeId })}
+                          </td>
+                          <td className="py-2.5 px-3 text-body-sm font-medium text-ink align-top">
+                            <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
+                              <span>{tx.title}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(tx.rawNote)}
+                                className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
+                                title="Lihat catatan asli"
+                                aria-label="Lihat catatan asli"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-sans text-body-sm font-medium tabular-nums whitespace-nowrap text-terminal-green align-top">
+                            +Rp {tx.amount.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
 
       {/* 5. Section: Buku Pinjaman (Dipecah jadi 2 tabel terpisah: Piutang & Utang, dengan status Lunas 1-klik switch/checkbox) */}
@@ -813,201 +854,199 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
           {/* Tabel 1: Piutang (Receivable - Hak Tagih) */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-0.5">
-              <HandCoins className="w-4 h-4 text-mute shrink-0" />
-              <h3 className="text-caption-sm font-semibold text-ink font-sans">
+              <HandCoins className="w-4.5 h-4.5 text-mute shrink-0" />
+              <h3 className="text-body-sm font-semibold text-ink font-sans">
                 Piutang (Hak Tagih)
               </h3>
             </div>
 
-            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-
-            <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
-              <table className="w-full text-left text-caption-sm relative font-sans">
-                <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-xs font-sans font-medium border-b border-hairline">
-                  <tr>
-                    <th className="py-2.5 px-3 font-semibold w-12 text-center whitespace-nowrap">Status</th>
-                    <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
-                    <th className="py-2.5 px-3 font-semibold">Pihak / Keterangan</th>
-                    <th className="py-2.5 px-3 font-semibold text-right w-32 whitespace-nowrap">Nominal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReceivables.length === 0 ? (
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col min-h-[300px] sm:min-h-[340px]">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto flex-1">
+                <table className="w-full text-left text-body-sm relative font-sans">
+                  <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-sm font-sans font-medium">
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-mute text-caption-sm">
-                        Tidak ada catatan piutang pada periode ini.
-                      </td>
+                      <th className="py-2.5 px-3 font-semibold w-12 text-center whitespace-nowrap">Status</th>
+                      <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
+                      <th className="py-2.5 px-3 font-semibold">Pihak / Keterangan</th>
+                      <th className="py-2.5 px-3 font-semibold text-right w-36 whitespace-nowrap">Nominal</th>
                     </tr>
-                  ) : (
-                    filteredReceivables.map((d) => (
-                      <tr
-                        key={d.id}
-                        className={`hover:bg-surface-soft/60 transition-colors ${
-                          d.isSettled ? 'opacity-60' : ''
-                        }`}
-                      >
-                        <td className="py-2.5 px-3 w-12 text-center align-top">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleDebtSettled(d)}
-                            className={`w-5 h-5 rounded-[4px] border flex items-center justify-center cursor-pointer shrink-0 transition-colors mx-auto ${
-                              d.isSettled
-                                ? 'bg-ink border-ink text-canvas'
-                                : 'border-hairline-strong bg-canvas hover:border-ink'
-                            }`}
-                            title={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
-                            aria-label={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
-                          >
-                            {d.isSettled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </button>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-caption-sm font-sans tabular-nums whitespace-nowrap align-top ${
-                            d.isSettled ? 'line-through text-mute' : 'text-body'
-                          }`}
-                        >
-                          {format(d.date, 'd MMM yyyy', { locale: localeId })}
-                        </td>
-                        <td className="py-2.5 px-3 text-caption-sm font-medium text-ink align-top">
-                          <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
-                            <span
-                              className={
-                                d.isSettled ? 'line-through text-mute font-normal' : 'text-ink'
-                              }
-                            >
-                              {d.person}
-                              {d.notes && (
-                                <span className="text-mute font-normal ml-1">({d.notes})</span>
-                              )}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(d.rawNote)}
-                              className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
-                              title="Lihat catatan asli"
-                              aria-label="Lihat catatan asli"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-right font-sans text-caption-sm font-medium tabular-nums whitespace-nowrap align-top ${
-                            d.isSettled
-                              ? 'line-through text-mute'
-                              : 'text-terminal-green'
-                          }`}
-                        >
-                          Rp {d.amount.toLocaleString('id-ID')}
+                  </thead>
+                  <tbody>
+                    {filteredReceivables.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="h-60 sm:h-72 text-center text-mute text-body-sm align-middle">
+                          Tidak ada catatan piutang pada periode ini.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredReceivables.map((d) => (
+                        <tr
+                          key={d.id}
+                          className={`hover:bg-surface-soft/60 transition-colors ${
+                            d.isSettled ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <td className="py-2.5 px-3 w-12 text-center align-top">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDebtSettled(d)}
+                              className={`w-5 h-5 rounded-[4px] border flex items-center justify-center cursor-pointer shrink-0 transition-colors mx-auto ${
+                                d.isSettled
+                                  ? 'bg-ink border-ink text-canvas'
+                                  : 'border-hairline-strong bg-canvas hover:border-ink'
+                              }`}
+                              title={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
+                              aria-label={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
+                            >
+                              {d.isSettled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </button>
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-body-sm font-sans tabular-nums whitespace-nowrap align-top ${
+                              d.isSettled ? 'line-through text-mute' : 'text-body'
+                            }`}
+                          >
+                            {format(d.date, 'd MMM yyyy', { locale: localeId })}
+                          </td>
+                          <td className="py-2.5 px-3 text-body-sm font-medium text-ink align-top">
+                            <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
+                              <span
+                                className={
+                                  d.isSettled ? 'line-through text-mute font-normal' : 'text-ink'
+                                }
+                              >
+                                {d.person}
+                                {d.notes && (
+                                  <span className="text-mute font-normal ml-1">({d.notes})</span>
+                                )}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(d.rawNote)}
+                                className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
+                                title="Lihat catatan asli"
+                                aria-label="Lihat catatan asli"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-right font-sans text-body-sm font-medium tabular-nums whitespace-nowrap align-top ${
+                              d.isSettled
+                                ? 'line-through text-mute'
+                                : 'text-terminal-green'
+                            }`}
+                          >
+                            Rp {d.amount.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
           </div>
 
           {/* Tabel 2: Utang (Payable - Kewajiban Bayar) */}
           <div className="space-y-2">
             <div className="flex items-center gap-2 px-0.5">
-              <HandCoins className="w-4 h-4 text-mute shrink-0" />
-              <h3 className="text-caption-sm font-semibold text-ink font-sans">
+              <HandCoins className="w-4.5 h-4.5 text-mute shrink-0" />
+              <h3 className="text-body-sm font-semibold text-ink font-sans">
                 Utang (Kewajiban Bayar)
               </h3>
             </div>
 
-            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col">
-
-            <div className="overflow-x-auto max-h-[440px] overflow-y-auto">
-              <table className="w-full text-left text-caption-sm relative font-sans">
-                <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-xs font-sans font-medium border-b border-hairline">
-                  <tr>
-                    <th className="py-2.5 px-3 font-semibold w-12 text-center whitespace-nowrap">Status</th>
-                    <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
-                    <th className="py-2.5 px-3 font-semibold">Pihak / Keterangan</th>
-                    <th className="py-2.5 px-3 font-semibold text-right w-32 whitespace-nowrap">Nominal</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredPayables.length === 0 ? (
+            <div className="rounded-xl border border-hairline bg-canvas overflow-hidden flex flex-col min-h-[300px] sm:min-h-[340px]">
+              <div className="overflow-x-auto max-h-[480px] overflow-y-auto flex-1">
+                <table className="w-full text-left text-body-sm relative font-sans">
+                  <thead className="sticky top-0 z-10 bg-surface-soft text-body text-caption-sm font-sans font-medium">
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-mute text-caption-sm">
-                        Tidak ada catatan utang pada periode ini.
-                      </td>
+                      <th className="py-2.5 px-3 font-semibold w-12 text-center whitespace-nowrap">Status</th>
+                      <th className="py-2.5 px-3 font-semibold w-28 whitespace-nowrap">Tanggal</th>
+                      <th className="py-2.5 px-3 font-semibold">Pihak / Keterangan</th>
+                      <th className="py-2.5 px-3 font-semibold text-right w-36 whitespace-nowrap">Nominal</th>
                     </tr>
-                  ) : (
-                    filteredPayables.map((d) => (
-                      <tr
-                        key={d.id}
-                        className={`hover:bg-surface-soft/60 transition-colors ${
-                          d.isSettled ? 'opacity-60' : ''
-                        }`}
-                      >
-                        <td className="py-2.5 px-3 w-12 text-center align-top">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleDebtSettled(d)}
-                            className={`w-5 h-5 rounded-[4px] border flex items-center justify-center cursor-pointer shrink-0 transition-colors mx-auto ${
-                              d.isSettled
-                                ? 'bg-ink border-ink text-canvas'
-                                : 'border-hairline-strong bg-canvas hover:border-ink'
-                            }`}
-                            title={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
-                            aria-label={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
-                          >
-                            {d.isSettled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                          </button>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-caption-sm font-sans tabular-nums whitespace-nowrap align-top ${
-                            d.isSettled ? 'line-through text-mute' : 'text-body'
-                          }`}
-                        >
-                          {format(d.date, 'd MMM yyyy', { locale: localeId })}
-                        </td>
-                        <td className="py-2.5 px-3 text-caption-sm font-medium text-ink align-top">
-                          <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
-                            <span
-                              className={
-                                d.isSettled ? 'line-through text-mute font-normal' : 'text-ink'
-                              }
-                            >
-                              {d.person}
-                              {d.notes && (
-                                <span className="text-mute font-normal ml-1">({d.notes})</span>
-                              )}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDetail(d.rawNote)}
-                              className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
-                              title="Lihat catatan asli"
-                              aria-label="Lihat catatan asli"
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                        <td
-                          className={`py-2.5 px-3 text-right font-sans text-caption-sm font-medium tabular-nums whitespace-nowrap align-top ${
-                            d.isSettled
-                              ? 'line-through text-mute'
-                              : 'text-terminal-red'
-                          }`}
-                        >
-                          Rp {d.amount.toLocaleString('id-ID')}
+                  </thead>
+                  <tbody>
+                    {filteredPayables.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="h-60 sm:h-72 text-center text-mute text-body-sm align-middle">
+                          Tidak ada catatan utang pada periode ini.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : (
+                      filteredPayables.map((d) => (
+                        <tr
+                          key={d.id}
+                          className={`hover:bg-surface-soft/60 transition-colors ${
+                            d.isSettled ? 'opacity-60' : ''
+                          }`}
+                        >
+                          <td className="py-2.5 px-3 w-12 text-center align-top">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleDebtSettled(d)}
+                              className={`w-5 h-5 rounded-[4px] border flex items-center justify-center cursor-pointer shrink-0 transition-colors mx-auto ${
+                                d.isSettled
+                                  ? 'bg-ink border-ink text-canvas'
+                                  : 'border-hairline-strong bg-canvas hover:border-ink'
+                              }`}
+                              title={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
+                              aria-label={d.isSettled ? 'Tandai belum lunas' : 'Tandai lunas'}
+                            >
+                              {d.isSettled && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </button>
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-body-sm font-sans tabular-nums whitespace-nowrap align-top ${
+                              d.isSettled ? 'line-through text-mute' : 'text-body'
+                            }`}
+                          >
+                            {format(d.date, 'd MMM yyyy', { locale: localeId })}
+                          </td>
+                          <td className="py-2.5 px-3 text-body-sm font-medium text-ink align-top">
+                            <div className="break-words [overflow-wrap:anywhere] whitespace-normal leading-relaxed">
+                              <span
+                                className={
+                                  d.isSettled ? 'line-through text-mute font-normal' : 'text-ink'
+                                }
+                              >
+                                {d.person}
+                                {d.notes && (
+                                  <span className="text-mute font-normal ml-1">({d.notes})</span>
+                                )}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDetail(d.rawNote)}
+                                className="inline-flex items-center justify-center p-0.5 ml-1.5 rounded text-mute hover:text-ink hover:bg-surface-soft cursor-pointer align-middle transition-colors"
+                                title="Lihat catatan asli"
+                                aria-label="Lihat catatan asli"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td
+                            className={`py-2.5 px-3 text-right font-sans text-body-sm font-medium tabular-nums whitespace-nowrap align-top ${
+                              d.isSettled
+                                ? 'line-through text-mute'
+                                : 'text-terminal-red'
+                            }`}
+                          >
+                            Rp {d.amount.toLocaleString('id-ID')}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
 
       {/* Filter Modal Dialog (Bulan Ini, Bulan Lalu, Semua Waktu) */}
@@ -1041,12 +1080,12 @@ export default function FinanceView({ initialNotes, userName }: FinanceViewProps
       <button
         type="button"
         onClick={() => setIsCreateModalOpen(true)}
-        className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-3 rounded-full bg-primary text-on-primary shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all cursor-pointer font-sans !border-0"
+        className="fixed bottom-6 right-6 sm:bottom-8 sm:right-8 z-40 w-14 h-14 sm:w-auto sm:h-auto p-0 sm:py-3 sm:px-6 rounded-full bg-canvas text-ink border border-hairline shadow-md hover:bg-surface-soft active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer font-sans"
         title="Catat Keuangan Baru"
         aria-label="Catat Keuangan Baru"
       >
-        <Plus className="w-5 h-5" />
-        <span className="hidden sm:inline text-body-sm font-medium">Catat Keuangan</span>
+        <span className="hidden sm:inline text-body-sm font-medium">New Transaction</span>
+        <Plus className="w-7 h-7 sm:w-4.5 sm:h-4.5 text-ink" />
       </button>
 
       {/* Quick Composer Modal for Pure Notes */}

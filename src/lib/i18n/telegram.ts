@@ -78,9 +78,11 @@ export const TELEGRAM_MESSAGES: Record<TelegramMessageKey, Record<SupportedLocal
 Daftar Perintah:
 • \`/login <api_key>\` - Tautkan akun Telegram Anda
 • \`/logout\` - Putus tautan akun Telegram ini
+• \`/schedule\` - Cek jadwal terdekat (2 minggu ke depan) & terlewat (1 minggu lalu)
 • \`/review\` - Tinjau catatan yang belum terkategori (others)
 • \`/read\` - Baca catatan terbaru Anda
 • \`/pin\` - Lihat catatan yang disematkan
+• \`/finance\` - Laporan ringkasan keuangan (Hari Ini, Minggu Ini, Bulan Ini, Bulan Lalu)
 • \`/tags\` - Tampilkan seluruh tag aktif & kategori
 • \`/tags <nama_tag>\` - Cari catatan berdasarkan tag tertentu
 • \`/search <kata_kunci>\` - Cari catatan umum berdasarkan kata kunci
@@ -88,6 +90,8 @@ Daftar Perintah:
 • \`/secure <kunci> <isi>\` - Simpan rahasia terenkripsi AES-256-GCM ke Private Vault
 • \`/vault\` - Buka rahasia; gunakan \`/vault\` (tanpa kunci) untuk melihat daftar kredensial tersimpan
 • \`/temp <isi>\` - Simpan catatan sementara (kadaluwarsa & auto-arsip 7 hari)
+• \`/sync\` - Sinkronisasi AI untuk 1 catatan terbaru
+• \`/sync_all\` - Sinkronisasi AI borongan (batch) seluruh catatan belum rapi
 
 🌐 Web Dashboard: {dashboardUrl}`,
 
@@ -96,9 +100,11 @@ Daftar Perintah:
 Command List:
 • \`/login <api_key>\` - Link your Telegram account
 • \`/logout\` - Disconnect this Telegram account
+• \`/schedule\` - Check upcoming schedules (next 2 weeks) & past (last 1 week)
 • \`/review\` - Review uncategorized notes (others)
 • \`/read\` - Read your latest notes
 • \`/pin\` - View pinned notes
+• \`/finance\` - Financial summary report (Today, This Week, This Month, Last Month)
 • \`/tags\` - View active tags & categories
 • \`/tags <tag_name>\` - Browse notes by specific tag
 • \`/search <keyword>\` - Search notes by keyword
@@ -106,6 +112,8 @@ Command List:
 • \`/secure <key> <notes>\` - Save AES-256-GCM encrypted secrets to Private Vault
 • \`/vault\` - Reveal secrets; use \`/vault\` (without key) to view all stored credential keys
 • \`/temp <content>\` - Save temporary note (auto-archived after 7 days)
+• \`/sync\` - AI sync for the single latest unprocessed note
+• \`/sync_all\` - Batch AI sync for all unorganized notes
 
 🌐 Web Dashboard: {dashboardUrl}`,
   },

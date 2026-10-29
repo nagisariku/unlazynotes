@@ -1,4 +1,4 @@
-import { resolveCanonicalTag, extractTagsFromContent } from './taxonomy';
+import { resolveCanonicalTag } from './taxonomy';
 import type { Category } from './types';
 import { CATEGORIES } from '../constants';
 
@@ -446,28 +446,6 @@ export function sanitizeTags(
       result.push(t);
     }
     if (result.length >= maxTags) break;
-  }
-
-  // Credential Category Guarantee
-  if (category === 'credential' && result.length < maxTags && noteContent) {
-    const autoTags = extractTagsFromContent(noteContent, 'credential', maxTags);
-    for (const at of autoTags) {
-      if (!isTwinOrRedundantTag(at, result, catNormalized)) {
-        result.push(at);
-        if (result.length >= maxTags) break;
-      }
-    }
-  }
-
-  // Study/Exam Category Guarantee
-  if (noteContent && (category === 'todo' || result.includes('study') || result.includes('exam'))) {
-    const lower = noteContent.toLowerCase();
-    const hasStudy = /belajar|study|kuliah|pelajari|materi/i.test(lower);
-    const hasExam = /ujian|exam|uts|uas|quiz|kuis|finals|midterm/i.test(lower);
-    if (hasStudy && hasExam) {
-      const rest = result.filter(t => t !== 'study' && t !== 'exam');
-      result = ['study', 'exam', ...rest].slice(0, maxTags);
-    }
   }
 
   return result

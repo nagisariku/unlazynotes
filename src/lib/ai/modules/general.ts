@@ -17,14 +17,8 @@ export function normalizeBookmarkType(raw: any): BookmarkType {
   return 'reading_other';
 }
 
-export function normalizeCredentialType(raw: any): CredentialType {
-  const val = String(raw || '').toLowerCase().trim();
-  if (['account', 'akun', 'login', 'user', 'password'].includes(val)) return 'account';
-  if (['network', 'jaringan', 'wifi', 'router', 'iot'].includes(val)) return 'network';
-  if (['identity_finance', 'identity', 'finance', 'identitas', 'finansial', 'bank', 'ktp', 'sim', 'rekening'].includes(val)) return 'identity_finance';
-  if (['license', 'lisensi', 'token', 'key', 'api', 'voucher'].includes(val)) return 'license';
-  return 'other';
-}
+import { normalizeCredentialType } from '@/lib/credential-types';
+export { normalizeCredentialType };
 
 /**
  * Normalizes raw category string from LLM into one of the 9 strict NoteCategory enum values.
@@ -96,11 +90,11 @@ export function normalizeCategory(rawCat: string | undefined, _content?: string)
     return 'finance';
   }
 
-  // 6. RANDOM-YAP: Refleksi subjektif internal, sensasi fisik/gejala tubuh, mood, review bebas
+  // 6. RANDOM-YAP: Refleksi subjektif internal, ide liar/brainstorming, sensasi fisik/gejala tubuh, mood, review bebas
   if ([
     'random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought',
     'uneg-uneg', 'opini', 'symptom', 'symptoms', 'feeling', 'mood', 'reflection', 'health-log',
-    'gejala', 'keluhan', 'review', 'diary', 'catatan-hati'
+    'gejala', 'keluhan', 'review', 'diary', 'catatan-hati', 'idea', 'ideas', 'ide', 'brainstorm', 'brainstorming'
   ].includes(c)) {
     return 'random-yap';
   }
@@ -210,9 +204,9 @@ Analyze the user's raw note and return a strict JSON object:
 - credential: Authentication keys, logins, wifi, serial keys, and official identity/bank numbers (pure text).
 - todo: Actionable tasks, follow-ups, shopping lists (groceries), and packing errands.
 - draft: Content drafted for external audiences (messages, emails, captions, meeting minutes).
-- reference: Static factual data, sizes, recipes, tech configs, and tracking/policy numbers.
-- random-yap: Internal world (emotions, physical/health logs, subjective reviews, reflections).
-- others: Mixed, ambiguous, or multi-idea noise without a single clear focus.
+- reference: Static factual data, verified lookup truths, sizes, recipes, tech configs, documentation, specifications, quotes, and tracking/policy numbers.
+- random-yap: Internal world (raw ideas, conceptual brainstorming, shower thoughts, personal musings, emotions, physical/health logs, subjective reviews, reflections).
+- others: Unstructured noise, SMS OTP, or corrupted text without discernible substance.
 
 DISAMBIGUATION HEURISTICS:
 - URL is primary subject -> bookmark
@@ -220,6 +214,11 @@ DISAMBIGUATION HEURISTICS:
 - Action/task to execute -> todo
 - Time/date execution -> schedule
 - Shopping lists with estimated prices (not yet spent) -> todo
+- Raw brainstorming, concept dumps, or idea lists without action directives -> random-yap (ideas are creative thoughts, NOT static reference facts and NOT active todos)
+- Bank account numbers, logins, wifi credentials without transaction verb -> credential (even if mentioning bank names like BCA/Mandiri, it is a credential, NOT finance)
+- Quotes, recipes, formulas, specifications, postal codes -> reference (static lookup facts, NOT random-yap)
+- Messages drafted for external recipients (surat, pesan WhatsApp/email, captions) -> draft (communication to others, NOT internal random-yap)
+- Vague tasks without clock/calendar time (e.g. "minggu ini kalau sempat", "kapan-kapan") -> todo, NOT schedule
 - Casual food/snack purchases (cimin, cilok, nasgor, martabak, kopi, etc.) -> finance expenses with [food] tag, NOT debt
 - Money borrowed/lent with person names (minjem, pinjam, utang, talangin) -> finance debt with person name
 

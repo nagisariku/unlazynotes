@@ -32,7 +32,7 @@ export default function NewBookmarkModal({
 }: NewBookmarkModalProps) {
   const [mounted, setMounted] = useState(false);
   const [content, setContent] = useState('');
-  const [tags, setTags] = useState<string[]>(['bookmark']);
+  const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -87,7 +87,7 @@ export default function NewBookmarkModal({
       }, 50);
     } else {
       setContent('');
-      setTags(['bookmark']);
+      setTags([]);
       setTagInput('');
       setAttachments([]);
       setIsUploading(false);

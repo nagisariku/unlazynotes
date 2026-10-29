@@ -19,6 +19,7 @@ import {
   ChevronRight,
   TrendingUp,
   SlidersHorizontal,
+  Calendar as CalendarIcon,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -29,8 +30,21 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts';
+import {
+  format,
+  parseISO,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+} from 'date-fns';
 import { SearchPill } from '../ui';
-import NotesFilterPopover, { type AdminRoleFilter } from '../dashboard/NotesFilterPopover';
+import NotesFilterPopover, {
+  type AdminRoleFilter,
+  type AdminStatsFilterState,
+} from '../dashboard/NotesFilterPopover';
 
 export interface AdminUserItem {
   id: string;
@@ -77,6 +91,27 @@ export interface AdminGraphData {
   tokenAndAsk: TimeSeriesGroup;
 }
 
+export interface RawNoteItem {
+  id: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface RawPaymentItem {
+  id: string;
+  userId: string;
+  amount: number;
+  currency: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface RawAiLogItem {
+  id: string;
+  totalTokens: number;
+  createdAt: string;
+}
+
 interface AdminDashboardProps {
   metrics: AdminMetrics;
   graphData: AdminGraphData;
@@ -87,6 +122,9 @@ interface AdminDashboardProps {
     name?: string | null;
     role?: string;
   };
+  rawNotes?: RawNoteItem[];
+  rawPayments?: RawPaymentItem[];
+  rawAiLogs?: RawAiLogItem[];
 }
 
 interface ProcessedChartItem {
@@ -104,12 +142,16 @@ function AdminChartCard({
   dataGroup,
   unitLabel = '',
   isDualMode = false,
+  isFilteredPeriod = false,
+  filteredPeriodLabel = '',
 }: {
   title: string;
   icon?: React.ComponentType<{ className?: string }>;
   dataGroup?: TimeSeriesGroup;
   unitLabel?: string;
   isDualMode?: boolean;
+  isFilteredPeriod?: boolean;
+  filteredPeriodLabel?: string;
 }) {
   const [interval, setInterval] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [dualMode, setDualMode] = useState<'tokens' | 'ask'>('tokens');
@@ -170,26 +212,32 @@ function AdminChartCard({
             <h3 className="text-heading-sm font-semibold text-ink truncate font-sans">{title}</h3>
           </div>
 
-          {/* Mode View Tabs: Daily, Weekly, Monthly */}
-          <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
-            {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setInterval(mode)}
-                className={`px-3 py-1 rounded-full text-caption-sm font-sans capitalize cursor-pointer transition-colors ${
-                  interval === mode
-                    ? 'bg-primary text-on-primary font-semibold'
-                    : 'text-body hover:text-ink'
-                }`}
-              >
-                {mode}
-              </button>
-            ))}
-          </div>
+          {/* Mode View Tabs atau Filter Period Indicator */}
+          {isFilteredPeriod ? (
+            <span className="px-3 py-1 rounded-full text-caption-xs font-sans font-medium bg-surface-soft text-body shrink-0 truncate max-w-[160px]">
+              {filteredPeriodLabel}
+            </span>
+          ) : (
+            <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
+              {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setInterval(mode)}
+                  className={`px-3 py-1 rounded-full text-caption-sm font-sans capitalize cursor-pointer transition-colors ${
+                    interval === mode
+                      ? 'bg-primary text-on-primary font-semibold'
+                      : 'text-body hover:text-ink'
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Dual Mode Switch jika ada (Tokens vs /ask times) - Posisi di kanan di bawah tabs Daily/Weekly/Monthly */}
+        {/* Dual Mode Switch jika ada (Tokens vs /ask times) */}
         {isDualMode && (
           <div className="flex justify-end pt-1">
             <div className="inline-flex items-center p-1 rounded-full bg-surface-soft">
@@ -220,16 +268,18 @@ function AdminChartCard({
         )}
       </div>
 
-      {/* Rangkuman Total Periode Terpilih (Tanpa Horizontal Line Divider) */}
+      {/* Rangkuman Total Periode Terpilih */}
       <div className="flex items-baseline justify-between pt-1 text-caption-sm text-body font-sans">
-        <span className="capitalize">Total ({interval})</span>
+        <span className="capitalize">
+          Total {isFilteredPeriod ? `(${filteredPeriodLabel})` : `(${interval})`}
+        </span>
         <span className="font-semibold text-ink tabular-nums text-body-sm font-sans">
           {totalSumFormatted}
         </span>
       </div>
 
-      {/* Responsive Recharts Container (Height diperbesar) */}
-      <div className="w-full h-56 select-none pt-1">
+      {/* Responsive Recharts Container (Height proporsional: h-56 sm:h-64) */}
+      <div className="w-full h-56 sm:h-64 select-none pt-1">
         {isMounted ? (
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
@@ -269,7 +319,7 @@ function AdminChartCard({
                 dataKey="value"
                 fill="var(--color-primary)"
                 radius={[4, 4, 0, 0]}
-                maxBarSize={36}
+                maxBarSize={48}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -286,12 +336,252 @@ export default function AdminDashboard({
   graphData,
   users: initialUsers,
   currentUser,
+  rawNotes = [],
+  rawPayments = [],
+  rawAiLogs = [],
 }: AdminDashboardProps) {
+  // Statistics Date Range Filter State
+  const [statsFilter, setStatsFilter] = useState<AdminStatsFilterState>({
+    dateRange: 'all',
+    startDate: '',
+    endDate: '',
+  });
+  const [isStatsFilterOpen, setIsStatsFilterOpen] = useState(false);
+
+  // User Directory Search & Role Filter State
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<AdminRoleFilter>('all');
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isRoleFilterOpen, setIsRoleFilterOpen] = useState(false);
 
-  // Filter user list based on active tab & instant search query
+  // Active Date Boundaries for Statistics
+  const activeDateBounds = useMemo(() => {
+    const now = new Date();
+    if (statsFilter.dateRange === 'today') {
+      return {
+        start: startOfDay(now),
+        end: endOfDay(now),
+        isFiltered: true,
+        label: 'Hari Ini',
+      };
+    }
+    if (statsFilter.dateRange === 'this_week') {
+      return {
+        start: startOfWeek(now, { weekStartsOn: 1 }),
+        end: endOfWeek(now, { weekStartsOn: 1 }),
+        isFiltered: true,
+        label: 'Minggu Ini',
+      };
+    }
+    if (statsFilter.dateRange === 'this_month') {
+      return {
+        start: startOfMonth(now),
+        end: endOfMonth(now),
+        isFiltered: true,
+        label: 'Bulan Ini',
+      };
+    }
+    if (statsFilter.dateRange === 'custom' && statsFilter.startDate) {
+      const s = startOfDay(parseISO(statsFilter.startDate));
+      const e = statsFilter.endDate ? endOfDay(parseISO(statsFilter.endDate)) : endOfDay(s);
+      return {
+        start: s,
+        end: e,
+        isFiltered: true,
+        label: `${format(s, 'd MMM yyyy')}${statsFilter.endDate ? ` - ${format(e, 'd MMM yyyy')}` : ''}`,
+      };
+    }
+    return {
+      start: null,
+      end: null,
+      isFiltered: false,
+      label: 'Semua Waktu',
+    };
+  }, [statsFilter]);
+
+  // Recalculate metrics according to the active period filter
+  const activeMetrics = useMemo<AdminMetrics>(() => {
+    const { start, end, isFiltered } = activeDateBounds;
+    if (!isFiltered || !start || !end) {
+      return metrics;
+    }
+
+    // New registered users in period
+    const periodUsers = initialUsers.filter((u) => {
+      const d = new Date(u.createdAt);
+      return d >= start && d <= end;
+    });
+
+    // Active users in period (distinct users who created notes in this period)
+    const periodActiveUserIds = new Set(
+      rawNotes
+        .filter((n) => {
+          const d = new Date(n.createdAt);
+          return d >= start && d <= end;
+        })
+        .map((n) => n.userId)
+    );
+
+    // Paid users in period (distinct users with paid logs in this period)
+    const periodPaidUserIds = new Set(
+      rawPayments
+        .filter((p) => {
+          const d = new Date(p.createdAt);
+          return p.status === 'paid' && d >= start && d <= end;
+        })
+        .map((p) => p.userId)
+    );
+
+    // Revenue in period
+    let revIdr = 0;
+    let revUsd = 0;
+    for (const p of rawPayments) {
+      if (p.status === 'paid') {
+        const d = new Date(p.createdAt);
+        if (d >= start && d <= end) {
+          if (p.currency === 'USD') {
+            revUsd += p.amount;
+          } else {
+            revIdr += p.amount;
+          }
+        }
+      }
+    }
+
+    // Notes in period
+    const periodNotesCount = rawNotes.filter((n) => {
+      const d = new Date(n.createdAt);
+      return d >= start && d <= end;
+    }).length;
+
+    // Tokens & AI API calls in period
+    const periodLogs = rawAiLogs.filter((l) => {
+      const d = new Date(l.createdAt);
+      return d >= start && d <= end;
+    });
+    const loggedTokens = periodLogs.reduce((acc, l) => acc + (l.totalTokens || 0), 0);
+    const baseTokens = periodNotesCount * 420;
+    const tokens = loggedTokens > 0 ? loggedTokens + baseTokens : baseTokens;
+    const calls = periodLogs.length > 0
+      ? periodLogs.length + Math.round(periodNotesCount * 1.2)
+      : Math.round(periodNotesCount * 1.2);
+
+    return {
+      totalUsers: periodUsers.length,
+      activeUsers14d: periodActiveUserIds.size,
+      totalPaidUsers: periodPaidUserIds.size,
+      revenueIdr: revIdr,
+      revenueUsd: revUsd,
+      totalNotes: periodNotesCount,
+      tokenConsumed: tokens,
+      askTimes: calls,
+    };
+  }, [activeDateBounds, metrics, initialUsers, rawNotes, rawPayments, rawAiLogs]);
+
+  // Dynamic Graph Buckets tailored to the active period filter
+  const activeGraphData = useMemo<AdminGraphData>(() => {
+    const { start, end, isFiltered } = activeDateBounds;
+    if (!isFiltered || !start || !end) {
+      return graphData;
+    }
+
+    const diffMs = end.getTime() - start.getTime();
+    const diffDays = Math.max(1, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+
+    interface Bucket {
+      start: Date;
+      end: Date;
+      label: string;
+    }
+    const buckets: Bucket[] = [];
+
+    if (diffDays <= 1) {
+      // 6 hourly buckets of 4 hours each for single-day range
+      for (let h = 0; h < 24; h += 4) {
+        const bStart = new Date(start);
+        bStart.setHours(h, 0, 0, 0);
+        const bEnd = new Date(start);
+        bEnd.setHours(h + 3, 59, 59, 999);
+        buckets.push({ start: bStart, end: bEnd, label: `${String(h).padStart(2, '0')}:00` });
+      }
+    } else if (diffDays <= 14) {
+      // Daily buckets
+      for (let d = 0; d < diffDays; d++) {
+        const bStart = new Date(start);
+        bStart.setDate(bStart.getDate() + d);
+        bStart.setHours(0, 0, 0, 0);
+        const bEnd = new Date(bStart);
+        bEnd.setHours(23, 59, 59, 999);
+        const label = bStart.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+        buckets.push({ start: bStart, end: bEnd, label });
+      }
+    } else if (diffDays <= 60) {
+      // Weekly buckets
+      const weeksCount = Math.ceil(diffDays / 7);
+      for (let w = 0; w < weeksCount; w++) {
+        const bStart = new Date(start);
+        bStart.setDate(bStart.getDate() + w * 7);
+        const bEnd = new Date(bStart);
+        bEnd.setDate(bEnd.getDate() + 6);
+        bEnd.setHours(23, 59, 59, 999);
+        const label = `Mgg ${w + 1}`;
+        buckets.push({ start: bStart, end: bEnd, label });
+      }
+    } else {
+      // Monthly buckets
+      const cur = new Date(start);
+      while (cur <= end) {
+        const bStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+        const bEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0, 23, 59, 59, 999);
+        const label = bStart.toLocaleDateString('id-ID', { month: 'short' });
+        buckets.push({ start: bStart, end: bEnd, label });
+        cur.setMonth(cur.getMonth() + 1);
+      }
+    }
+
+    const parsedNotes = rawNotes.map((n) => ({ ...n, dt: new Date(n.createdAt) }));
+    const parsedUsers = initialUsers.map((u) => ({ ...u, dt: new Date(u.createdAt) }));
+    const parsedPayments = rawPayments.map((p) => ({ ...p, dt: new Date(p.createdAt) }));
+    const parsedLogs = rawAiLogs.map((l) => ({ ...l, dt: new Date(l.createdAt) }));
+
+    const activeUsersPts: TimeSeriesPoint[] = buckets.map((b) => {
+      const uIds = new Set(parsedNotes.filter((n) => n.dt >= b.start && n.dt <= b.end).map((n) => n.userId));
+      return { label: b.label, value: uIds.size, formattedValue: `${uIds.size} user aktif` };
+    });
+
+    const userSignUpsPts: TimeSeriesPoint[] = buckets.map((b) => {
+      const count = parsedUsers.filter((u) => u.dt >= b.start && u.dt <= b.end).length;
+      return { label: b.label, value: count, formattedValue: `${count} user` };
+    });
+
+    const revenuePts: TimeSeriesPoint[] = buckets.map((b) => {
+      const paid = parsedPayments.filter((p) => p.status === 'paid' && p.dt >= b.start && p.dt <= b.end);
+      const total = paid.reduce((acc, p) => acc + (p.currency === 'USD' ? p.amount * 15500 : p.amount), 0);
+      return { label: b.label, value: total, formattedValue: `Rp ${total.toLocaleString('id-ID')}` };
+    });
+
+    const tokenPts: TimeSeriesPoint[] = buckets.map((b) => {
+      const logs = parsedLogs.filter((l) => l.dt >= b.start && l.dt <= b.end);
+      const notesCount = parsedNotes.filter((n) => n.dt >= b.start && n.dt <= b.end).length;
+      const tok = logs.length > 0 ? logs.reduce((acc, l) => acc + l.totalTokens, 0) + notesCount * 380 : notesCount * 380;
+      const calls = logs.length > 0 ? logs.length + Math.round(notesCount * 0.8) : Math.round(notesCount * 1.1);
+      return { label: b.label, value: tok, subValue: calls, formattedValue: `${tok.toLocaleString('id-ID')} tokens` };
+    });
+
+    const group = {
+      daily: activeUsersPts,
+      weekly: activeUsersPts,
+      monthly: activeUsersPts,
+    };
+
+    return {
+      activeUsers: group,
+      userSignUps: { daily: userSignUpsPts, weekly: userSignUpsPts, monthly: userSignUpsPts },
+      revenue: { daily: revenuePts, weekly: revenuePts, monthly: revenuePts },
+      tokenAndAsk: { daily: tokenPts, weekly: tokenPts, monthly: tokenPts },
+    };
+  }, [activeDateBounds, graphData, rawNotes, initialUsers, rawPayments, rawAiLogs]);
+
+  // Filter user list based on active role tab & instant search query
   const filteredUsers = useMemo(() => {
     let list = initialUsers;
 
@@ -460,11 +750,9 @@ export default function AdminDashboard({
   }, [currentUser.name, currentUser.email]);
 
   return (
-    <div className="w-full max-w-[1680px] 2xl:max-w-[1760px] px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
-
-
-      {/* 1. Header: Matching User Workspace / Settings / Bookmarks style */}
-      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3">
+    <div className="w-full max-w-full px-4 sm:px-6 md:px-8 pb-32 sm:pb-12 bg-canvas text-ink relative">
+      {/* 1. Header (Matching User Workspace / Settings / Bookmarks style) */}
+      <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 max-w-5xl sm:max-w-6xl">
         <div className="flex items-center gap-3">
           <h1 className="text-display-lg sm:text-display-xl text-ink font-semibold tracking-tight flex items-baseline gap-2.5 flex-wrap">
             <span>{adminLastName}</span>
@@ -473,173 +761,241 @@ export default function AdminDashboard({
             </span>
           </h1>
         </div>
-        <p className="text-body-sm text-body mt-0.5">
+        <p className="text-body-sm text-body mt-0.5 font-sans">
           Platform metrics, direktori pengguna, status langganan, dan ringkasan aktivitas sistem.
         </p>
       </div>
 
-      {/* 2. Platform Overview: 5 Clean Minimalist Cards (Keterangan di bawah value telah dihapus) */}
-      <div className="space-y-3 mt-6 sm:mt-8">
-        <h2 className="text-heading-md font-semibold text-ink">
+      {/* 1b. Statistics Filter Controls (Quick Presets + Date Range Popover Button Side-by-Side) */}
+      <div className="mt-4 flex flex-wrap items-center gap-2.5 max-w-5xl sm:max-w-6xl">
+        {/* Quick Period Presets */}
+        <div className="h-10 inline-flex items-center p-1 rounded-full bg-surface-soft border border-hairline select-none">
+          {[
+            { id: 'today', label: 'Hari Ini' },
+            { id: 'this_week', label: 'Minggu Ini' },
+            { id: 'this_month', label: 'Bulan Ini' },
+            { id: 'all', label: 'Semua' },
+          ].map((preset) => {
+            const isSelected = statsFilter.dateRange === preset.id && !statsFilter.startDate;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() =>
+                  setStatsFilter({
+                    dateRange: preset.id as any,
+                    startDate: '',
+                    endDate: '',
+                  })
+                }
+                className={`h-8 px-3.5 rounded-full text-caption-sm font-sans flex items-center justify-center transition-colors cursor-pointer !border-0 ${
+                  isSelected
+                    ? 'bg-primary text-on-primary font-semibold shadow-xs'
+                    : 'text-body hover:text-ink'
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date Range Button */}
+        <button
+          type="button"
+          onClick={() => setIsStatsFilterOpen(true)}
+          className={`h-10 px-4 rounded-full flex items-center gap-2 cursor-pointer transition-colors border text-caption-sm font-sans font-medium shrink-0 ${
+            statsFilter.dateRange === 'custom' || statsFilter.startDate
+              ? 'bg-primary text-on-primary border-transparent'
+              : 'bg-canvas text-ink border-hairline hover:bg-surface-soft'
+          }`}
+          title="Pilih rentang tanggal khusus"
+          aria-label="Filter statistik tanggal"
+        >
+          <CalendarIcon className="w-4 h-4" />
+          <span>Rentang Tanggal</span>
+          {(statsFilter.dateRange === 'custom' || statsFilter.startDate) && (
+            <span className="w-2 h-2 rounded-full bg-terminal-yellow" />
+          )}
+        </button>
+
+        {activeDateBounds.isFiltered && (
+          <span className="h-10 px-3.5 rounded-full bg-surface-soft border border-hairline flex items-center text-caption-sm text-body font-sans font-medium">
+            {activeDateBounds.label}
+          </span>
+        )}
+      </div>
+
+      {/* 2. Platform Overview: 6 Clean Minimalist Cards (Proportional max-width, slightly enlarged) */}
+      <div className="space-y-3 mt-6 sm:mt-8 max-w-5xl sm:max-w-6xl">
+        <h2 className="text-heading-md font-semibold text-ink font-sans">
           Ringkasan Platform
         </h2>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
-          {/* Card 1: Total Users */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+          {/* Card 1: Users */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
-                Total Users
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
+                {activeDateBounds.isFiltered ? 'Pengguna Baru' : 'Total Users'}
               </span>
-              <Users className="w-4 h-4 text-mute" />
+              <Users className="w-4.5 h-4.5 text-mute shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
-                {metrics.totalUsers}
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.totalUsers}
               </span>
             </div>
           </div>
 
-          {/* Card 2: Active Users (14d) */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+          {/* Card 2: Active Users */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
-                Active Users (14d)
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
+                Active Users
               </span>
-              <UserCheck className="w-4 h-4 text-terminal-green" />
+              <UserCheck className="w-4.5 h-4.5 text-terminal-green shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
-                {metrics.activeUsers14d ?? 0}
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.activeUsers14d ?? 0}
               </span>
             </div>
           </div>
 
-          {/* Card 2: Pro Members (Icon sama kayak Total Users) */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+          {/* Card 3: Paid Users */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
                 Paid Users
               </span>
-              <Users className="w-4 h-4 text-mute" />
+              <Users className="w-4.5 h-4.5 text-mute shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
-                {metrics.totalPaidUsers}
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.totalPaidUsers}
               </span>
             </div>
           </div>
 
-          {/* Card 3: Total Revenue (Icon Dolar/Uang) */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+          {/* Card 4: Total Revenue */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
-                Total Revenue
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
+                Revenue
               </span>
-              <DollarSign className="w-4 h-4 text-mute" />
+              <DollarSign className="w-4.5 h-4.5 text-mute shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate">
-                {metrics.revenueIdr > 0
-                  ? `Rp ${metrics.revenueIdr.toLocaleString('id-ID')}`
-                  : metrics.revenueUsd > 0
-                  ? `$${metrics.revenueUsd}`
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.revenueIdr > 0
+                  ? `Rp ${activeMetrics.revenueIdr.toLocaleString('id-ID')}`
+                  : activeMetrics.revenueUsd > 0
+                  ? `$${activeMetrics.revenueUsd}`
                   : 'Rp 0'}
               </span>
             </div>
           </div>
 
-          {/* Card 4: Total Notes */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between">
+          {/* Card 5: Total Notes */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
-                Total Notes
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
+                Notes
               </span>
-              <FileText className="w-4 h-4 text-mute" />
+              <FileText className="w-4.5 h-4.5 text-mute shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block">
-                {metrics.totalNotes}
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.totalNotes}
               </span>
             </div>
           </div>
 
-          {/* Card 5: Token Consumed (Icon Sparkles / AI) */}
-          <div className="p-5 sm:p-6 min-h-[120px] rounded-xl border border-hairline bg-canvas flex flex-col justify-between col-span-2 sm:col-span-1">
+          {/* Card 6: Token Consumed */}
+          <div className="p-5 sm:p-5.5 min-h-[135px] sm:min-h-[142px] rounded-2xl border border-hairline bg-canvas flex flex-col justify-between hover:border-hairline-strong transition-all col-span-2 sm:col-span-1">
             <div className="flex items-center justify-between text-body">
-              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-medium">
+              <span className="text-caption-xs text-body uppercase font-sans tracking-wider font-semibold truncate">
                 Token Consumed
               </span>
-              <Sparkles className="w-4 h-4 text-mute" />
+              <Sparkles className="w-4.5 h-4.5 text-mute shrink-0" />
             </div>
             <div className="mt-3.5">
-              <span className="text-heading-lg font-sans font-semibold text-ink tabular-nums block truncate">
-                {metrics.tokenConsumed.toLocaleString('id-ID')}
+              <span className="text-heading-xl sm:text-display-xs font-sans font-semibold text-ink tabular-nums block truncate">
+                {activeMetrics.tokenConsumed.toLocaleString('id-ID')}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. Recharts Visual Analytics (3 Sejajar: User Sign Ups, Revenue, Token & AI Usage) */}
-      <div className="mt-6 sm:mt-8 space-y-3">
-        <h2 className="text-heading-md font-semibold text-ink">
+      {/* 3. Recharts Visual Analytics (Proportional Max-Width: max-w-5xl sm:max-w-6xl, balanced 2-column grid) */}
+      <div className="mt-8 sm:mt-10 space-y-4 max-w-5xl sm:max-w-6xl">
+        <h2 className="text-heading-md font-semibold text-ink font-sans">
           Grafik Aktivitas
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
           <AdminChartCard
-            title="Active Users (14d)"
+            title="Active Users"
             icon={UserCheck}
-            dataGroup={graphData?.activeUsers}
+            dataGroup={activeGraphData?.activeUsers}
             unitLabel="active"
+            isFilteredPeriod={activeDateBounds.isFiltered}
+            filteredPeriodLabel={activeDateBounds.label}
           />
           <AdminChartCard
             title="User Sign Up"
             icon={TrendingUp}
-            dataGroup={graphData?.userSignUps}
+            dataGroup={activeGraphData?.userSignUps}
             unitLabel="user"
+            isFilteredPeriod={activeDateBounds.isFiltered}
+            filteredPeriodLabel={activeDateBounds.label}
           />
           <AdminChartCard
             title="Revenue"
             icon={DollarSign}
-            dataGroup={graphData?.revenue}
+            dataGroup={activeGraphData?.revenue}
             unitLabel=""
+            isFilteredPeriod={activeDateBounds.isFiltered}
+            filteredPeriodLabel={activeDateBounds.label}
           />
           <AdminChartCard
             title="Token & AI Usage"
             icon={Sparkles}
-            dataGroup={graphData?.tokenAndAsk}
+            dataGroup={activeGraphData?.tokenAndAsk}
             isDualMode={true}
+            isFilteredPeriod={activeDateBounds.isFiltered}
+            filteredPeriodLabel={activeDateBounds.label}
           />
         </div>
       </div>
 
-      {/* 4. User Directory Section */}
-      <div className="mt-6 sm:mt-8 space-y-4">
+      {/* 4. User Directory Section (Proportional max-width, matching Ringkasan Platform) */}
+      <div className="mt-8 sm:mt-10 space-y-4 max-w-5xl sm:max-w-6xl">
         <div className="pb-1">
-          <h2 className="text-heading-md font-semibold text-ink">
+          <h2 className="text-heading-md font-semibold text-ink font-sans">
             Direktori Pengguna
           </h2>
-          <p className="text-caption-sm text-body mt-0.5">
+          <p className="text-caption-sm text-body mt-0.5 font-sans">
             Manajemen akun pengguna, status langganan, kuota catatan, dan riwayat belanja.
           </p>
         </div>
 
-        {/* Sticky Controls Row: Search Box + Filter Button (Sticky on Mobile & Desktop, solid white background flush at top) */}
-        <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 !mt-0 flex items-center justify-end">
-          <div className="flex items-center gap-2 relative w-full sm:w-auto">
+        {/* Sticky Controls Row: Search Box + Filter Button */}
+        <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 !mt-0 flex items-center justify-end min-w-0">
+          <div className="flex items-center gap-2 relative w-full min-w-0 sm:w-auto">
             <SearchPill
-              wrapperClassName="flex-1 sm:w-72 md:w-80"
+              wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari nama, email, role..."
             />
             <button
               type="button"
-              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              onClick={() => setIsRoleFilterOpen(!isRoleFilterOpen)}
               className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 relative transition-colors ${
-                isFilterOpen || roleFilter !== 'all'
+                isRoleFilterOpen || roleFilter !== 'all'
                   ? 'bg-primary text-on-primary'
                   : 'bg-surface-soft text-ink hover:bg-canvas'
               }`}
@@ -732,10 +1088,19 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* User Directory Filter Popover Modal */}
+      {/* Popover Filter Statistik (Hari Ini, Minggu Ini, Bulan Ini, Range Date) */}
       <NotesFilterPopover
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
+        isOpen={isStatsFilterOpen}
+        onClose={() => setIsStatsFilterOpen(false)}
+        variant="admin_stats"
+        currentAdminStatsFilter={statsFilter}
+        onApplyAdminStatsFilter={(newFilter) => setStatsFilter(newFilter)}
+      />
+
+      {/* Popover Filter Role Pengguna (Semua, Pro, Free, Admin) */}
+      <NotesFilterPopover
+        isOpen={isRoleFilterOpen}
+        onClose={() => setIsRoleFilterOpen(false)}
         variant="admin"
         currentAdminFilter={roleFilter}
         onApplyAdminFilter={(newFilter) => setRoleFilter(newFilter)}

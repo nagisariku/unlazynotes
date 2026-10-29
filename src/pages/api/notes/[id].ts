@@ -61,6 +61,8 @@ export const GET: APIRoute = async ({ params, request }) => {
         income: note.income,
         debt: note.debt,
         todos: note.todos,
+        bookmarkType: note.bookmarkType,
+        bookmarkMeta: note.bookmarkMeta,
         attachments: note.attachments,
         createdAt: note.createdAt.toISOString(),
       },

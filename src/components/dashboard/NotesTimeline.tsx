@@ -900,7 +900,7 @@ export default function NotesTimeline({
           </span>
         </h1>
 
-        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+        <div className="hidden sm:flex items-center gap-3 self-start sm:self-center shrink-0">
           <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Workspace" />
         </div>
       </div>
@@ -967,7 +967,7 @@ export default function NotesTimeline({
 
       {/* Section: Action & Controls Row (Sticky on Mobile & Desktop, solid white background flush at top) */}
       <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5">
-        <div className="flex items-center justify-between gap-2 w-full">
+        <div className="flex items-center justify-between gap-2 w-full min-w-0">
           {/* Left: Button 'Pilih Semua' (Only in Manage Mode) */}
           {isManageMode ? (
             <button
@@ -990,7 +990,7 @@ export default function NotesTimeline({
           )}
 
           {/* Right side: Kelola Catatan Toggle Icon Button + Searchbox + Filter button */}
-          <div className="flex items-center gap-2 shrink-0 ml-auto">
+          <div className="flex items-center gap-2 flex-1 min-w-0 sm:flex-initial justify-end ml-auto">
             {/* Kelola Catatan Toggle Button (Icon only, proper icon, no label, no emoji) */}
             <button
               type="button"
@@ -1014,6 +1014,7 @@ export default function NotesTimeline({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
+              wrapperClassName="flex-1 min-w-0 sm:flex-initial sm:w-72 md:w-80"
             />
 
             {/* Filter button -> toggle filter menu */}
@@ -1035,6 +1036,14 @@ export default function NotesTimeline({
                 </span>
               )}
             </button>
+
+            {/* Mobile Ask AI Button (Circle box next to searchbox) */}
+            <AskAiButton
+              onClick={() => setIsAskAiOpen(true)}
+              label="Ask Workspace"
+              variant="circle"
+              className="sm:hidden"
+            />
           </div>
         </div>
 
