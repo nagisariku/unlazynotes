@@ -30,7 +30,7 @@ export default function NewTodoModal({
 }: NewTodoModalProps) {
   const [mounted, setMounted] = useState(false);
   const [content, setContent] = useState('');
-  const [tags, setTags] = useState<string[]>(['todo']);
+  const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -84,7 +84,7 @@ export default function NewTodoModal({
       }, 50);
     } else {
       setContent('');
-      setTags(['todo']);
+      setTags([]);
       setTagInput('');
       setAttachments([]);
       setIsUploading(false);

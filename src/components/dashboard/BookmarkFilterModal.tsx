@@ -18,6 +18,15 @@ interface BookmarkFilterModalProps {
   currentFilters: BookmarkFilterState;
   onApply: (filters: BookmarkFilterState) => void;
   onReset: () => void;
+  availablePlatforms?: Array<{
+    key: string;
+    label: string;
+    Icon: React.ComponentType<{ className?: string }> | null;
+  }>;
+  availableCategories?: Array<{
+    type: string;
+    title: string;
+  }>;
 }
 
 const PLATFORM_OPTIONS = [
@@ -35,9 +44,14 @@ export default function BookmarkFilterModal({
   currentFilters,
   onApply,
   onReset,
+  availablePlatforms,
+  availableCategories,
 }: BookmarkFilterModalProps) {
   const [mounted, setMounted] = useState(false);
   const [draftFilters, setDraftFilters] = useState<BookmarkFilterState>(currentFilters);
+
+  const platformsToRender = availablePlatforms && availablePlatforms.length > 0 ? availablePlatforms : PLATFORM_OPTIONS;
+  const categoriesToRender = availableCategories && availableCategories.length > 0 ? availableCategories : BOOKMARK_MACRO_CONFIG;
 
   useEffect(() => {
     setMounted(true);
@@ -170,7 +184,7 @@ export default function BookmarkFilterModal({
                 Platform
               </label>
               <div className="flex flex-wrap gap-1.5">
-                {PLATFORM_OPTIONS.map((item) => {
+                {platformsToRender.map((item) => {
                   const Icon = item.Icon;
                   const isActive = draftFilters.platform === item.key;
                   return (
@@ -209,7 +223,7 @@ export default function BookmarkFilterModal({
                 >
                   Semua Kategori
                 </button>
-                {BOOKMARK_MACRO_CONFIG.map((conf) => {
+                {categoriesToRender.map((conf) => {
                   const isActive = draftFilters.category === conf.type;
                   return (
                     <button

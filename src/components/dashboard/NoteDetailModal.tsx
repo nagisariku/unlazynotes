@@ -26,7 +26,7 @@ import { format, parseISO } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Calendar } from '../ui/Calendar';
-import { getUrlPlatformInfo, getLinkThumbnail, isDomainUnsupportedForAi } from '@/lib/platform-icons';
+import { getUrlPlatformInfo, getLinkThumbnail, getLinkTitle, isDomainUnsupportedForAi } from '@/lib/platform-icons';
 import type { NoteItem } from './NotesTimeline';
 import type { BookmarkMeta } from '@/db/schema';
 
@@ -40,6 +40,26 @@ function getSafeDomain(url?: string | null): string {
     return new URL(url).hostname.replace(/^www\./, '');
   } catch {
     return url;
+  }
+}
+
+function formatTruncatedUrl(url: string, maxLength = 36): string {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    const domain = parsed.hostname.replace(/^www\./, '');
+    const pathAndQuery = parsed.pathname + (parsed.search || '');
+    const clean = domain + (pathAndQuery !== '/' ? pathAndQuery : '');
+    if (clean.length > maxLength) {
+      return clean.slice(0, maxLength) + '...';
+    }
+    return clean;
+  } catch {
+    const clean = url.replace(/^https?:\/\/(www\.)?/, '');
+    if (clean.length > maxLength) {
+      return clean.slice(0, maxLength) + '...';
+    }
+    return clean;
   }
 }
 
@@ -1407,6 +1427,8 @@ export default function NoteDetailModal({
                         {urls.map((linkUrl) => {
                           const { domain, label, icon: PlatformIcon } = getUrlPlatformInfo(linkUrl);
                           const thumbUrl = getLinkThumbnail(linkUrl, currentMeta);
+                          const metaTitle = getLinkTitle(linkUrl, currentMeta);
+                          const displayTitle = metaTitle || (label !== domain ? `${label} (${domain})` : domain);
 
                           return (
                             <a
@@ -1415,6 +1437,7 @@ export default function NoteDetailModal({
                               target="_blank"
                               rel="noopener noreferrer"
                               className="group flex flex-row sm:flex-col items-center sm:items-start gap-3 sm:gap-2.5 p-2.5 rounded-xl bg-surface-soft hover:bg-hairline/60 transition-all text-left w-full sm:max-w-[280px] !border-0 cursor-pointer select-none"
+                              title={linkUrl}
                             >
                               {thumbUrl ? (
                                 <div className="relative w-24 sm:w-full rounded-lg overflow-hidden bg-canvas shrink-0">
@@ -1438,11 +1461,11 @@ export default function NoteDetailModal({
                                 <div className="flex items-center gap-1.5 mb-0.5">
                                   <PlatformIcon className="w-3.5 h-3.5 text-mute shrink-0" />
                                   <span className="text-body-sm font-medium text-ink group-hover:underline truncate block">
-                                    {label !== domain ? `${label} (${domain})` : domain}
+                                    {displayTitle}
                                   </span>
                                 </div>
-                                <span className="text-caption-xs text-mute font-mono line-clamp-2 break-all block leading-relaxed">
-                                  {linkUrl}
+                                <span className="text-caption-xs text-mute font-mono truncate block mt-0.5" title={linkUrl}>
+                                  {formatTruncatedUrl(linkUrl)}
                                 </span>
                               </div>
                             </a>

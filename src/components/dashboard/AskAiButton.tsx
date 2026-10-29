@@ -5,9 +5,29 @@ interface AskAiButtonProps {
   onClick: () => void;
   className?: string;
   label?: string;
+  variant?: 'pill' | 'circle';
 }
 
-export default function AskAiButton({ onClick, className = '', label = 'Ask AI' }: AskAiButtonProps) {
+export default function AskAiButton({
+  onClick,
+  className = '',
+  label = 'Ask AI',
+  variant = 'pill',
+}: AskAiButtonProps) {
+  if (variant === 'circle') {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer shrink-0 bg-surface-soft text-ink hover:bg-canvas transition-colors !border-0 select-none ${className}`.trim()}
+        title={label}
+        aria-label={label}
+      >
+        <Sparkles className="w-4.5 h-4.5 text-ink" />
+      </button>
+    );
+  }
+
   return (
     <button
       type="button"

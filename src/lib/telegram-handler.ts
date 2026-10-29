@@ -1,8 +1,22 @@
 import { db } from '@/db';
 import { users, apiKeys, notes } from '@/db/schema';
-import { eq, ne, and, or, desc, sql, ilike } from 'drizzle-orm';
+import { eq, ne, and, or, desc, sql, ilike, gte, isNotNull } from 'drizzle-orm';
 import crypto from 'node:crypto';
-import { format } from 'date-fns';
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+  addDays,
+  subDays,
+  parseISO,
+} from 'date-fns';
+import { id as localeId, enUS as localeEn } from 'date-fns/locale';
+import { formatInUserTz, resolveUserTimezone } from '@/lib/timezone';
 import { encryptSecret, decryptSecret } from '@/lib/crypto';
 import {
   hashApiKey,
@@ -1379,6 +1393,600 @@ export async function handleSyncCommand(
 }
 
 export const handleOrganizeCommand = handleSyncCommand;
+export const handleSyncAllCommand = handleSyncCommand;
+
+/**
+ * Handles /sync command:
+ * Synchronizes and organizes a single note with AI (Gemini 3.8 Flash).
+ * If noteIdParam is provided: organizes that specific note.
+ * If noteIdParam is omitted: picks the single most recent unprocessed note (isProcessed: false or category: 'others').
+ */
+export async function handleSingleSyncCommand(
+  chatId: string,
+  userId: string,
+  activeLocale: SupportedLocale = 'id',
+  noteIdParam?: string
+): Promise<TelegramProcessResult> {
+  // 1. Flush any pending debounced messages for this user first
+  if (debounceMap.has(chatId)) {
+    await flushDebounceBuffer(chatId);
+  }
+
+  // 2. Tentukan target note
+  let targetNoteId = noteIdParam?.trim();
+
+  if (targetNoteId) {
+    const [existing] = await db
+      .select({ id: notes.id })
+      .from(notes)
+      .where(and(eq(notes.id, targetNoteId), eq(notes.userId, userId)))
+      .limit(1);
+
+    if (!existing) {
+      await sendTelegramMessage(
+        chatId,
+        activeLocale === 'id' ? '⚠️ Catatan tidak ditemukan.' : '⚠️ Note not found.',
+        { parse_mode: 'Markdown' }
+      );
+      return { ok: false, error: 'note_not_found' };
+    }
+  } else {
+    // Cari 1 catatan terbaru yang belum diproses / masih category others
+    const [latestUnprocessed] = await db
+      .select({ id: notes.id, content: notes.content })
+      .from(notes)
+      .where(
+        and(
+          eq(notes.userId, userId),
+          eq(notes.isArchived, false),
+          or(eq(notes.isProcessed, false), eq(notes.category, 'others'))
+        )
+      )
+      .orderBy(desc(notes.createdAt))
+      .limit(1);
+
+    if (!latestUnprocessed) {
+      const msg = activeLocale === 'id'
+        ? '✨ Semua catatan Anda sudah rapi dan terorganisir!'
+        : '✨ All your notes are already organized!';
+      await sendTelegramMessage(chatId, msg, { parse_mode: 'Markdown' });
+      return { ok: true, action: 'single_sync_empty' };
+    }
+
+    targetNoteId = latestUnprocessed.id;
+  }
+
+  // Tampilkan indikator "typing" di Telegram
+  try {
+    await bot.api.sendChatAction(chatId, 'typing');
+  } catch {}
+
+  try {
+    const result = await organizeUserNotes(userId, targetNoteId);
+    invalidateUserTagsCache(userId);
+
+    const organizedItem = result.items?.[0];
+    const cat = organizedItem?.category || 'others';
+    const tags = (organizedItem?.specificTags || []).map((t: string) => `#${t}`).join(' ') || '-';
+    const rawSnippet = (organizedItem?.content || '').slice(0, 150).replace(/\n+/g, ' ');
+
+    const replyMsg = activeLocale === 'id'
+      ? `✨ *1 Catatan Berhasil Disinkronkan!*\n• Kategori: \`${cat}\`\n• Tags: ${tags}\n\n📝 _"${rawSnippet}"_`
+      : `✨ *1 Note Successfully Synced!*\n• Category: \`${cat}\`\n• Tags: ${tags}\n\n📝 _"${rawSnippet}"_`;
+
+    const keyboard = {
+      inline_keyboard: [
+        [
+          { text: '📖 Lihat Catatan', callback_data: `note:view:${targetNoteId}` },
+          { text: '🌐 Dashboard', url: getWebDashboardUrl(true) },
+        ],
+      ],
+    };
+
+    await sendTelegramMessage(chatId, replyMsg, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+
+    return { ok: true, action: 'single_sync_completed', noteId: targetNoteId };
+  } catch (err) {
+    console.error(`[Single Note Sync Error] User ${userId}, Note ${targetNoteId}:`, err);
+    const failMsg = activeLocale === 'id'
+      ? '❌ Gagal menyinkronkan catatan dengan AI. Coba lagi beberapa saat lagi.'
+      : '❌ Failed to sync note with AI. Please try again shortly.';
+    await sendTelegramMessage(chatId, failMsg, { parse_mode: 'Markdown' });
+    return { ok: false, error: 'single_sync_failed' };
+  }
+}
+
+/**
+ * Handles /finance, /fn command and inline menu:finance trigger:
+ * Returns summary of financial transactions across 4 periods:
+ * 1. Hari Ini (Today)
+ * 2. Minggu Ini (This Week)
+ * 3. Bulan Ini (This Month)
+ * 4. Bulan Lalu (Last Month)
+ * Covering Income (Pemasukan), Expenses (Pengeluaran), Payable (Utang), and Receivable (Piutang).
+ */
+export async function handleFinanceCommand(
+  chatId: string,
+  userId: string,
+  activeLocale: SupportedLocale = 'id',
+  messageId?: number
+): Promise<TelegramProcessResult> {
+  const now = new Date();
+
+  const todayStart = startOfDay(now);
+  const todayEnd = endOfDay(now);
+
+  const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const thisWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
+
+  const thisMonthStart = startOfMonth(now);
+  const thisMonthEnd = endOfMonth(now);
+
+  const lastMonthRef = subMonths(now, 1);
+  const lastMonthStart = startOfMonth(lastMonthRef);
+  const lastMonthEnd = endOfMonth(lastMonthRef);
+
+  // Ambil catatan user mulai dari awal bulan lalu sampai sekarang
+  const userNotes = await db
+    .select({
+      id: notes.id,
+      createdAt: notes.createdAt,
+      expenses: notes.expenses,
+      income: notes.income,
+      debt: notes.debt,
+    })
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isArchived, false),
+        gte(notes.createdAt, lastMonthStart)
+      )
+    );
+
+  interface PeriodMetrics {
+    income: number;
+    expenses: number;
+    utang: number;
+    piutang: number;
+  }
+
+  const todayMetrics: PeriodMetrics = { income: 0, expenses: 0, utang: 0, piutang: 0 };
+  const weekMetrics: PeriodMetrics = { income: 0, expenses: 0, utang: 0, piutang: 0 };
+  const thisMonthMetrics: PeriodMetrics = { income: 0, expenses: 0, utang: 0, piutang: 0 };
+  const lastMonthMetrics: PeriodMetrics = { income: 0, expenses: 0, utang: 0, piutang: 0 };
+
+  for (const note of userNotes) {
+    const noteDate = new Date(note.createdAt);
+
+    let noteExpense = 0;
+    if (Array.isArray(note.expenses)) {
+      for (const exp of note.expenses) {
+        if (exp && typeof exp.amount === 'number' && exp.amount > 0) {
+          noteExpense += exp.amount;
+        }
+      }
+    }
+
+    let noteIncome = 0;
+    if (Array.isArray(note.income)) {
+      for (const inc of note.income) {
+        if (inc && typeof inc.amount === 'number' && inc.amount > 0) {
+          noteIncome += inc.amount;
+        }
+      }
+    }
+
+    let noteUtang = 0;
+    let notePiutang = 0;
+    if (Array.isArray(note.debt)) {
+      for (const d of note.debt) {
+        if (d && typeof d.amount === 'number' && d.amount > 0) {
+          if (d.type === 'payable') {
+            noteUtang += d.amount;
+          } else if (d.type === 'receivable') {
+            notePiutang += d.amount;
+          }
+        }
+      }
+    }
+
+    const isToday = noteDate >= todayStart && noteDate <= todayEnd;
+    const isThisWeek = noteDate >= thisWeekStart && noteDate <= thisWeekEnd;
+    const isThisMonth = noteDate >= thisMonthStart && noteDate <= thisMonthEnd;
+    const isLastMonth = noteDate >= lastMonthStart && noteDate <= lastMonthEnd;
+
+    if (isToday) {
+      todayMetrics.income += noteIncome;
+      todayMetrics.expenses += noteExpense;
+      todayMetrics.utang += noteUtang;
+      todayMetrics.piutang += notePiutang;
+    }
+    if (isThisWeek) {
+      weekMetrics.income += noteIncome;
+      weekMetrics.expenses += noteExpense;
+      weekMetrics.utang += noteUtang;
+      weekMetrics.piutang += notePiutang;
+    }
+    if (isThisMonth) {
+      thisMonthMetrics.income += noteIncome;
+      thisMonthMetrics.expenses += noteExpense;
+      thisMonthMetrics.utang += noteUtang;
+      thisMonthMetrics.piutang += notePiutang;
+    }
+    if (isLastMonth) {
+      lastMonthMetrics.income += noteIncome;
+      lastMonthMetrics.expenses += noteExpense;
+      lastMonthMetrics.utang += noteUtang;
+      lastMonthMetrics.piutang += notePiutang;
+    }
+  }
+
+  const formatIdr = (val: number) => `Rp ${Math.round(val).toLocaleString('id-ID')}`;
+
+  const renderSection = (title: string, metrics: PeriodMetrics) => {
+    if (activeLocale === 'id') {
+      return `📅 *${title}*\n• Pemasukan: ${formatIdr(metrics.income)}\n• Pengeluaran: ${formatIdr(metrics.expenses)}\n• Utang: ${formatIdr(metrics.utang)}\n• Piutang: ${formatIdr(metrics.piutang)}`;
+    }
+    return `📅 *${title}*\n• Income: ${formatIdr(metrics.income)}\n• Expenses: ${formatIdr(metrics.expenses)}\n• Payable (Debt): ${formatIdr(metrics.utang)}\n• Receivable: ${formatIdr(metrics.piutang)}`;
+  };
+
+  const header = activeLocale === 'id'
+    ? '💰 *Laporan Keuangan UnlazyNotes*'
+    : '💰 *UnlazyNotes Financial Report*';
+
+  const secToday = renderSection(activeLocale === 'id' ? 'Hari Ini' : 'Today', todayMetrics);
+  const secWeek = renderSection(activeLocale === 'id' ? 'Minggu Ini' : 'This Week', weekMetrics);
+  const secMonth = renderSection(activeLocale === 'id' ? 'Bulan Ini' : 'This Month', thisMonthMetrics);
+  const secLastMonth = renderSection(activeLocale === 'id' ? 'Bulan Lalu' : 'Last Month', lastMonthMetrics);
+
+  const fullText = `${header}\n\n${secToday}\n\n${secWeek}\n\n${secMonth}\n\n${secLastMonth}`;
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: activeLocale === 'id' ? '🌐 Buka Dashboard Keuangan' : '🌐 Open Finance Dashboard',
+          url: `${getWebDashboardUrl(true)}/finance`,
+        },
+      ],
+    ],
+  };
+
+  if (messageId) {
+    await editTelegramMessage(chatId, messageId, fullText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  } else {
+    await sendTelegramMessage(chatId, fullText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
+
+  return { ok: true, action: 'finance_report' };
+}
+
+/**
+ * 6c3. Menampilkan daftar jadwal terdekat (2 minggu ke depan) dan jadwal terlewat (1 minggu ke belakang).
+ * Mendukung jadwal tanggal pasti (targetDate, scheduleDates, schedule.dates)
+ * serta proyeksi jadwal rutin/recurrence (daily, weekly, monthly, custom_interval).
+ */
+export async function handleScheduleCommand(
+  chatId: string,
+  userId: string,
+  activeLocale: SupportedLocale = 'id',
+  messageId?: number
+): Promise<TelegramProcessResult> {
+  const [userRow] = await db
+    .select({ timezone: users.timezone })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const userTz = resolveUserTimezone(userRow?.timezone);
+  const now = new Date();
+  const todayDateStr = formatInUserTz(now, userTz).dateStr;
+  const today = parseISO(todayDateStr);
+
+  const upcomingStart = startOfDay(today);
+  const upcomingEnd = endOfDay(addDays(today, 14));
+  const pastStart = startOfDay(subDays(today, 7));
+  const pastEnd = endOfDay(subDays(today, 1));
+
+  const tomorrowDateStr = format(addDays(today, 1), 'yyyy-MM-dd');
+  const yesterdayDateStr = format(subDays(today, 1), 'yyyy-MM-dd');
+
+  const userScheduleNotes = await db
+    .select({
+      id: notes.id,
+      content: notes.content,
+      category: notes.category,
+      targetDate: notes.targetDate,
+      scheduleDates: notes.scheduleDates,
+      schedule: notes.schedule,
+      isPinned: notes.isPinned,
+      createdAt: notes.createdAt,
+    })
+    .from(notes)
+    .where(
+      and(
+        eq(notes.userId, userId),
+        eq(notes.isArchived, false),
+        or(
+          eq(notes.category, 'schedule'),
+          isNotNull(notes.targetDate),
+          sql`jsonb_array_length(${notes.scheduleDates}) > 0`,
+          sql`(${notes.schedule}->>'isRecurring')::boolean = true`,
+          sql`jsonb_array_length(COALESCE(${notes.schedule}->'dates', '[]'::jsonb)) > 0`
+        )
+      )
+    )
+    .orderBy(desc(notes.isPinned), desc(notes.createdAt));
+
+  interface ScheduleOccurrence {
+    noteId: string;
+    dateStr: string;
+    dt: Date;
+    content: string;
+    isPinned: boolean;
+    isRecurring: boolean;
+    timeString?: string;
+  }
+
+  const seenKeys = new Set<string>();
+  const occurrences: ScheduleOccurrence[] = [];
+
+  const addOccurrence = (
+    dateStr: string,
+    dt: Date,
+    note: typeof userScheduleNotes[0],
+    isRecurring: boolean,
+    timeString?: string
+  ) => {
+    const key = `${dateStr}:${note.id}`;
+    if (seenKeys.has(key)) return;
+    seenKeys.add(key);
+
+    occurrences.push({
+      noteId: note.id,
+      dateStr,
+      dt,
+      content: note.content,
+      isPinned: Boolean(note.isPinned),
+      isRecurring,
+      timeString,
+    });
+  };
+
+  for (const item of userScheduleNotes) {
+    const concreteDates: string[] = [];
+
+    if (Array.isArray(item.schedule?.dates)) {
+      for (const d of item.schedule.dates) {
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+          concreteDates.push(d);
+        }
+      }
+    }
+
+    if (Array.isArray(item.scheduleDates)) {
+      for (const d of item.scheduleDates) {
+        if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !concreteDates.includes(d)) {
+          concreteDates.push(d);
+        }
+      }
+    }
+
+    if (item.targetDate) {
+      const targetStr = formatInUserTz(item.targetDate, userTz).dateStr;
+      if (!concreteDates.includes(targetStr)) {
+        concreteDates.push(targetStr);
+      }
+    }
+
+    if (concreteDates.length === 0 && !item.schedule?.isRecurring && item.category === 'schedule') {
+      const createdStr = formatInUserTz(item.createdAt, userTz).dateStr;
+      concreteDates.push(createdStr);
+    }
+
+    let timeString = item.schedule?.recurrenceRule?.timeString;
+    if (!timeString && item.targetDate) {
+      const tzInfo = formatInUserTz(item.targetDate, userTz);
+      if (tzInfo.timeStr !== '00:00') {
+        timeString = tzInfo.timeStr;
+      }
+    }
+
+    // 1. Concrete date occurrences
+    for (const dStr of concreteDates) {
+      const parsedDt = parseISO(dStr);
+      if (!isNaN(parsedDt.getTime())) {
+        if (parsedDt >= pastStart && parsedDt <= upcomingEnd) {
+          addOccurrence(dStr, parsedDt, item, Boolean(item.schedule?.isRecurring), timeString);
+        }
+      }
+    }
+
+    // 2. Recurring projections
+    if (item.schedule?.isRecurring) {
+      const rule = item.schedule.recurrenceRule || { frequency: 'weekly' };
+      const anchor = concreteDates.length > 0
+        ? parseISO(concreteDates[0])
+        : (item.targetDate ? parseISO(formatInUserTz(item.targetDate, userTz).dateStr) : parseISO(formatInUserTz(item.createdAt, userTz).dateStr));
+      const anchorDayOfWeek = !isNaN(anchor.getTime()) ? anchor.getDay() : 1;
+      const normalizedFreq = (rule.frequency || 'weekly').toLowerCase();
+
+      const curr = new Date(pastStart);
+      while (curr <= upcomingEnd) {
+        let match = false;
+        if (startOfDay(curr) >= startOfDay(anchor)) {
+          if (normalizedFreq === 'daily') {
+            const interval = rule.intervalDays && rule.intervalDays > 1 ? rule.intervalDays : 1;
+            const diffDays = Math.round((startOfDay(curr).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+            match = diffDays >= 0 && diffDays % interval === 0;
+          } else if (normalizedFreq === 'weekly') {
+            const targetDays = Array.isArray(rule.daysOfWeek) && rule.daysOfWeek.length > 0
+              ? rule.daysOfWeek
+              : [anchorDayOfWeek];
+            match = targetDays.includes(curr.getDay());
+          } else if (normalizedFreq === 'monthly') {
+            const targetDay = rule.dayOfMonth && rule.dayOfMonth >= 1 && rule.dayOfMonth <= 31
+              ? rule.dayOfMonth
+              : (!isNaN(anchor.getTime()) ? anchor.getDate() : 1);
+            match = curr.getDate() === targetDay;
+          } else if (normalizedFreq === 'custom_interval' && rule.intervalDays && rule.intervalDays > 0) {
+            const diffDays = Math.round((startOfDay(curr).getTime() - startOfDay(anchor).getTime()) / (1000 * 60 * 60 * 24));
+            match = diffDays >= 0 && diffDays % rule.intervalDays === 0;
+          }
+        }
+
+        if (match) {
+          const currStr = format(curr, 'yyyy-MM-dd');
+          addOccurrence(currStr, new Date(curr), item, true, timeString);
+        }
+
+        curr.setDate(curr.getDate() + 1);
+      }
+    }
+  }
+
+  const upcomingOccurrences = occurrences
+    .filter((o) => o.dt >= upcomingStart && o.dt <= upcomingEnd)
+    .sort((a, b) => {
+      const diff = a.dt.getTime() - b.dt.getTime();
+      if (diff !== 0) return diff;
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return 0;
+    });
+
+  const pastOccurrences = occurrences
+    .filter((o) => o.dt >= pastStart && o.dt <= pastEnd)
+    .sort((a, b) => {
+      const diff = b.dt.getTime() - a.dt.getTime();
+      if (diff !== 0) return diff;
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return 0;
+    });
+
+  const escapeMd = (str: string) => str.replace(/([_*`\[\]])/g, '\\$1');
+  const localeObj = activeLocale === 'id' ? localeId : localeEn;
+
+  const renderGroupedSection = (list: ScheduleOccurrence[], isPastSection: boolean) => {
+    if (list.length === 0) {
+      if (isPastSection) {
+        return activeLocale === 'id'
+          ? '_Tidak ada jadwal terlewat dalam 7 hari terakhir._'
+          : '_No past schedules in the last 7 days._';
+      }
+      return activeLocale === 'id'
+        ? '_Tidak ada jadwal mendatang dalam 14 hari ke depan._'
+        : '_No upcoming schedules in the next 14 days._';
+    }
+
+    const groups = new Map<string, ScheduleOccurrence[]>();
+    for (const item of list) {
+      const arr = groups.get(item.dateStr) || [];
+      arr.push(item);
+      groups.set(item.dateStr, arr);
+    }
+
+    const blocks: string[] = [];
+    for (const [dStr, groupItems] of groups) {
+      const dt = parseISO(dStr);
+      let dayLabel = '';
+
+      if (dStr === todayDateStr) {
+        dayLabel = activeLocale === 'id'
+          ? `📅 *Hari Ini* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`
+          : `📅 *Today* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`;
+      } else if (dStr === tomorrowDateStr) {
+        dayLabel = activeLocale === 'id'
+          ? `📅 *Besok* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`
+          : `📅 *Tomorrow* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`;
+      } else if (dStr === yesterdayDateStr) {
+        dayLabel = activeLocale === 'id'
+          ? `📅 *Kemarin* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`
+          : `📅 *Yesterday* (${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })})`;
+      } else {
+        dayLabel = `📅 *${format(dt, 'EEEE, d MMM yyyy', { locale: localeObj })}*`;
+      }
+
+      const itemLines = groupItems.map((gi) => {
+        const pinBadge = gi.isPinned ? '⭐️ ' : '';
+        const recurBadge = gi.isRecurring ? ' 🔁' : '';
+        const timeBadge = gi.timeString ? `⏰ ${gi.timeString} — ` : '';
+        const rawContent = gi.content.replace(/\s+/g, ' ').trim();
+        const snippet = rawContent.length > 75 ? `${rawContent.slice(0, 75)}...` : rawContent;
+        return `• ${pinBadge}${timeBadge}${escapeMd(snippet)}${recurBadge}`;
+      });
+
+      blocks.push(`${dayLabel}\n${itemLines.join('\n')}`);
+    }
+
+    return blocks.join('\n\n');
+  };
+
+  const header = activeLocale === 'id'
+    ? '🗓️ *Jadwal Agenda UnlazyNotes*'
+    : '🗓️ *UnlazyNotes Schedule & Agenda*';
+
+  const upcomingTitle = activeLocale === 'id'
+    ? '📌 *Jadwal Mendatang (14 Hari ke Depan):*'
+    : '📌 *Upcoming Schedules (Next 14 Days):*';
+
+  const pastTitle = activeLocale === 'id'
+    ? '⚠️ *Jadwal Terlewat (7 Hari ke Belakang):*'
+    : '⚠️ *Past Schedules (Last 7 Days):*';
+
+  let fullText = '';
+  if (upcomingOccurrences.length === 0 && pastOccurrences.length === 0) {
+    fullText = activeLocale === 'id'
+      ? '🗓️ *Tidak ada jadwal aktif*\n\nTidak ada jadwal mendatang dalam 14 hari ke depan maupun jadwal terlewat dalam 7 hari terakhir.'
+      : '🗓️ *No active schedules*\n\nThere are no upcoming schedules in the next 14 days or past schedules in the last 7 days.';
+  } else {
+    const upcomingBody = renderGroupedSection(upcomingOccurrences, false);
+    const pastBody = renderGroupedSection(pastOccurrences, true);
+    fullText = `${header}\n\n${upcomingTitle}\n${upcomingBody}\n\n${pastTitle}\n${pastBody}`;
+  }
+
+  // Telegram 4096 character safety limit
+  if (fullText.length > 3900) {
+    fullText = fullText.slice(0, 3850) + (activeLocale === 'id' ? '\n\n_...dan jadwal lainnya._' : '\n\n_...and more schedules._');
+  }
+
+  const keyboard = {
+    inline_keyboard: [
+      [
+        {
+          text: activeLocale === 'id' ? '🌐 Buka Kalender Jadwal' : '🌐 Open Schedule Calendar',
+          url: `${getWebDashboardUrl(true)}/schedule`,
+        },
+      ],
+      ...(messageId ? [[{ text: '◀️ Kembali', callback_data: 'menu:start' }]] : []),
+    ],
+  };
+
+  if (messageId) {
+    await editTelegramMessage(chatId, messageId, fullText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  } else {
+    await sendTelegramMessage(chatId, fullText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard,
+    });
+  }
+
+  return { ok: true, action: 'schedule_list' };
+}
 
 /**
  * Core Telegram Message Processor.
@@ -1578,7 +2186,7 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
   const text = rawText.trim();
 
   // Jika input adalah command bot ('/') atau aksi tombol dock, pastikan catatan di debounce buffer disimpan terlebih dahulu
-  const isDockAction = text === '📖 Read' || text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '🔄 Sync' || text === 'Sync' || text === '❌ Tutup Menu';
+  const isDockAction = text === '📖 Read' || text === '🏷 Tags' || text === '⭐️ Pin' || text === '⭐ Pin' || text === '🔄 Sync' || text === 'Sync';
   if (text.startsWith('/') || isDockAction) {
     if (debounceMap.has(chatId)) {
       await flushDebounceBuffer(chatId);
@@ -1814,26 +2422,6 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return { ok: true, action: 'logout_success' };
   }
 
-  // 3b. Tutup Keyboard Menu (/close, /hide, /reset, atau tombol '❌ Tutup Menu')
-  if (
-    text === '❌ Tutup Menu' ||
-    text === '/close' ||
-    text === '/hide' ||
-    text === '/reset' ||
-    /^(\/(close|hide|reset))(@[a-zA-Z0-9_]+)?$/.test(text)
-  ) {
-    await sendTelegramMessage(
-      chatId,
-      '👌 Menu dock ditutup. Ketik /help atau /start kapan saja untuk memunculkan kembali.',
-      {
-        reply_markup: {
-          remove_keyboard: true,
-        },
-      }
-    );
-    return { ok: true, action: 'keyboard_closed' };
-  }
-
   // 4. Validasi Autentikasi Pengguna
   const [activeKey] = await db
     .select()
@@ -2001,25 +2589,46 @@ export async function processTelegramMessage(message: any): Promise<TelegramProc
     return await handleDashboardCommand(chatId, activeLocale);
   }
 
-  // 6d. /sync atau /sync_all atau /sync all atau /organize atau /rapikan
+  // 6c2. /finance atau /fn
   if (
+    text === '/finance' ||
+    text === '/fn' ||
+    /^(\/(finance|fn))(@[a-zA-Z0-9_]+)?$/.test(text)
+  ) {
+    return await handleFinanceCommand(chatId, activeKey.userId, activeLocale);
+  }
+
+  // 6c3. /schedule atau /jadwal atau /sch
+  if (
+    text === '/schedule' ||
+    text === '/jadwal' ||
+    text === '/sch' ||
+    /^(\/(schedule|jadwal|sch))(@[a-zA-Z0-9_]+)?$/.test(text)
+  ) {
+    return await handleScheduleCommand(chatId, activeKey.userId, activeLocale);
+  }
+
+  // 6d1. /sync_all atau /sync all atau /organize atau tombol '🔄 Sync' / 'Sync' / '🪄 Organize' (Batch Sync)
+  if (
+    text === '/sync_all' ||
+    text === '/sync all' ||
+    text === '/organize' ||
+    /^(\/(sync_all|organize))(@[a-zA-Z0-9_]+)?$/.test(text) ||
     text === '🔄 Sync' ||
     text === 'Sync' ||
-    text === '/sync all' ||
-    text === '/sync_all' ||
-    /^\/?(sync|sync_all|organize|rapikan)\b/i.test(text) ||
-    text.startsWith('🪄 Organize') ||
-    text.startsWith('🪄 Rapikan')
+    text.startsWith('🪄 Organize')
   ) {
     return await handleSyncCommand(chatId, activeKey.userId, activeLocale);
   }
 
-  // 6e. /dock atau /menu (Dock menu disabled)
-  if (text === '/dock' || text === '/menu') {
-    await sendTelegramMessage(chatId, activeLocale === 'id' ? '👌 Menu dock telah dinonaktifkan. Gunakan menu perintah resmi (/) atau inline menu.' : '👌 Dock menu is disabled. Use the official commands menu (/) or inline menu.', {
-      reply_markup: REMOVE_DOCK_KEYBOARD,
-    });
-    return { ok: true, action: 'dock_disabled' };
+  // 6d2. /sync [noteId] (Single Note Sync)
+  if (
+    text === '/sync' ||
+    text.startsWith('/sync ') ||
+    /^(\/sync)(@[a-zA-Z0-9_]+)?(\s+[\s\S]*)?$/.test(text)
+  ) {
+    const rawParam = text.replace(/^\/sync(@[a-zA-Z0-9_]+)?\s*/, '').trim();
+    return await handleSingleSyncCommand(chatId, activeKey.userId, activeLocale, rawParam || undefined);
   }
 
   // 7. /search <kata_kunci> atau /src <kata_kunci>
@@ -2712,6 +3321,52 @@ export async function processTelegramCallbackQuery(callbackQuery: any): Promise<
 
     await answerTelegramCallbackQuery(callbackId);
     return { ok: true, action: 'callback_menu_start' };
+  }
+
+  // 1f4. Menu Finance: menu:finance
+  if (data === 'menu:finance') {
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, activeKey.userId)).limit(1);
+    const activeLocale = detectTelegramLocale(callbackQuery, u?.preferredLocale);
+
+    await answerTelegramCallbackQuery(callbackId);
+    return await handleFinanceCommand(chatId, activeKey.userId, activeLocale, messageId);
+  }
+
+  // 1f4b. Menu Schedule: menu:schedule
+  if (data === 'menu:schedule') {
+    const [activeKey] = await db
+      .select()
+      .from(apiKeys)
+      .where(and(eq(apiKeys.telegramChatId, chatId), eq(apiKeys.isActive, true)))
+      .limit(1);
+
+    if (!activeKey) {
+      const activeLocale = detectTelegramLocale(callbackQuery, null);
+      await answerTelegramCallbackQuery(callbackId, {
+        text: getTelegramMsg('callback_unauthenticated', activeLocale),
+      });
+      return { ok: false, error: 'unauthenticated' };
+    }
+
+    const [u] = await db.select({ preferredLocale: users.preferredLocale }).from(users).where(eq(users.id, activeKey.userId)).limit(1);
+    const activeLocale = detectTelegramLocale(callbackQuery, u?.preferredLocale);
+
+    await answerTelegramCallbackQuery(callbackId);
+    return await handleScheduleCommand(chatId, activeKey.userId, activeLocale, messageId);
   }
 
   // 1g. Pagination untuk /pin: page:pin:<queryVal>:<page_num> atau menu:pin

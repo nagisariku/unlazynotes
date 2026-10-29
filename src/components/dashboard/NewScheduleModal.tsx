@@ -1,16 +1,22 @@
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
   Check,
   Sparkles,
   Loader2,
-  Calendar as CalendarIcon,
   Paperclip,
   ImageIcon,
   FileText,
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import {
+  format,
+  isBefore,
+  startOfDay,
+  startOfToday,
+  addDays,
+  getDaysInMonth,
+} from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { Calendar } from '../ui/Calendar';
@@ -18,6 +24,8 @@ import type { ScheduleItem } from './ScheduleView';
 import type { NoteAttachment } from '@/db/schema';
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+
+export type RecurrenceType = 'once' | 'weekly' | 'monthly';
 
 interface NewScheduleModalProps {
   isOpen: boolean;
@@ -34,11 +42,17 @@ export default function NewScheduleModal({
 }: NewScheduleModalProps) {
   const [mounted, setMounted] = useState(false);
   const [content, setContent] = useState('');
-  const [scheduleDates, setScheduleDates] = useState<string[]>([]);
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState<Date>(() => selectedDate || new Date());
-  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
-  const [tags, setTags] = useState<string[]>(['schedule']);
+  const [selectedAnchorDate, setSelectedAnchorDate] = useState<Date>(() => {
+    const today = startOfToday();
+    return selectedDate && startOfDay(selectedDate) >= today ? startOfDay(selectedDate) : today;
+  });
+  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>('once');
+  const [calendarMonth, setCalendarMonth] = useState<Date>(() => {
+    const today = startOfToday();
+    return selectedDate && startOfDay(selectedDate) >= today ? startOfDay(selectedDate) : today;
+  });
+
+  const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [attachments, setAttachments] = useState<NoteAttachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -47,6 +61,7 @@ export default function NewScheduleModal({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevOpenRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -62,7 +77,7 @@ export default function NewScheduleModal({
 
     el.style.height = 'auto';
     const isMobileScreen = typeof window !== 'undefined' ? window.innerWidth < 640 : false;
-    const minH = isMobileScreen ? 180 : 220;
+    const minH = isMobileScreen ? 140 : 180;
     const targetHeight = Math.max(el.scrollHeight, minH);
     el.style.height = `${targetHeight}px`;
 
@@ -84,15 +99,18 @@ export default function NewScheduleModal({
     return () => window.removeEventListener('resize', handleResize);
   }, [isOpen, adjustTextareaHeight]);
 
+  // Reset states and auto-focus strictly when modal transitions from closed to open
   useEffect(() => {
-    if (isOpen) {
-      const initialDates = selectedDate ? [format(selectedDate, 'yyyy-MM-dd')] : [];
+    if (isOpen && !prevOpenRef.current) {
+      const today = startOfToday();
+      const initialDate = selectedDate && startOfDay(selectedDate) >= today ? startOfDay(selectedDate) : today;
+
       setContent('');
-      setScheduleDates(initialDates);
-      setIsRecurring(false);
-      setCalendarMonth(selectedDate || new Date());
-      setIsDatePickerOpen(false);
-      setTags(['schedule']);
+      setSelectedAnchorDate(initialDate);
+      setCalendarMonth(initialDate);
+      setRecurrenceType('once');
+
+      setTags([]);
       setTagInput('');
       setAttachments([]);
       setIsUploading(false);
@@ -103,36 +121,67 @@ export default function NewScheduleModal({
         textareaRef.current?.focus();
       }, 50);
     }
+    prevOpenRef.current = isOpen;
   }, [isOpen, selectedDate, adjustTextareaHeight]);
 
-  useEffect(() => {
-    if (isDatePickerOpen) {
-      if (scheduleDates.length > 0) {
-        try {
-          const first = parseISO(scheduleDates[0]);
-          if (!isNaN(first.getTime())) {
-            setCalendarMonth(first);
-            return;
-          }
-        } catch {}
-      }
-      setCalendarMonth(selectedDate || new Date());
+  const handlePickerDateSelect = (
+    _dates: Date[] | undefined,
+    triggerDate: Date
+  ) => {
+    if (!triggerDate) return;
+    const today = startOfToday();
+    if (isBefore(startOfDay(triggerDate), today)) {
+      return; // Disallow selecting past dates
     }
-  }, [isDatePickerOpen, scheduleDates, selectedDate]);
+    setSelectedAnchorDate(startOfDay(triggerDate));
+  };
+
+  // Projected dates for highlighting inside the Calendar
+  const calendarSelectedDates = useMemo<Date[]>(() => {
+    if (!selectedAnchorDate) return [];
+    const anchor = startOfDay(selectedAnchorDate);
+
+    if (recurrenceType === 'once') {
+      return [anchor];
+    }
+
+    if (recurrenceType === 'weekly') {
+      const dates: Date[] = [];
+      let curr = new Date(anchor);
+      for (let i = 0; i < 52; i++) {
+        dates.push(new Date(curr));
+        curr = addDays(curr, 7);
+      }
+      return dates;
+    }
+
+    if (recurrenceType === 'monthly') {
+      const dates: Date[] = [];
+      const anchorDay = anchor.getDate();
+      const startY = anchor.getFullYear();
+      const startM = anchor.getMonth();
+      for (let i = 0; i < 24; i++) {
+        const mDate = new Date(startY, startM + i, 1);
+        const maxDays = getDaysInMonth(mDate);
+        if (anchorDay <= maxDays) {
+          dates.push(new Date(mDate.getFullYear(), mDate.getMonth(), anchorDay));
+        }
+      }
+      return dates;
+    }
+
+    return [anchor];
+  }, [selectedAnchorDate, recurrenceType]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !isSubmitting && !isEnhancing) {
-        if (isDatePickerOpen) {
-          setIsDatePickerOpen(false);
-          return;
-        }
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, isSubmitting, isEnhancing, isDatePickerOpen, onClose]);
+  }, [isOpen, isSubmitting, isEnhancing, onClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -151,7 +200,7 @@ export default function NewScheduleModal({
 
   const formattedDate = (() => {
     try {
-      const d = selectedDate || new Date();
+      const d = selectedAnchorDate || new Date();
       return format(d, 'EEEE, d MMMM yyyy • HH:mm', { locale: localeId }) + ' WIB';
     } catch {
       return 'Jadwal Baru';
@@ -254,7 +303,16 @@ export default function NewScheduleModal({
 
     setIsSubmitting(true);
     const tempId = `temp-sch-${Date.now()}`;
-    const now = selectedDate || new Date();
+    const now = new Date();
+
+    const anchorDate = selectedAnchorDate;
+    const anchorStr = format(anchorDate, 'yyyy-MM-dd');
+    const isRec = recurrenceType !== 'once';
+    const recurrenceRule = recurrenceType === 'weekly'
+      ? { frequency: 'weekly' as const, daysOfWeek: [anchorDate.getDay()] }
+      : recurrenceType === 'monthly'
+      ? { frequency: 'monthly' as const, dayOfMonth: anchorDate.getDate() }
+      : undefined;
 
     const optimisticItem: ScheduleItem = {
       id: tempId,
@@ -263,9 +321,13 @@ export default function NewScheduleModal({
       specificTags: tags,
       source: 'web',
       isPinned: false,
-      scheduleDates: scheduleDates.length > 0 ? scheduleDates : undefined,
-      targetDate: scheduleDates.length > 0 ? scheduleDates[0] : (selectedDate ? selectedDate.toISOString() : undefined),
-      schedule: { dates: scheduleDates, isRecurring },
+      scheduleDates: [anchorStr],
+      targetDate: anchorStr,
+      schedule: {
+        dates: [anchorStr],
+        isRecurring: isRec,
+        recurrenceRule,
+      },
       attachments: attachments.length > 0 ? attachments : undefined,
       createdAt: now.toISOString(),
     };
@@ -279,15 +341,14 @@ export default function NewScheduleModal({
         category: 'schedule',
         specificTags: tags,
         attachments: attachments.length > 0 ? attachments : undefined,
+        schedule: {
+          dates: [anchorStr],
+          isRecurring: isRec,
+          recurrenceRule,
+        },
+        scheduleDates: [anchorStr],
+        targetDate: anchorStr,
       };
-
-      if (scheduleDates.length > 0) {
-        payload.schedule = { dates: scheduleDates, isRecurring };
-        payload.scheduleDates = scheduleDates;
-        payload.targetDate = scheduleDates[0];
-      } else if (selectedDate) {
-        payload.targetDate = selectedDate.toISOString();
-      }
 
       const res = await fetch('/api/notes', {
         method: 'POST',
@@ -315,7 +376,7 @@ export default function NewScheduleModal({
 
   return createPortal(
     <>
-      {/* Full-screen Backdrop covering 100% viewport - overlay click does NOT close modal */}
+      {/* Full-screen Backdrop covering 100% viewport */}
       <div
         className="fixed inset-0 z-[9998] bg-black/75 select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0 }}
@@ -324,135 +385,88 @@ export default function NewScheduleModal({
 
       {/* Modal Dialog Container */}
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center px-4 py-8 sm:py-8 sm:px-6 pointer-events-none select-none"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 pointer-events-none select-none"
         style={{ top: 0, left: 0, right: 0, bottom: 0, height: '100dvh' }}
       >
-        <div className="w-full max-w-3xl sm:max-w-4xl min-h-[min(380px,80dvh)] sm:min-h-[440px] max-h-[80dvh] sm:max-h-[85dvh] flex flex-col rounded-2xl bg-canvas text-ink pointer-events-auto overflow-hidden my-auto shadow-2xl relative">
-          {/* Top Bar / Head */}
+        <div className="w-full max-w-2xl md:max-w-4xl lg:max-w-5xl max-h-[92dvh] flex flex-col rounded-2xl bg-canvas text-ink pointer-events-auto overflow-hidden my-auto shadow-2xl relative">
+          {/* Top Bar / Header without horizontal divider */}
           <div className="flex items-center justify-between px-6 pt-5 pb-2 bg-canvas shrink-0 select-none">
-            <div className="flex items-center gap-2 text-caption-sm text-body font-mono min-w-0 mr-2">
+            <div className="flex items-center gap-2 text-caption-sm text-body font-mono min-w-0">
               <span className="text-caption-sm font-semibold text-body uppercase tracking-wider font-mono">
                 Jadwal Baru
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* On Mobile: Enhance AI button */}
-              <button
-                type="button"
-                onClick={handleEnhance}
-                disabled={isEnhancing || !content.trim()}
-                className={`sm:hidden w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                  content.trim() && !isEnhancing
-                    ? 'bg-surface-soft text-ink hover:bg-canvas'
-                    : 'opacity-40 text-mute cursor-not-allowed'
-                }`}
-                title="AI enhance schedule"
-                aria-label="AI enhance schedule"
-              >
-                {isEnhancing ? (
-                  <Loader2 className="w-3.5 h-3.5 text-ink animate-spin" />
-                ) : (
-                  <div className="rotate-45 p-0.5 flex items-center justify-center">
-                    <Sparkles className="w-3.5 h-3.5 -rotate-45" />
-                  </div>
-                )}
-              </button>
-
-              {/* On Mobile: Simpan button */}
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting || !content.trim()}
-                className={`sm:hidden h-8 px-3.5 rounded-full flex items-center justify-center gap-1 text-caption-xs font-semibold cursor-pointer transition-all ${
-                  content.trim() && !isSubmitting
-                    ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95'
-                    : 'bg-surface-soft text-mute cursor-not-allowed opacity-60'
-                }`}
-                title="Simpan Jadwal"
-                aria-label="Simpan jadwal"
-              >
-                {isSubmitting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <>
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Simpan</span>
-                  </>
-                )}
-              </button>
-
-              {/* Close Button: X */}
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
-                title="Tutup (Esc)"
-                aria-label="Tutup modal"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+            {/* Close Button: X */}
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-body hover:text-ink hover:bg-surface-soft cursor-pointer transition-colors"
+              title="Tutup (Esc)"
+              aria-label="Tutup modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
-          {/* Modal Body / Content */}
-          <div className="flex-1 flex flex-col justify-between overflow-y-auto overflow-x-hidden px-6 pt-3 pb-8 space-y-6 overscroll-contain">
-            <div className="space-y-6">
-              {/* Textarea */}
-              <textarea
-                ref={textareaRef}
-                value={content}
-                onChange={(e) => {
-                  setContent(e.target.value);
-                  const el = e.target;
-                  el.style.height = 'auto';
-                  const isMobile = window.innerWidth < 640;
-                  const minH = isMobile ? 180 : 220;
-                  el.style.height = `${Math.max(el.scrollHeight, minH)}px`;
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="Tulis agenda jadwal baru..."
-                className="w-full bg-transparent text-ink placeholder:text-mute text-body-md leading-relaxed resize-none focus:outline-none font-sans select-text min-h-[180px] sm:min-h-[220px] p-0 border-0 overflow-hidden block"
-              />
+          {/* Modal Body: Responsive 2 Columns (Desktop) / Stacked (Mobile) */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pt-3 pb-2 overscroll-contain">
+            <div className="flex flex-col md:flex-row items-stretch gap-6 lg:gap-8">
+              {/* Left Column: Note input, attachments, tags */}
+              <div className="flex-1 flex flex-col justify-between min-w-0 space-y-4">
+                <div className="space-y-4 flex-1">
+                  {/* Textarea */}
+                  <textarea
+                    ref={textareaRef}
+                    value={content}
+                    onChange={(e) => {
+                      setContent(e.target.value);
+                      const el = e.target;
+                      el.style.height = 'auto';
+                      const isMobile = window.innerWidth < 640;
+                      const minH = isMobile ? 140 : 180;
+                      el.style.height = `${Math.max(el.scrollHeight, minH)}px`;
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Tulis agenda jadwal baru..."
+                    className="w-full bg-transparent text-ink placeholder:text-mute text-body-md leading-relaxed resize-none focus:outline-none font-sans select-text min-h-[140px] sm:min-h-[180px] p-0 border-0 overflow-hidden block"
+                  />
 
-              {/* Attachments if any */}
-              {attachments && attachments.length > 0 && (
-                <div className="pt-2 space-y-2 select-none">
-                  <div className="flex flex-wrap gap-2">
-                    {attachments.map((att: any, i: number) => (
-                      <div
-                        key={att.fileId || i}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-soft text-caption-sm text-ink max-w-full group"
-                      >
-                        {att.type === 'image' ? (
-                          <ImageIcon className="w-4 h-4 text-mute shrink-0" />
-                        ) : (
-                          <FileText className="w-4 h-4 text-mute shrink-0" />
-                        )}
-                        <span className="truncate max-w-[180px] sm:max-w-xs font-mono">
-                          {att.fileName || `Attachment-${i + 1}`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
-                          className="text-mute hover:text-terminal-red cursor-pointer ml-1 p-0.5 rounded hover:bg-surface-soft/80"
-                          title="Hapus lampiran"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
+                  {/* Attachments if any */}
+                  {attachments && attachments.length > 0 && (
+                    <div className="pt-2 space-y-2 select-none">
+                      <div className="flex flex-wrap gap-2">
+                        {attachments.map((att: any, i: number) => (
+                          <div
+                            key={att.fileId || i}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-soft text-caption-sm text-ink max-w-full group"
+                          >
+                            {att.type === 'image' ? (
+                              <ImageIcon className="w-4 h-4 text-mute shrink-0" />
+                            ) : (
+                              <FileText className="w-4 h-4 text-mute shrink-0" />
+                            )}
+                            <span className="truncate max-w-[180px] sm:max-w-xs font-mono">
+                              {att.fileName || `Attachment-${i + 1}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setAttachments((prev) => prev.filter((_, idx) => idx !== i))}
+                              className="text-mute hover:text-terminal-red cursor-pointer ml-1 p-0.5 rounded hover:bg-surface-soft/80"
+                              title="Hapus lampiran"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Bottom Section */}
-            <div>
-              <div className="pt-6 pb-2 flex flex-wrap items-center justify-between gap-3 select-none">
-                {/* Left grouping */}
-                <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                {/* Tags bar (No + Target Date button) */}
+                <div className="pt-4 flex flex-wrap items-center gap-2 select-none">
                   {/* Category Pill */}
                   <span className="px-3.5 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-sans font-normal">
                     schedule
@@ -519,164 +533,136 @@ export default function NewScheduleModal({
                       </button>
                     )}
                   </div>
+                </div>
+              </div>
 
-                  {/* Target Dates for Schedule category */}
-                  <div className="inline-flex flex-wrap items-center gap-1.5">
-                    {scheduleDates.map((d) => (
-                      <span
-                        key={d}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-surface-soft text-ink text-xs sm:text-[13px] font-mono font-normal transition-colors"
-                      >
-                        <CalendarIcon className="w-3.5 h-3.5 text-mute shrink-0" />
-                        <span>{d}</span>
-                        <button
-                          type="button"
-                          onClick={() => setScheduleDates((prev) => prev.filter((dt) => dt !== d))}
-                          className="text-mute hover:text-terminal-red cursor-pointer ml-0.5"
-                          title={`Hapus ${d}`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ))}
+              {/* Right Column (Desktop) / Underneath (Mobile): Date Picker & Recurrence Tabs */}
+              <div className="w-full md:w-[310px] lg:w-[340px] shrink-0 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-hairline pt-5 md:pt-0 md:pl-5 lg:pl-6 space-y-3">
+                {/* 1. Date Picker Calendar */}
+                <div className="w-full flex justify-center">
+                  <Calendar
+                    mode="multiple"
+                    size="medium"
+                    month={calendarMonth}
+                    onMonthChange={setCalendarMonth}
+                    disabled={{ before: startOfToday() }}
+                    selected={calendarSelectedDates}
+                    onSelect={handlePickerDateSelect}
+                  />
+                </div>
 
-                    {/* + Target Date button */}
+                {/* 2. Recurrence Tabs Option: Directly below Calendar */}
+                <div className="w-full flex justify-center pt-1 pb-1">
+                  <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0 select-none">
                     <button
                       type="button"
-                      onClick={() => setIsDatePickerOpen(true)}
-                      className="px-3.5 py-1.5 rounded-full bg-surface-soft/60 hover:bg-surface-soft text-xs sm:text-[13px] text-ink font-sans font-normal inline-flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                      onClick={() => setRecurrenceType('once')}
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                        recurrenceType === 'once'
+                          ? 'bg-canvas text-ink shadow-xs font-semibold'
+                          : 'text-body hover:text-ink'
+                      }`}
                     >
-                      <CalendarIcon className="w-3.5 h-3.5 text-mute shrink-0" />
-                      <span>+ Target Date</span>
+                      Sekali
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecurrenceType('weekly')}
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                        recurrenceType === 'weekly'
+                          ? 'bg-canvas text-ink shadow-xs font-semibold'
+                          : 'text-body hover:text-ink'
+                      }`}
+                    >
+                      Setiap Minggu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRecurrenceType('monthly')}
+                      className={`px-3 sm:px-3.5 py-1.5 rounded-full text-caption-sm font-medium cursor-pointer transition-colors !border-0 ${
+                        recurrenceType === 'monthly'
+                          ? 'bg-canvas text-ink shadow-xs font-semibold'
+                          : 'text-body hover:text-ink'
+                      }`}
+                    >
+                      Setiap Bulan
                     </button>
                   </div>
                 </div>
-
-                {/* Right grouping (Desktop only) */}
-                <div className="hidden sm:flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleEnhance}
-                    disabled={isEnhancing || !content.trim()}
-                    className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
-                      content.trim() && !isEnhancing
-                        ? 'bg-surface-soft text-ink hover:bg-canvas'
-                        : 'opacity-40 text-mute cursor-not-allowed'
-                    }`}
-                    title="AI enhance schedule"
-                    aria-label="AI enhance schedule"
-                  >
-                    {isEnhancing ? (
-                      <Loader2 className="w-4 h-4 text-ink animate-spin" />
-                    ) : (
-                      <div className="rotate-45 p-0.5 flex items-center justify-center">
-                        <Sparkles className="w-4 h-4 -rotate-45" />
-                      </div>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={isSubmitting || !content.trim()}
-                    className={`h-9 sm:h-10 px-4 sm:px-5 rounded-full flex items-center justify-center gap-1.5 text-caption-sm font-semibold cursor-pointer transition-all ${
-                      content.trim() && !isSubmitting
-                        ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95'
-                        : 'bg-surface-soft text-mute cursor-not-allowed opacity-60'
-                    }`}
-                    title="Simpan Jadwal (Ctrl+Enter)"
-                    aria-label="Simpan jadwal"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Menyimpan...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>Simpan</span>
-                      </>
-                    )}
-                  </button>
-                </div>
               </div>
+            </div>
+          </div>
 
-              {/* Date & Time at the very bottom */}
-              <div className="pt-3 pb-1 text-caption-xs text-mute font-mono select-none">
-                <span>{formattedDate}</span>
-              </div>
+          {/* Bottom Action Footer without horizontal divider */}
+          <div className="px-6 pb-6 pt-3 flex flex-wrap items-center justify-between gap-3 select-none bg-canvas shrink-0">
+            {/* Left: Formatted Date / Hint */}
+            <div className="text-caption-xs text-mute font-mono hidden sm:block">
+              <span>{formattedDate}</span>
+            </div>
+
+            {/* Right: AI Enhance + Batal + Selesai */}
+            <div className="flex items-center justify-end gap-2.5 sm:gap-3 w-full sm:w-auto ml-auto">
+              {/* AI Enhance Button */}
+              <button
+                type="button"
+                onClick={handleEnhance}
+                disabled={isEnhancing || !content.trim()}
+                className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+                  content.trim() && !isEnhancing
+                    ? 'bg-surface-soft text-ink hover:bg-canvas'
+                    : 'opacity-40 text-mute cursor-not-allowed'
+                }`}
+                title="AI enhance schedule"
+                aria-label="AI enhance schedule"
+              >
+                {isEnhancing ? (
+                  <Loader2 className="w-4 h-4 text-ink animate-spin" />
+                ) : (
+                  <div className="rotate-45 p-0.5 flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 -rotate-45" />
+                  </div>
+                )}
+              </button>
+
+              {/* Batal Button: pure text, no border, no background, no outline */}
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-3 py-2 text-body-sm text-body hover:text-ink font-medium cursor-pointer transition-colors !border-0 bg-transparent disabled:opacity-50"
+              >
+                Batal
+              </button>
+
+              {/* Selesai Button: Primary Pill button */}
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isSubmitting || !content.trim()}
+                className={`h-9 sm:h-10 px-5 sm:px-6 rounded-full flex items-center justify-center gap-1.5 text-caption-sm font-semibold cursor-pointer transition-all ${
+                  content.trim() && !isSubmitting
+                    ? 'bg-primary text-on-primary hover:opacity-90 active:scale-95 shadow-xs'
+                    : 'bg-surface-soft text-mute cursor-not-allowed opacity-60'
+                }`}
+                title="Selesai (Ctrl+Enter)"
+                aria-label="Selesai tambah jadwal"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Selesai</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Datepicker Target Date Modal: Frontmost Layer Dialog for both Desktop & Mobile */}
-      {isDatePickerOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-[10001] bg-black/75 select-none pointer-events-auto"
-            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-            onClick={() => setIsDatePickerOpen(false)}
-            aria-hidden="true"
-          />
-
-          <div
-            className="fixed inset-0 z-[10002] flex items-center justify-center p-4 pointer-events-none select-none"
-            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-          >
-            <div className="w-full max-w-sm sm:max-w-md rounded-2xl bg-canvas p-4 sm:p-5 text-ink pointer-events-auto shadow-2xl relative animate-in fade-in zoom-in-95 duration-100 flex flex-col gap-3">
-              <div className="flex justify-center w-full">
-                <Calendar
-                  mode="multiple"
-                  size="medium"
-                  month={calendarMonth}
-                  onMonthChange={setCalendarMonth}
-                  selected={scheduleDates
-                    .map((d) => {
-                      try {
-                        return parseISO(d);
-                      } catch {
-                        return null;
-                      }
-                    })
-                    .filter((d): d is Date => d !== null && !isNaN(d.getTime()))}
-                  onSelect={(dates) => {
-                    if (!dates || dates.length === 0) {
-                      setScheduleDates([]);
-                      return;
-                    }
-                    const formatted = Array.from(
-                      new Set(dates.map((dt) => format(dt, 'yyyy-MM-dd')))
-                    ).sort();
-                    setScheduleDates(formatted);
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center justify-between px-1 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-xs sm:text-caption-sm text-ink select-none font-medium">
-                  <input
-                    type="checkbox"
-                    checked={isRecurring}
-                    onChange={(e) => setIsRecurring(e.target.checked)}
-                    className="w-4 h-4 rounded border-hairline text-primary focus:ring-primary/20 cursor-pointer accent-primary"
-                  />
-                  <span>Jadwal Rutin / Berulang (Habit)</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => setIsDatePickerOpen(false)}
-                  className="h-10 sm:h-11 px-7 rounded-full bg-primary text-on-primary text-body-sm font-semibold cursor-pointer hover:opacity-90 active:scale-95 transition-all shadow-xs"
-                >
-                  Selesai
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </>,
     document.body
   );

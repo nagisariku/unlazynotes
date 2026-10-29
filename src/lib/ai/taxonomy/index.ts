@@ -77,26 +77,11 @@ export function resolveCanonicalTag(rawToken: string, category?: Category): stri
  * Extracts recognized canonical tags directly from raw note text using the category's bilingual taxonomy.
  * Zero-cost, instantaneous O(N) regex-based scanner.
  */
-export function extractTagsFromContent(content: string, category: Category, limit = 2): string[] {
-  const text = content.toLowerCase();
-  const catDefs = ALL_TAXONOMIES.filter(def => def.category === category);
-  const found: string[] = [];
-
-  for (const def of catDefs) {
-    // Check if canonical word itself exists as word boundary in text
-    const allKeywords = [def.canonical, ...def.aliases.id, ...def.aliases.en];
-    const escaped = allKeywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[-_\s]+/g, '[-_\\s]+'));
-    const pattern = new RegExp(`\\b(${escaped.join('|')})\\b`, 'i');
-
-    if (pattern.test(text)) {
-      if (!found.includes(def.canonical)) {
-        found.push(def.canonical);
-      }
-      if (found.length >= limit) break;
-    }
-  }
-
-  return found;
+/**
+ * @deprecated Decommissioned for Pure LLM Architecture. Always returns empty array.
+ */
+export function extractTagsFromContent(_content: string, _category: Category, _limit = 2): string[] {
+  return [];
 }
 
 /**

@@ -203,11 +203,19 @@ export type TodoEntry = {
 
 export type BookmarkType =
   | 'tech_dev'
+  | 'design_creative'
+  | 'tools_utility'
+  | 'finance_investment'
+  | 'health_fitness'
+  | 'lifestyle_hobbies'
   | 'media_social'
   | 'work_docs'
+  | 'education_research'
+  | 'audio_entertainment'
   | 'places'
   | 'shopping'
-  | 'reading_other';
+  | 'reading_other'
+  | (string & {});
 
 export interface BookmarkItemMeta {
   url: string;
@@ -241,11 +249,13 @@ export interface BookmarkMeta {
 }
 
 export type CredentialType =
-  | 'account'
-  | 'network'
-  | 'identity_finance'
-  | 'license'
-  | 'other';
+  | 'digital_access'
+  | 'civil_identity'
+  | 'financial_instrument'
+  | 'cryptographic_token'
+  | 'physical_access'
+  | 'other'
+  | (string & {});
 
 export const paymentLogs = pgTable('payment_logs', {
   id: text('id').primaryKey(),

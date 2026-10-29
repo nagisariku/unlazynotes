@@ -60,7 +60,7 @@ const serializedBookmarks = bookmarkNotes.map((b) => ({
       isTelegramConnected={Boolean(apiKeyRecord?.telegramChatId)}
       rawApiKey={apiKeyRecord?.rawKey || null}
     />
-    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden">
+    <main class="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-clip [touch-action:pan-y]">
       <BookmarksView
         client:load
         initialBookmarks={serializedBookmarks}

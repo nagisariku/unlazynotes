@@ -20,7 +20,7 @@ import {
   Eye,
   SlidersHorizontal,
 } from 'lucide-react';
-import { getUrlPlatformInfo, getLinkThumbnail, getLinkTitle } from '@/lib/platform-icons';
+import { getUrlPlatformInfo, getLinkThumbnail, getLinkTitle, resolveBookmarkPlatform } from '@/lib/platform-icons';
 import { format, isThisMonth } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
@@ -32,14 +32,57 @@ import NoteDetailModal from './NoteDetailModal';
 import BookmarkFilterModal from './BookmarkFilterModal';
 import type { BookmarkType, BookmarkMeta } from '../../db/schema';
 
+export const STANDARD_BOOKMARK_TITLES: Record<string, string> = {
+  tech_dev: 'Tech & Dev',
+  design_creative: 'Desain & Kreatif',
+  tools_utility: 'Tools & AI',
+  finance_investment: 'Finansial & Investasi',
+  health_fitness: 'Kesehatan & Fitness',
+  lifestyle_hobbies: 'Gaya Hidup & Hobi',
+  media_social: 'Media & Sosial',
+  work_docs: 'Dokumen & Kerja',
+  education_research: 'Edukasi & Riset',
+  audio_entertainment: 'Audio & Hiburan',
+  places: 'Tempat & Lokasi',
+  places_travel: 'Tempat & Wisata',
+  travel_location: 'Tempat & Wisata',
+  shopping: 'Belanja & Produk',
+  culinary: 'Kuliner & Makanan',
+  food: 'Kuliner & Makanan',
+  gaming: 'Gaming & Game',
+  legal: 'Hukum & Legalitas',
+  automotive: 'Otomotif & Kendaraan',
+  parenting: 'Parenting & Keluarga',
+  reading_other: 'Bacaan & Lainnya',
+  other: 'Bacaan & Lainnya',
+};
+
+export function formatBookmarkTypeTitle(type: string): string {
+  const key = type.toLowerCase().trim();
+  if (STANDARD_BOOKMARK_TITLES[key]) {
+    return STANDARD_BOOKMARK_TITLES[key];
+  }
+  return key
+    .split(/[_-]+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export const BOOKMARK_MACRO_CONFIG: Array<{
   type: BookmarkType;
   title: string;
   id: string;
 }> = [
   { type: 'tech_dev', title: 'Tech & Dev', id: 'section-tech-dev' },
+  { type: 'design_creative', title: 'Desain & Kreatif', id: 'section-design-creative' },
+  { type: 'tools_utility', title: 'Tools & AI', id: 'section-tools-utility' },
+  { type: 'finance_investment', title: 'Finansial & Investasi', id: 'section-finance-investment' },
+  { type: 'health_fitness', title: 'Kesehatan & Fitness', id: 'section-health-fitness' },
+  { type: 'lifestyle_hobbies', title: 'Gaya Hidup & Hobi', id: 'section-lifestyle-hobbies' },
   { type: 'media_social', title: 'Media & Sosial', id: 'section-media-social' },
   { type: 'work_docs', title: 'Dokumen & Kerja', id: 'section-work-docs' },
+  { type: 'education_research', title: 'Edukasi & Riset', id: 'section-education-research' },
+  { type: 'audio_entertainment', title: 'Audio & Hiburan', id: 'section-audio-entertainment' },
   { type: 'places', title: 'Tempat & Lokasi', id: 'section-places' },
   { type: 'shopping', title: 'Belanja & Produk', id: 'section-shopping' },
   { type: 'reading_other', title: 'Bacaan & Lainnya', id: 'section-reading-other' },
@@ -70,7 +113,7 @@ interface BookmarksViewProps {
   userName?: string | null;
 }
 
-export type PlatformType = 'youtube' | 'github' | 'twitter' | 'linkedin' | 'instagram' | 'reddit' | 'other';
+export type PlatformType = string;
 
 interface ParsedBookmark {
   raw: BookmarkItem;
@@ -165,13 +208,13 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
     }
   }
 
-  let platform: PlatformType = 'other';
+  const resolved = resolveBookmarkPlatform(primaryUrl, item.source, item.specificTags);
+  const platform = resolved.key;
   let thumbnail: string | null = null;
 
   if (primaryUrl) {
     // 1. YouTube
-    if (domain.includes('youtube.com') || domain.includes('youtu.be')) {
-      platform = 'youtube';
+    if (platform === 'youtube') {
       const m = primaryUrl.match(
         /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
       );
@@ -180,26 +223,13 @@ function parseBookmark(item: BookmarkItem): ParsedBookmark {
       }
     }
     // 2. GitHub
-    else if (domain === 'github.com') {
-      platform = 'github';
+    else if (platform === 'github') {
       const m = primaryUrl.match(/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)/);
       if (m && m[1] && m[2] && m[1] !== 'topics' && m[1] !== 'search') {
         thumbnail = `https://opengraph.githubassets.com/1/${m[1]}/${m[2]}`;
       }
     }
-    // 3. Twitter / X
-    else if (domain === 'twitter.com' || domain === 'x.com') {
-      platform = 'twitter';
-    }
-    // 4. LinkedIn
-    else if (domain.includes('linkedin.com')) {
-      platform = 'linkedin';
-    }
-    // 5. Instagram
-    else if (domain.includes('instagram.com')) {
-      platform = 'instagram';
-    }
-    // 6. Direct image file URL
+    // 3. Direct image file URL
     else if (/\.(jpeg|jpg|gif|png|webp|svg)(\?.*)?$/i.test(primaryUrl)) {
       thumbnail = primaryUrl;
     }
@@ -807,16 +837,8 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
       }
 
       // 3. Platform filter
-      if (platformFilter !== 'all') {
-        if (platformFilter === 'youtube' && b.platform !== 'youtube') return false;
-        if (platformFilter === 'twitter' && b.platform !== 'twitter') return false;
-        if (platformFilter === 'github' && b.platform !== 'github') return false;
-        if (platformFilter === 'reddit' && !b.domain.includes('reddit.com')) return false;
-        if (platformFilter === 'other') {
-          if (b.platform === 'youtube' || b.platform === 'twitter' || b.platform === 'github' || b.domain.includes('reddit.com')) {
-            return false;
-          }
-        }
+      if (platformFilter !== 'all' && b.platform !== platformFilter) {
+        return false;
       }
 
       // 4. Category filter
@@ -854,22 +876,82 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
     return filteredList.filter((b) => Boolean(b.raw.isPinned));
   }, [filteredList]);
 
-  // Curated showcase gallery sections purely based on AI note.bookmarkType
+  // Curated showcase gallery sections dynamically aggregated from user's actual bookmarks
   const curatedSections = useMemo(() => {
-    return BOOKMARK_MACRO_CONFIG.map((conf) => {
-      const items = filteredList.filter((b) => {
-        const itemType = b.raw.bookmarkType || 'reading_other';
-        return itemType === conf.type;
-      });
-      return {
-        key: conf.type,
-        title: conf.title,
-        items,
-        Icon: Bookmark,
-        id: conf.id,
-      };
-    }).filter((sec) => sec.items.length > 0);
+    const sectionMap = new Map<
+      string,
+      {
+        key: string;
+        title: string;
+        items: ParsedBookmark[];
+        Icon: React.ComponentType<{ className?: string }>;
+        id: string;
+      }
+    >();
+
+    for (const b of filteredList) {
+      const rawType = b.raw.bookmarkType ? String(b.raw.bookmarkType).trim() : 'reading_other';
+      const typeKey = rawType || 'reading_other';
+
+      const existing = sectionMap.get(typeKey);
+      if (existing) {
+        existing.items.push(b);
+      } else {
+        const title = formatBookmarkTypeTitle(typeKey);
+        const sectionId = `section-${typeKey.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+        sectionMap.set(typeKey, {
+          key: typeKey,
+          title,
+          items: [b],
+          Icon: Bookmark,
+          id: sectionId,
+        });
+      }
+    }
+
+    const standardOrder = [
+      'tech_dev',
+      'design_creative',
+      'tools_utility',
+      'finance_investment',
+      'health_fitness',
+      'lifestyle_hobbies',
+      'media_social',
+      'work_docs',
+      'education_research',
+      'audio_entertainment',
+      'places',
+      'places_travel',
+      'travel_location',
+      'shopping',
+      'culinary',
+      'gaming',
+      'legal',
+    ];
+
+    return Array.from(sectionMap.values()).sort((a, b) => {
+      if (a.key === 'reading_other' || a.key === 'other') return 1;
+      if (b.key === 'reading_other' || b.key === 'other') return -1;
+      const idxA = standardOrder.indexOf(a.key);
+      const idxB = standardOrder.indexOf(b.key);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.title.localeCompare(b.title);
+    });
   }, [filteredList]);
+
+  // Dynamic available categories for filter modal based on all user bookmarks
+  const allAvailableCategories = useMemo(() => {
+    const catMap = new Map<string, string>();
+    for (const b of parsedList) {
+      const typeKey = (b.raw.bookmarkType ? String(b.raw.bookmarkType).trim() : '') || 'reading_other';
+      if (!catMap.has(typeKey)) {
+        catMap.set(typeKey, formatBookmarkTypeTitle(typeKey));
+      }
+    }
+    return Array.from(catMap.entries()).map(([type, title]) => ({ type, title }));
+  }, [parsedList]);
 
   // Compact TOC Items (Max 6–8 items synchronized with showcase sections)
   const tocItems = useMemo(() => {
@@ -915,7 +997,7 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
     return items;
   }, [filteredList.length, pinnedBookmarks.length, curatedSections]);
 
-  // Platform TOC Items (Synchronized with platform filter)
+  // Platform TOC Items (Synchronized with platform filter & zero-count gating)
   const platformTocItems = useMemo(() => {
     const baseList = parsedList.filter((b) => {
       if (dateFilter === 'this_month') {
@@ -923,6 +1005,10 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
         if (!isThisMonth(itemDate)) return false;
       }
       if (readingStatusFilter === 'unread' && b.readingStatus === 'read') return false;
+      if (categoryFilter !== 'all') {
+        const itemType = b.raw.bookmarkType || 'reading_other';
+        if (itemType !== categoryFilter) return false;
+      }
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchesContent = b.raw.content.toLowerCase().includes(q);
@@ -933,43 +1019,60 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
       return true;
     });
 
-    const isPlatformMatch = (b: ParsedBookmark, pf: string) => {
-      if (pf === 'all') return true;
-      if (pf === 'youtube') return b.platform === 'youtube';
-      if (pf === 'twitter') return b.platform === 'twitter';
-      if (pf === 'github') return b.platform === 'github';
-      if (pf === 'reddit') return b.domain.includes('reddit.com');
-      if (pf === 'other') {
-        return (
-          b.platform !== 'youtube' &&
-          b.platform !== 'twitter' &&
-          b.platform !== 'github' &&
-          !b.domain.includes('reddit.com')
-        );
+    // Dynamically aggregate platforms from baseList
+    const platformMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        count: number;
+        Icon: React.ComponentType<{ className?: string }> | null;
       }
-      return true;
-    };
+    >();
 
-    const platforms: Array<{
-      key: string;
-      label: string;
-      Icon: React.ComponentType<{ className?: string }> | null;
-    }> = [
-      { key: 'all', label: 'Semua Platform', Icon: null },
-      { key: 'youtube', label: 'YouTube', Icon: YoutubeIcon },
-      { key: 'twitter', label: 'X (Twitter)', Icon: TwitterIcon },
-      { key: 'github', label: 'GitHub', Icon: GithubIcon },
-      { key: 'reddit', label: 'Reddit', Icon: RedditIcon },
-      { key: 'other', label: 'Web & Artikel', Icon: Globe },
+    for (const b of baseList) {
+      const info = resolveBookmarkPlatform(b.url, b.raw.source, b.raw.specificTags);
+      const existing = platformMap.get(info.key);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        platformMap.set(info.key, {
+          key: info.key,
+          label: info.label,
+          count: 1,
+          Icon: info.icon,
+        });
+      }
+    }
+
+    // Sort platforms: count descending, 'other' (Web & Artikel) at the end
+    const sortedPlatforms = Array.from(platformMap.values()).sort((a, b) => {
+      if (a.key === 'other') return 1;
+      if (b.key === 'other') return -1;
+      return b.count - a.count;
+    });
+
+    // Zero-count gating: Only include 'Semua Platform' + platforms with count > 0
+    return [
+      {
+        key: 'all',
+        label: 'Semua Platform',
+        count: baseList.length,
+        Icon: null,
+      },
+      ...sortedPlatforms,
     ];
+  }, [parsedList, dateFilter, readingStatusFilter, categoryFilter, searchQuery]);
 
-    return platforms.map((p) => ({
-      key: p.key,
-      label: p.label,
-      count: baseList.filter((b) => isPlatformMatch(b, p.key)).length,
-      Icon: p.Icon,
-    }));
-  }, [parsedList, dateFilter, readingStatusFilter, searchQuery]);
+  // Auto-reset platform filter if currently selected platform is no longer present
+  useEffect(() => {
+    if (platformFilter !== 'all') {
+      const exists = platformTocItems.some((p) => p.key === platformFilter);
+      if (!exists) {
+        setPlatformFilter('all');
+      }
+    }
+  }, [platformFilter, platformTocItems]);
 
   // TOC click handler with smooth scrolling
   const handleTocClick = (itemKey: string, targetId: string) => {
@@ -1180,14 +1283,14 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
           </p>
         </div>
 
-        <div className="flex items-center gap-3 self-start sm:self-center shrink-0">
+        <div className="hidden sm:flex items-center gap-3 self-start sm:self-center shrink-0">
           <AskAiButton onClick={() => setIsAskAiOpen(true)} label="Ask Bookmark" />
         </div>
       </div>
 
       {/* 2. Controls Row: Searchbox + Mobile Filter Button + Desktop Filter Tabs */}
-      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex flex-col gap-2.5">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+      <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex flex-col gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 flex-nowrap w-full min-w-0">
           <SearchPill
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -1214,6 +1317,14 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
               </span>
             )}
           </button>
+
+          {/* Mobile Ask AI Button (Circle box next to searchbox) */}
+          <AskAiButton
+            onClick={() => setIsAskAiOpen(true)}
+            label="Ask Bookmark"
+            variant="circle"
+            className="sm:hidden"
+          />
 
           {/* Option Tabs: Bulan Ini vs Semua Waktu (Desktop Only) */}
           <div className="hidden sm:inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
@@ -1302,14 +1413,14 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
                       key={item.key}
                       type="button"
                       onClick={() => setPlatformFilter(item.key)}
-                      className={`py-1.5 px-2.5 sm:px-3 text-body-sm cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors border-b-2 ${
-                        isActive
-                          ? 'border-ink text-ink font-semibold'
-                          : 'border-transparent text-body hover:text-ink font-medium'
+                      className={`py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-ink hover:bg-surface-soft !border-0 ${
+                        isActive ? 'text-ink font-medium' : 'text-body'
                       }`}
                     >
                       {IconComponent && <IconComponent className="w-3.5 h-3.5 shrink-0" />}
-                      <span>{item.label}</span>
+                      <span className={isActive ? 'underline underline-offset-4 decoration-1' : ''}>
+                        {item.label}
+                      </span>
                       <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
                         {item.count}
                       </span>
@@ -1327,16 +1438,21 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
               <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 items-start sm:items-end no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-4 sm:pr-0">
                 {tocItems.map((item) => {
                   const IconComponent = item.Icon;
+                  const isActive = activeTocKey === item.key;
 
                   return (
                     <button
                       key={item.key}
                       type="button"
                       onClick={() => handleTocClick(item.key, item.id)}
-                      className="py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors text-body hover:text-ink hover:bg-surface-soft !border-0"
+                      className={`py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-ink hover:bg-surface-soft !border-0 ${
+                        isActive ? 'text-ink font-medium' : 'text-body'
+                      }`}
                     >
                       {IconComponent && <IconComponent className="w-3.5 h-3.5 shrink-0" />}
-                      <span>{item.label}</span>
+                      <span className={isActive ? 'underline underline-offset-4 decoration-1' : ''}>
+                        {item.label}
+                      </span>
                       <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
                         {item.count}
                       </span>
@@ -1502,6 +1618,8 @@ export default function BookmarksView({ initialBookmarks, userName }: BookmarksV
           platform: platformFilter,
           category: categoryFilter,
         }}
+        availablePlatforms={platformTocItems}
+        availableCategories={allAvailableCategories}
         onApply={(newFilters) => {
           setDateFilter(newFilters.dateRange);
           setReadingStatusFilter(newFilters.readingStatus);

@@ -150,11 +150,11 @@ export function normalizeCategory(raw: string | undefined, _content?: string): N
     return 'finance';
   }
 
-  // 6. RANDOM-YAP: Refleksi subjektif internal, sensasi fisik/gejala tubuh, mood, review bebas
+  // 6. RANDOM-YAP: Refleksi subjektif internal, ide liar/brainstorming, sensasi fisik/gejala tubuh, mood, review bebas
   if ([
     'random-yap', 'thought', 'thoughts', 'curhat', 'rant', 'rants', 'yap', 'shower-thought',
     'uneg-uneg', 'opini', 'symptom', 'symptoms', 'feeling', 'mood', 'reflection', 'health-log',
-    'gejala', 'keluhan', 'review', 'diary', 'catatan-hati'
+    'gejala', 'keluhan', 'review', 'diary', 'catatan-hati', 'idea', 'ideas', 'ide', 'brainstorm', 'brainstorming'
   ].includes(c)) {
     return 'random-yap';
   }
@@ -260,8 +260,8 @@ Analyze the array of raw notes and return a strict JSON array:
     "category": "bookmark" | "schedule" | "finance" | "credential" | "todo" | "draft" | "reference" | "random-yap" | "others",
     "specific_tags": string[], // 2 to 4 high-value lowercase-with-hyphens tags
     "source": string | null, // platform domain (maps, github, youtube, drive, etc.) or null
-    "bookmarkType": "tech_dev" | "media_social" | "work_docs" | "places" | "shopping" | "reading_other" | null,
-    "credentialType": "account" | "network" | "identity_finance" | "license" | "other" | null,
+    "bookmarkType": string | null, // domain umbrella identifier (e.g. "tech_dev", "design_creative", "tools_utility", "finance_investment", "health_fitness", "lifestyle_hobbies", "media_social", "work_docs", "education_research", "audio_entertainment", "places", "shopping", "culinary", "gaming", "legal", or any relevant domain) or null,
+    "credentialType": "digital_access" | "civil_identity" | "financial_instrument" | "cryptographic_token" | "physical_access" | "other" | null,
     "schedule": { "dates": string[], "isRecurring": boolean, "recurrenceRule"?: { "frequency": "daily" | "weekly" | "monthly" | "custom_interval", "daysOfWeek"?: number[], "intervalDays"?: number, "dayOfMonth"?: number, "timeString"?: string } } | null,
     "expenses": Array<{ "item": string, "amount": number, "currency": string }> | null,
     "income": Array<{ "source": string, "amount": number, "currency": string }> | null,
@@ -271,22 +271,27 @@ Analyze the array of raw notes and return a strict JSON array:
 ]
 
 9 PRIMARY INTENT CATEGORIES (Classify strictly by user's core intent):
-- bookmark: Pointer/URL to external internet/apps (maps, docs, articles, media, wishlist).
+- bookmark: Pointer/URL to external internet/apps (maps, docs, articles, media, social posts to read/watch).
 - schedule: Time-anchored events (dates, relative days, deadlines, routines, travel tickets).
 - finance: Economic value & money flow (actual expenses, income, debt/loans, split bills).
-- credential: Authentication keys, logins, wifi, serial keys, and official identity/bank numbers (pure text).
-- todo: Actionable tasks, follow-ups, shopping lists (groceries), and packing errands.
+- credential: Authentication keys, logins, wifi, serial keys, and official identity/bank numbers (pure text). Assign appropriate credentialType: digital_access (web logins, passwords, wifi, servers), civil_identity (KTP, SIM, Paspor, NPWP, BPJS, KK), financial_instrument (bank accounts, ATM PINs, credit cards, CVVs, wallets), cryptographic_token (API keys, SSH keys, seed phrases, 2FA codes, licenses, vouchers), or physical_access (smart door locks, luggage PINs, lockers, safes).
+- todo: Actionable tasks, follow-ups, shopping lists / want-to-buy items, and execution errands.
 - draft: Content drafted for external audiences (messages, emails, captions, meeting minutes).
-- reference: Static factual data, sizes, recipes, tech configs, and tracking/policy numbers.
-- random-yap: Internal world (emotions, physical/health logs, subjective reviews, reflections).
-- others: Mixed, ambiguous, or multi-idea noise without a single clear focus.
+- reference: Static factual data, verified lookup truths, sizes, recipes, tech configs, documentation, specifications, quotes, and tracking/policy numbers.
+- random-yap: Internal world (raw ideas, conceptual brainstorming, shower thoughts, personal musings, emotions, physical/health logs, subjective reviews, reflections).
+- others: Unstructured noise, SMS OTP, or corrupted text without discernible substance.
 
 DISAMBIGUATION HEURISTICS:
-- URL is primary subject -> bookmark
-- Monetary transaction/debt -> finance
-- Action/task to execute -> todo
-- Time/date execution -> schedule (dates must be YYYY-MM-DD only without time; put time in recurrenceRule.timeString and weekday in recurrenceRule.daysOfWeek)
+- Primary directive action to execute (e.g. "beli", "checkout", "kerjain", "baca buat riset", "pelajari") -> todo (even if a URL or price is included, the URL is only supporting reference)
+- URL is primary subject to save/read/consume without execution directive -> bookmark (extract platform domain e.g. "youtube", "github", "twitter", "instagram", "tiktok", "spotify", "figma", "reddit", "medium", "maps", "google-docs" into "source" and as one of "specific_tags"; classify "bookmarkType" into tech_dev, design_creative, tools_utility, media_social, work_docs, education_research, audio_entertainment, places, shopping, or reading_other)
+- Monetary transaction/debt (already spent/lent) -> finance
 - Shopping lists with estimated prices (not yet spent) -> todo
+- Raw brainstorming, concept dumps, or idea lists without action directives -> random-yap (ideas are creative thoughts, NOT static reference facts and NOT active todos)
+- Bank account numbers, logins, wifi credentials without transaction verb -> credential (even if mentioning bank names like BCA/Mandiri, it is a credential, NOT finance)
+- Quotes, recipes, formulas, specifications, postal codes -> reference (static lookup facts, NOT random-yap)
+- Messages drafted for external recipients (surat, pesan WhatsApp/email, captions) -> draft (communication to others, NOT internal random-yap)
+- Vague tasks without clock/calendar time (e.g. "minggu ini kalau sempat", "kapan-kapan") -> todo, NOT schedule
+- Time/date execution on specific calendar date/time -> schedule (dates must be YYYY-MM-DD only without time; put time in recurrenceRule.timeString and weekday in recurrenceRule.daysOfWeek)
 - Casual food/snack purchases (cimin, cilok, nasgor, martabak, kopi, etc.) -> finance expenses with [food] tag, NOT debt
 - Money borrowed/lent with person names (minjem, pinjam, utang, talangin) -> finance debt with person name
 

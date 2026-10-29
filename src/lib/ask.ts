@@ -1,7 +1,7 @@
 import { recordAiUsage } from '@/lib/ai-usage';
 import { db } from '@/db';
 import { notes } from '@/db/schema';
-import { eq, and, gte, desc, or, inArray } from 'drizzle-orm';
+import { eq, and, gte, desc, or, inArray, ilike } from 'drizzle-orm';
 import { subDays } from 'date-fns';
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { generateText } from 'ai';
@@ -12,8 +12,6 @@ export interface ConversationMessage {
   role: 'user' | 'assistant';
   content: string;
 }
-
-
 
 /**
  * Formats a Date object into human-friendly Asia/Jakarta short datetime
@@ -35,8 +33,6 @@ function formatNoteDate(date: Date): string {
   return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')}`;
 }
 
-
-
 /**
  * Formats current date and time for dynamic prompt injection
  * e.g. "Jumat, 16 Oktober 2026, 14:05 WIB"
@@ -57,116 +53,25 @@ function formatCurrentTime(date: Date): string {
   return `${getPart('weekday')}, ${getPart('day')} ${getPart('month')} ${getPart('year')}, ${getPart('hour')}:${getPart('minute')} WIB`;
 }
 
+// Conversational stopwords for smart search query extraction
+const ASK_SEARCH_STOPWORDS = new Set([
+  'apa', 'apakah', 'siapa', 'siapakah', 'kapan', 'dimana', 'bagaimana', 'kenapa', 'mengapa',
+  'berapa', 'tolong', 'bisa', 'dong', 'cek', 'cari', 'carikan', 'lihat', 'tampilkan',
+  'saya', 'aku', 'kami', 'kita', 'kamu', 'anda', 'dia', 'mereka',
+  'ini', 'itu', 'sini', 'situ', 'sana', 'yang', 'di', 'ke', 'dari', 'pada', 'dalam', 'untuk',
+  'dengan', 'dan', 'atau', 'tapi', 'tetapi', 'karena', 'jika', 'kalau', 'tentang', 'mengenai',
+  'ada', 'adalah', 'yaitu', 'sudah', 'telah', 'sedang', 'akan', 'belum', 'bukan', 'tidak',
+  'notes', 'note', 'catatan', 'catatanku', 'semua', 'semuanya', 'daftar', 'list',
+  'the', 'is', 'at', 'which', 'on', 'in', 'to', 'for', 'from', 'with', 'and', 'or', 'my'
+]);
 
-
-/**
- * Answers a user's question strictly based on their stored notes.
- * Exclusive for Pro plan subscribers.
- */
-export async function answerNoteQuestion(
-  userId: string,
-  question: string,
-  categoryFilter?: string,
-  conversationHistory?: ConversationMessage[]
-): Promise<string> {
-  // 0. Auto-organize unorganized notes silently before answering question
-  const unorganizedCount = await getOrFetchUnorganizedCount(userId);
-  if (unorganizedCount > 0) {
-    try {
-      await organizeUserNotes(userId);
-    } catch (err) {
-      console.warn('[Ask] Failed silent auto-organize before question:', err);
-    }
-  }
-
-  const now = new Date();
-  const nowFormatted = formatCurrentTime(now);
-  const oneYearAgo = subDays(now, 365);
-
-  // 1. Fetch user notes created within the last 180 days (optionally filtered by category)
-  const conditions = [
-    eq(notes.userId, userId),
-
-    eq(notes.isEncrypted, false),
-  ];
-
-  if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
-    conditions.push(eq(notes.category, categoryFilter as any));
-    if (!['reference', 'credential', 'draft'].includes(categoryFilter)) {
-      conditions.push(gte(notes.createdAt, oneYearAgo));
-    }
-  } else {
-    conditions.push(
-      or(
-        inArray(notes.category, ['reference', 'credential', 'draft']),
-        gte(notes.createdAt, oneYearAgo)
-      )!
-    );
-  }
-
-  const userNotes = await db
-    .select({
-      content: notes.content,
-      category: notes.category,
-      specificTags: notes.specificTags,
-      createdAt: notes.createdAt,
-      bookmarkMeta: notes.bookmarkMeta,
-    })
-    .from(notes)
-    .where(and(...conditions))
-    .orderBy(desc(notes.createdAt))
-    .limit(600);
-
-  if (userNotes.length === 0) {
-    if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
-      return `Belum ada catatan kategori "${categoryFilter}" yang tersimpan untuk dianalisis oleh AI.`;
-    }
-    return 'Belum ada catatan yang tersimpan untuk dianalisis oleh AI.';
-  }
-
-  // 2. Format notes context with human-friendly localized timestamp and category
-  const contextNotes = userNotes
-    .map((n, idx) => {
-      const dateStr = formatNoteDate(new Date(n.createdAt));
-      const tags = (n.specificTags || []).filter(Boolean).join(', ');
-      const categoryTag = tags ? `${n.category} • ${tags}` : n.category;
-      let noteBody = n.content;
-      if (n.category === 'bookmark' && (n as any).bookmarkMeta) {
-        const bm = (n as any).bookmarkMeta;
-        const metaParts: string[] = [];
-        if (bm.title) metaParts.push(`Judul: "${bm.title}"`);
-        if (bm.caption) metaParts.push(`Caption/Post: "${bm.caption}"`);
-        if (bm.aiSummary && bm.aiSummary.length > 0) {
-          metaParts.push(`Ringkasan: ${bm.aiSummary.join('; ')}`);
-        } else if (bm.description) {
-          metaParts.push(`Deskripsi: "${bm.description}"`);
-        }
-        if (metaParts.length > 0) {
-          noteBody = `${n.content}\n   [Metadata Bookmark -> ${metaParts.join(' | ')}]`;
-        }
-      }
-      return `${idx + 1}. [${dateStr}] [${categoryTag}] ${noteBody}`;
-    })
-    .join('\n\n');
-
-  const apiKey = process.env.AI_PROVIDER_API_KEY;
-  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
-  const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
-
-  if (!apiKey || apiKey.startsWith('mock-')) {
-    throw new Error('AI Provider API key belum dikonfigurasi');
-  }
-
-  try {
-    const openaiCompatible = createOpenAICompatible({
-      name: 'openai-compatible',
-      baseURL,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    });
-
-
+function extractSearchTerms(query: string): string[] {
+  return query
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 3 && !ASK_SEARCH_STOPWORDS.has(word));
+}
 
 /**
  * Strips markdown tables, converts any table row into bullet format,
@@ -219,10 +124,152 @@ function postProcessAskResponse(text: string): string {
       processedLines.push(line);
     }
   }
-  cleaned = processedLines.join('\n');
 
   return processedLines.join('\n').trim();
 }
+
+/**
+ * Answers a user's question strictly based on their stored notes.
+ * Exclusive for Pro plan subscribers.
+ */
+export async function answerNoteQuestion(
+  userId: string,
+  question: string,
+  categoryFilter?: string,
+  conversationHistory?: ConversationMessage[]
+): Promise<string> {
+  // 0. Auto-organize unorganized notes silently before answering question
+  const unorganizedCount = await getOrFetchUnorganizedCount(userId);
+  if (unorganizedCount > 0) {
+    try {
+      await organizeUserNotes(userId);
+    } catch (err) {
+      console.warn('[Ask] Failed silent auto-organize before question:', err);
+    }
+  }
+
+  const now = new Date();
+  const nowFormatted = formatCurrentTime(now);
+  const oneYearAgo = subDays(now, 365);
+
+  // 1. Fetch user notes using Smart Hybrid Retrieval (Relevance Search + Recency Anchors)
+  const conditions = [
+    eq(notes.userId, userId),
+    eq(notes.isEncrypted, false),
+  ];
+
+  if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
+    conditions.push(eq(notes.category, categoryFilter as any));
+    if (!['reference', 'credential', 'draft'].includes(categoryFilter)) {
+      conditions.push(gte(notes.createdAt, oneYearAgo));
+    }
+  } else {
+    conditions.push(
+      or(
+        inArray(notes.category, ['reference', 'credential', 'draft']),
+        gte(notes.createdAt, oneYearAgo)
+      )!
+    );
+  }
+
+  const terms = extractSearchTerms(question);
+
+  let searchCandidates: Array<any> = [];
+  if (terms.length > 0) {
+    const termConditions = terms.map((term) => ilike(notes.content, `%${term}%`));
+    searchCandidates = await db
+      .select({
+        id: notes.id,
+        content: notes.content,
+        category: notes.category,
+        specificTags: notes.specificTags,
+        createdAt: notes.createdAt,
+        bookmarkMeta: notes.bookmarkMeta,
+      })
+      .from(notes)
+      .where(and(...conditions, or(...termConditions)))
+      .orderBy(desc(notes.createdAt))
+      .limit(15);
+  }
+
+  const anchorCandidates = await db
+    .select({
+      id: notes.id,
+      content: notes.content,
+      category: notes.category,
+      specificTags: notes.specificTags,
+      createdAt: notes.createdAt,
+      bookmarkMeta: notes.bookmarkMeta,
+    })
+    .from(notes)
+    .where(and(...conditions))
+    .orderBy(desc(notes.createdAt))
+    .limit(15);
+
+  const noteMap = new Map<string, any>();
+  for (const n of searchCandidates) {
+    noteMap.set(n.id, n);
+  }
+  for (const n of anchorCandidates) {
+    if (!noteMap.has(n.id)) {
+      noteMap.set(n.id, n);
+    }
+  }
+
+  const userNotes = Array.from(noteMap.values());
+  userNotes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  if (userNotes.length > 25) {
+    userNotes.length = 25;
+  }
+
+  if (userNotes.length === 0) {
+    if (categoryFilter && categoryFilter !== 'workspace' && categoryFilter !== 'all') {
+      return `Belum ada catatan kategori "${categoryFilter}" yang tersimpan untuk dianalisis oleh AI.`;
+    }
+    return 'Belum ada catatan yang tersimpan untuk dianalisis oleh AI.';
+  }
+
+  // 2. Format notes context with human-friendly localized timestamp, note ID, and category
+  const contextNotes = userNotes
+    .map((n, idx) => {
+      const dateStr = formatNoteDate(new Date(n.createdAt));
+      const tags = (n.specificTags || []).filter(Boolean).join(', ');
+      const categoryTag = tags ? `${n.category} • ${tags}` : n.category;
+      let noteBody = n.content;
+      if (n.category === 'bookmark' && (n as any).bookmarkMeta) {
+        const bm = (n as any).bookmarkMeta;
+        const metaParts: string[] = [];
+        if (bm.title) metaParts.push(`Judul: "${bm.title}"`);
+        if (bm.caption) metaParts.push(`Caption/Post: "${bm.caption}"`);
+        if (bm.aiSummary && bm.aiSummary.length > 0) {
+          metaParts.push(`Ringkasan: ${bm.aiSummary.join('; ')}`);
+        } else if (bm.description) {
+          metaParts.push(`Deskripsi: "${bm.description}"`);
+        }
+        if (metaParts.length > 0) {
+          noteBody = `${n.content}\n   [Metadata Bookmark -> ${metaParts.join(' | ')}]`;
+        }
+      }
+      return `${idx + 1}. [ID: ${n.id}] [${dateStr}] [${categoryTag}] ${noteBody}`;
+    })
+    .join('\n\n');
+
+  const apiKey = process.env.AI_PROVIDER_API_KEY;
+  const modelName = process.env.AI_MODEL_NAME || 'gemini-3.8-flash';
+  const baseURL = process.env.AI_BASE_URL || 'https://api.cosmoshub.tech/v1';
+
+  if (!apiKey || apiKey.startsWith('mock-')) {
+    throw new Error('AI Provider API key belum dikonfigurasi');
+  }
+
+  try {
+    const openaiCompatible = createOpenAICompatible({
+      name: 'openai-compatible',
+      baseURL,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
 
     const systemPrompt = `Anda adalah asisten cerdas personal UnlazyNotes.
 Waktu Saat Ini (Current Time): ${nowFormatted}
@@ -278,7 +325,14 @@ Prinsip Pemrosesan Catatan (Berlaku Universal untuk Semua Kasus & Domain):
    - Contoh respons penolakan: "Maaf, asisten UnlazyNotes hanya dapat menjawab pertanyaan seputar catatan pribadi Anda."
    - Pertanyaan Mengenai Model AI & Sistem:
      * Apabila pengguna bertanya mengenai model AI apa yang digunakan oleh notes/aplikasi ini (misal: "kamu pakai model apa?", "model AI apa yang digunakan notes ini?"), jawab HANYA: "Model UnlazyNotesLLM-v1".
-     * DILARANG KERAS membeberkan atau memberi clue/detail teknis apapun mengenai arsitektur sistem, vendor/provider, nama model dasar (seperti Claude, Anthropic, Haiku, OpenAI, GPT, Cosmoshub, dsb.), database, server, atau sistem internal UnlazyNotes.`;
+     * DILARANG KERAS membeberkan atau memberi clue/detail teknis apapun mengenai arsitektur sistem, vendor/provider, nama model dasar (seperti Claude, Anthropic, Haiku, OpenAI, GPT, Cosmoshub, dsb.), database, server, atau sistem internal UnlazyNotes.
+
+8. Rujukan Catatan & Tautan Interaktif (Interactive Deep-Linking):
+   - Setiap catatan pada konteks memiliki ID unik dalam format: [ID: <id_catatan>].
+   - Ketika menyebutkan fakta, agenda, tugas, atau rincian dari suatu catatan, SELALU sertakan tautan rujukan dengan sintaks markdown:
+     \`[Lihat Catatan](note://<id_catatan>)\` atau \`[Nama/Topik Singkat](note://<id_catatan>)\`
+   - Contoh: "Terdapat pengeluaran server sebesar Rp 245.000 [Lihat Catatan](note://note_fin_01)."
+   - Gunakan ID catatan yang persis ada pada konteks catatan. DILARANG KERAS mengarang ID catatan yang tidak ada pada daftar catatan.`;
 
     let historySection = '';
     if (conversationHistory && conversationHistory.length > 0) {
@@ -304,6 +358,7 @@ PANDUAN FORMAT JAWABAN (WAJIB DITAATI):
   * Jika Targeted Query: Jawab HANYA entitas/topik yang ditanyakan secara fokus dan to-the-point. DILARANG KERAS menumpahkan agenda lain yang tidak relevan!
 - Waktu Sekarang: ${nowFormatted}. Semua target >= Waktu Sekarang adalah MENDATANG.
 - Jangan gunakan tabel Markdown (|---|) atau heading besar (#, ##). Gunakan bullet list (•).
+- Berikan tautan [Lihat Catatan](note://<id_catatan>) pada setiap butir fakta atau rujukan catatan yang relevan.
 - Langsung mulai jawaban tanpa kalimat pengantar dan tanpa basa-basi penutup robotik.`;
 
     const result = await generateText({

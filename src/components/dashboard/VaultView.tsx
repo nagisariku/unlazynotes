@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Lock,
   KeyRound,
-  Shield,
+
   Plus,
   Loader2,
   Pin,
@@ -16,28 +16,22 @@ import {
   Check,
   Pencil,
   Trash2,
-  Send,
-  Sparkles,
+
+
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { id as localeId } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { Button, SearchPill } from '../ui';
+import { SearchPill } from '../ui';
 import NoteCard from './NoteCard';
 import NoteDetailModal from './NoteDetailModal';
 import type { CredentialType } from '../../db/schema';
+import {
+  normalizeCredentialType,
+  formatCredentialTypeTitle,
 
-export const CREDENTIAL_MACRO_CONFIG: Array<{
-  type: CredentialType;
-  title: string;
-  id: string;
-}> = [
-  { type: 'account', title: 'Akun & Layanan', id: 'section-account' },
-  { type: 'network', title: 'Jaringan & Perangkat', id: 'section-network' },
-  { type: 'identity_finance', title: 'Finansial & Identitas', id: 'section-identity-finance' },
-  { type: 'license', title: 'Kunci & Lisensi', id: 'section-license' },
-  { type: 'other', title: 'Kredensial & Akses Lainnya', id: 'section-other' },
-];
+} from '@/lib/credential-types';
+
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 
@@ -353,7 +347,19 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
   const [searchQuery, setSearchQuery] = useState('');
 
   const topContentRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isUserClickingRef = useRef(false);
+
+  // Sync activeSection with URL search param (?tab=vault vs ?tab=credential)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'vault' || tabParam === 'credential') {
+        setActiveSection(tabParam);
+      }
+    }
+  }, []);
 
   const userLastName = useMemo(() => {
     if (!userName || !userName.trim()) return 'User';
@@ -533,7 +539,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           content: contentVal,
-          category: 'vault',
+          category: 'credential',
           specificTags: [],
           vaultKey: keyVal,
         }),
@@ -630,7 +636,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     return filteredList.filter((n) => !n.isPinned);
   }, [filteredList]);
 
-  // 6. Curated showcase gallery sections (Pure AI semantic credentialType or Vault)
+  // 6. Curated showcase gallery sections (Dynamic Pure AI semantic credentialType or Vault)
   const curatedSections = useMemo(() => {
     if (activeSection === 'vault') {
       const otherNotes = unpinnedNotes;
@@ -647,20 +653,55 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
       return [];
     }
 
-    // Credential: Pure Semantic AI Sub-type Grouping
-    return CREDENTIAL_MACRO_CONFIG.map((conf) => {
-      const items = filteredList.filter((note) => {
-        const itemType = note.credentialType || 'other';
-        return itemType === conf.type;
-      });
-      return {
-        key: conf.type,
-        title: conf.title,
-        items,
-        id: conf.id,
-      };
-    }).filter((sec) => sec.items.length > 0);
-  }, [filteredList, unpinnedNotes, activeSection]);
+    // Credential: Pure Semantic AI Sub-type Grouping (Dynamic Taxonomy)
+    const sectionMap = new Map<
+      string,
+      {
+        key: string;
+        title: string;
+        items: VaultNoteItem[];
+        id: string;
+      }
+    >();
+
+    for (const note of unpinnedNotes) {
+      const rawType = normalizeCredentialType(note.credentialType);
+      const typeKey = rawType || 'other';
+
+      const existing = sectionMap.get(typeKey);
+      if (existing) {
+        existing.items.push(note);
+      } else {
+        const title = formatCredentialTypeTitle(typeKey);
+        const sectionId = `section-${typeKey.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+        sectionMap.set(typeKey, {
+          key: typeKey,
+          title,
+          items: [note],
+          id: sectionId,
+        });
+      }
+    }
+
+    const standardOrder = [
+      'digital_access',
+      'civil_identity',
+      'financial_instrument',
+      'cryptographic_token',
+      'physical_access',
+    ];
+
+    return Array.from(sectionMap.values()).sort((a, b) => {
+      if (a.key === 'other') return 1;
+      if (b.key === 'other') return -1;
+      const idxA = standardOrder.indexOf(a.key);
+      const idxB = standardOrder.indexOf(b.key);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.title.localeCompare(b.title);
+    });
+  }, [unpinnedNotes, activeSection]);
 
   // 7. Compact TOC Items (Max 6–8 items synchronized with showcase sections)
   const tocItems = useMemo(() => {
@@ -708,16 +749,28 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     isUserClickingRef.current = true;
     setTimeout(() => {
       isUserClickingRef.current = false;
-    }, 800);
+    }, 1000);
 
+    const container = scrollContainerRef.current;
     if (targetId === 'section-all') {
-      topContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (container) {
+        container.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        topContentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
       return;
     }
 
     const targetEl = document.getElementById(targetId);
     if (targetEl) {
-      targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = targetEl.getBoundingClientRect();
+        const offset = targetRect.top - containerRect.top + container.scrollTop - 60;
+        container.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
+      } else {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   };
 
@@ -725,19 +778,20 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
   useEffect(() => {
     if (activeSection !== 'credential') return;
 
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
         if (isUserClickingRef.current) return;
 
-        const allVisible = entries.find((e) => e.target.id === 'section-all' && e.isIntersecting);
-        if (allVisible) {
+        // If near top of container, highlight 'all'
+        if (container.scrollTop < 60) {
           setActiveTocKey('all');
           return;
         }
 
-        const visibleSection = entries.find(
-          (e) => e.target.id !== 'section-all' && e.isIntersecting
-        );
+        const visibleSection = entries.find((e) => e.isIntersecting);
         if (visibleSection) {
           const found = tocItems.find((t) => t.id === visibleSection.target.id);
           if (found) {
@@ -746,20 +800,21 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
         }
       },
       {
+        root: container,
         rootMargin: '-10% 0px -65% 0px',
         threshold: 0,
       }
     );
 
-    const sectionEls = document.querySelectorAll('[data-vault-section]');
-    sectionEls.forEach((el) => observer.observe(el));
-
-    if (topContentRef.current) {
-      observer.observe(topContentRef.current);
-    }
+    const sectionEls = container.querySelectorAll('[data-vault-section]');
+    sectionEls.forEach((el: Element) => {
+      if (el.id !== 'section-all') {
+        observer.observe(el);
+      }
+    });
 
     return () => observer.disconnect();
-  }, [tocItems]);
+  }, [tocItems, activeSection]);
 
   // Actions
   const handleTogglePin = async (id: string, nextPinned: boolean) => {
@@ -816,7 +871,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
     if (!secret || isSubmitting) return;
 
     setIsSubmitting(true);
-    const baseTags = isVault ? [] : ['credential'];
+    const baseTags: string[] = [];
     const finalCategory = isVault ? 'vault' : 'credential';
 
     try {
@@ -946,7 +1001,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
       {/* =========================================================================
           LEFT / MIDDLE COLUMN: Main Content Space (Header, Controls, Notes List)
           ========================================================================= */}
-      <div className="flex-1 min-w-0 h-full overflow-y-auto px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12">
+      <div ref={scrollContainerRef} className="flex-1 min-w-0 h-full overflow-y-auto px-4 sm:px-6 md:px-8 pb-32 sm:pb-8 md:pb-12">
         {/* 1. Header: Title and Subtitle */}
         <div className="pt-3.5 sm:pt-6 pb-2 sm:pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -968,7 +1023,7 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
         </div>
 
         {/* 2. Controls Row: Segmented Control (Radio) + Searchbox (Sticky on Mobile & Desktop, solid white background flush at top) */}
-        <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 sm:gap-2.5 flex-nowrap">
+        <div className="sticky top-0 z-20 bg-canvas -mx-4 px-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 py-2.5 flex items-center gap-2 sm:gap-2.5 flex-nowrap min-w-0">
           {/* Segmented Radio Button Control */}
           <div className="inline-flex items-center p-1 rounded-full bg-surface-soft shrink-0">
             <button
@@ -1114,10 +1169,13 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
              ===================================================================== */
           <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-start w-full">
             {/* =====================================================================
-                LEFT COLUMN: TOC (Sticky on Mobile & Desktop below sticky controls row)
+                LEFT COLUMN: TOC (Desktop only, hidden on mobile to prevent horizontal scroller)
                 ===================================================================== */}
-            <div className="w-[calc(100%+2rem)] sm:w-48 shrink-0 sticky top-14 sm:top-16 z-10 sm:z-auto bg-canvas sm:bg-transparent -mx-4 px-4 sm:mx-0 sm:px-0 py-1.5 sm:py-0 self-start">
-              <div className="flex sm:flex-col gap-1 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 items-start sm:items-end no-scrollbar [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-4 sm:pr-0">
+            <div className="hidden sm:block sm:w-48 shrink-0 sticky top-14 sm:top-16 z-10 self-start space-y-1">
+              <div className="text-[11px] font-semibold text-body uppercase tracking-wider text-right pr-3 select-none">
+                Kategori
+              </div>
+              <div className="flex flex-col gap-1 items-end pr-0">
                 {tocItems.map((item) => {
                   const isActive = activeTocKey === item.key;
 
@@ -1126,13 +1184,13 @@ export default function VaultView({ initialVaultNotes, userName }: VaultViewProp
                       key={item.key}
                       type="button"
                       onClick={() => handleTocClick(item.key, item.id)}
-                      className={`py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-                        isActive
-                          ? 'bg-primary text-on-primary'
-                          : 'text-body hover:text-ink hover:bg-surface-soft'
+                      className={`py-1.5 px-3 rounded-full text-body-sm font-normal cursor-pointer flex items-center gap-1.5 whitespace-nowrap transition-colors hover:text-ink hover:bg-surface-soft !border-0 ${
+                        isActive ? 'text-ink font-medium' : 'text-body'
                       }`}
                     >
-                      <span>{item.label}</span>
+                      <span className={isActive ? 'underline underline-offset-4 decoration-1' : ''}>
+                        {item.label}
+                      </span>
                       <span className="text-xs sm:text-[13px] font-mono opacity-85 tabular-nums">
                         {item.count}
                       </span>

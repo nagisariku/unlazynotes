@@ -138,7 +138,7 @@ export default function Sidebar({
 
         <button
           onClick={() => setMobileMenuOpen(true)}
-          className="p-1 text-ink hover:text-charcoal cursor-pointer flex items-center justify-center -mr-1"
+          className="p-1 text-ink hover:text-charcoal cursor-pointer flex items-center justify-center"
           aria-label="Buka menu navigasi"
         >
           <Menu className="w-7 h-7" />

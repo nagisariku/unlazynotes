@@ -331,6 +331,27 @@ const graphData = {
     }),
   },
 };
+
+const serializedNotes = allNotes.map((n) => ({
+  id: n.id,
+  userId: n.userId,
+  createdAt: n.createdAt.toISOString(),
+}));
+
+const serializedPayments = allPayments.map((p) => ({
+  id: p.id,
+  userId: p.userId,
+  amount: p.amount,
+  currency: p.currency,
+  status: p.status,
+  createdAt: p.createdAt.toISOString(),
+}));
+
+const serializedAiLogs = allAiLogs.map((l) => ({
+  id: l.id,
+  totalTokens: l.totalTokens || 0,
+  createdAt: l.createdAt.toISOString(),
+}));
 ---
 
 <Layout title="Admin Panel – UnlazyNotes">
@@ -350,6 +371,9 @@ const graphData = {
         graphData={graphData}
         users={serializedUsers}
         currentUser={{ id: user.id, email: user.email, name: user.name, role: user.role }}
+        rawNotes={serializedNotes}
+        rawPayments={serializedPayments}
+        rawAiLogs={serializedAiLogs}
       />
     </main>
   </div>

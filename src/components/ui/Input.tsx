@@ -54,8 +54,10 @@ export const SearchPill = forwardRef<HTMLInputElement, SearchPillProps>(
       }
     };
 
+    const widthClass = wrapperClassName || (fullWidth ? 'w-full' : 'w-full sm:w-72 md:w-80');
+
     return (
-      <div className={`relative ${fullWidth ? 'w-full' : 'w-full sm:w-72 md:w-80'} ${wrapperClassName}`.trim()}>
+      <div className={`relative min-w-0 ${widthClass}`.trim()}>
         <Search className="w-4.5 h-4.5 text-mute absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
           ref={ref}
@@ -63,7 +65,7 @@ export const SearchPill = forwardRef<HTMLInputElement, SearchPillProps>(
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          className={`w-full pl-10 ${hasValue ? 'pr-9' : 'pr-4'} h-10 rounded-full border-0 bg-surface-soft text-ink placeholder:text-mute text-body-sm focus:outline-none focus:ring-0 focus:bg-surface-soft ${className}`.trim()}
+          className={`w-full min-w-0 pl-10 ${hasValue ? 'pr-9' : 'pr-4'} h-10 rounded-full border-0 bg-surface-soft text-ink placeholder:text-mute text-body-sm focus:outline-none focus:ring-0 focus:bg-surface-soft ${className}`.trim()}
           {...props}
         />
         {hasValue && (
